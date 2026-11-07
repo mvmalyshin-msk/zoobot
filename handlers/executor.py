@@ -6,8 +6,6 @@ from aiogram.types import CallbackQuery, Message
 import db
 import keyboards as kb
 import orders
-import texts
-from utils import fmt_local
 
 router = Router()
 

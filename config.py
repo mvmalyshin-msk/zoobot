@@ -25,4 +25,6 @@ class Config:
 config = Config()
 
 if not config.bot_token:
-    raise RuntimeError("Не задан BOT_TOKEN в .env")
+    # Понятное сообщение в журнале Railway: что именно добавить и куда
+    raise RuntimeError("Не задан BOT_TOKEN: добавьте его в Railway → сервис zoobot → Variables "
+                       "(локально — в файл .env). Токен выдаёт @BotFather.")
