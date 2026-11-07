@@ -145,6 +145,16 @@ MIGRATIONS: dict[int, str] = {
     12: "ALTER TABLE users ADD COLUMN phone_verified TEXT;",
     # 13: журнал заказа хранит формулу цены на момент создания (см. orders.price_note)
     13: "ALTER TABLE order_statuses_log ADD COLUMN note TEXT;",
+    # 14: шаги диалога (FSM) — в базе, чтобы переживать перезапуск бота (см. fsm_store.py)
+    14: """
+    CREATE TABLE IF NOT EXISTS fsm (
+        key TEXT PRIMARY KEY,
+        state TEXT,
+        data TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    """,
     # 4: повадки питомца (анкета для выгульщика): коды через запятую, см. traits.py
     4: "ALTER TABLE pets ADD COLUMN traits TEXT;",
     3: """

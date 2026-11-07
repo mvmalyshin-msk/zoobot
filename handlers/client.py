@@ -1634,8 +1634,12 @@ async def fallback_any(m: Message, state: FSMContext) -> None:
         # вопрос вне сценария: админу (и в портал) или собеседнику в открытом чате по заказу
         if await talk.incoming(m.bot, m.from_user.id, m.text) == "admin":
             await m.answer(texts.SENT_TO_ADMIN, reply_markup=kb.offer_order())
-    elif m.text:  # стикеры и файлы вне диалога молча игнорируем
+    elif m.text:
         await show_menu(m, m.from_user)
+    elif m.web_app_data or m.location or m.contact:  # адрес, место или номер пришли вне шага — не молчим
+        await m.answer(texts.LOST_STEP)
+        await show_menu(m, m.from_user)
+    # стикеры и файлы вне диалога молча игнорируем
 
 
 @router.callback_query()
