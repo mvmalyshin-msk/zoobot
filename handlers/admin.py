@@ -53,6 +53,7 @@ HELP = """Команды админа
 
 Прочее:
 /stats — статистика за месяц
+/report [ГГГГ-ММ-ДД] — Excel: новые клиенты и заказы за день (сам приходит в 23:55)
 /broadcast <текст> — рассылка тем, кто дал согласие"""
 
 
@@ -370,6 +371,19 @@ async def cmd_add_executor(m: Message, command: CommandObject) -> None:
 
 def _pct(part: int, whole: int) -> str:
     return f"{part / whole * 100:.0f}%" if whole else "—"
+
+
+@router.message(Command("report"))
+async def cmd_report(m: Message, command: CommandObject) -> None:
+    import report
+    arg = (command.args or "").strip()
+    try:
+        day = datetime.strptime(arg, "%Y-%m-%d").date() if arg else to_local(now_utc()).date()
+    except ValueError:
+        await m.answer("Дата в формате ГГГГ-ММ-ДД, например /report 2026-11-07")
+        return
+    if not await report.send_daily_report(m.bot, day, always=True):
+        await m.answer("Не получилось отправить отчёт, подробности в журнале.")
 
 
 @router.message(Command("stats"))
