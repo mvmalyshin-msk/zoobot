@@ -7,6 +7,7 @@ from aiogram.types import (
     WebAppInfo,
 )
 
+import texts
 from config import config
 from utils import rub
 
@@ -26,10 +27,11 @@ def consent(policy_url: str) -> InlineKeyboardMarkup:
     ])
 
 
-def main_menu(has_orders: bool) -> InlineKeyboardMarkup:
+def main_menu(has_orders: bool, last_name: str | None = None) -> InlineKeyboardMarkup:
     rows = [[Btn(text="🐾 Заказать услугу", callback_data="menu:order")]]
     if has_orders:
-        rows.append([Btn(text="🔁 Повторить последний заказ", callback_data="menu:repeat")])
+        label = f"🔁 Повторить: {last_name}" if last_name else "🔁 Повторить последний заказ"
+        rows.append([Btn(text=label[:60], callback_data="menu:repeat")])
         rows.append([Btn(text="📋 Мои заказы", callback_data="menu:orders")])
     rows.append([Btn(text="👤 Профиль", callback_data="menu:profile")])
     return _kb(rows)
@@ -76,11 +78,13 @@ def no_notes() -> InlineKeyboardMarkup:
 
 
 def profile(marketing_on: bool) -> InlineKeyboardMarkup:
-    mk = "🔕 Отключить рассылки" if marketing_on else "📣 Получать рассылки"
+    mk = "🔕 Отключить акции и новости" if marketing_on else "📣 Получать акции и новости"
     return _kb([
         [Btn(text="✏️ Изменить данные", callback_data="profile:edit")],
         [Btn(text="➕ Добавить питомца", callback_data="profile:addpet")],
+        [Btn(text="📞 Способ связи", callback_data="cp:menu")],
         [Btn(text=mk, callback_data="mk:off" if marketing_on else "mk:on")],
+        [Btn(text="🗑 Удалить мои данные", callback_data="del:ask")],
         [Btn(text="⬅️ В меню", callback_data="menu:home")],
     ])
 
@@ -95,8 +99,32 @@ def services(items: list[dict]) -> InlineKeyboardMarkup:
     return _kb(rows)
 
 
-def quantity(values: list[int]) -> InlineKeyboardMarkup:
-    return _kb([[Btn(text=str(v), callback_data=f"qty:{v}") for v in values]])
+def service_categories(items: list[dict]) -> InlineKeyboardMarkup:
+    """Первый экран выбора: только 4 услуги. Внутри каждой (кроме такси) — варианты."""
+    rows = []
+    for cat in texts.CATEGORY_ORDER:
+        variants = [s for s in items if s["category"] == cat]
+        if not variants:
+            continue
+        low = min(s["base_price"] for s in variants)
+        data = f"svc:{variants[0]['id']}" if len(variants) == 1 else f"cat:{cat}"
+        rows.append([Btn(text=f"{texts.CATEGORY_TITLES[cat]} — от {rub(low)}", callback_data=data)])
+    rows.append([Btn(text="⬅️ В меню", callback_data="menu:home")])
+    return _kb(rows)
+
+
+def category_variants(items: list[dict], category: str) -> InlineKeyboardMarkup:
+    rows = [[Btn(text=f"{texts.variant_label(category, s['name'])} — от {rub(s['base_price'])}",
+                 callback_data=f"svc:{s['id']}")] for s in items if s["category"] == category]
+    rows.append([Btn(text="⬅️ Назад", callback_data="menu:order")])
+    return _kb(rows)
+
+
+def quantity(values: list[int], other: bool = False) -> InlineKeyboardMarkup:
+    rows = [[Btn(text=str(v), callback_data=f"qty:{v}") for v in values[i:i + 4]] for i in range(0, len(values), 4)]
+    if other:
+        rows.append([Btn(text="✏️ Другое", callback_data="qty:other")])
+    return _kb(rows)
 
 
 def use_profile_address(address: str) -> InlineKeyboardMarkup:
@@ -108,7 +136,8 @@ def order_confirm() -> InlineKeyboardMarkup:
     """Первый экран заказа: подбирать специалиста или вносить правки (сами правки спрятаны за второй кнопкой)."""
     return _kb([
         [Btn(text="✅ Подтвердить и подобрать специалиста", callback_data="ord:ok")],
-        [Btn(text="✏️ Внести правки", callback_data="ord:edit")],
+        [Btn(text="✏️ Внести правки", callback_data="ord:edit"),
+         Btn(text="💬 Комментарий", callback_data="ord:comment")],
         [Btn(text="❌ Отмена", callback_data="ord:cancel")],
     ])
 
@@ -194,3 +223,90 @@ def breed_options(options: list[str], can_keep: bool) -> InlineKeyboardMarkup:
 def erase_confirm() -> InlineKeyboardMarkup:
     return _kb([[Btn(text="🗑 Да, удалить мои данные", callback_data="del:yes")],
                 [Btn(text="Отмена", callback_data="del:no")]])
+
+
+def contact_pref(prefix: str = "cp") -> InlineKeyboardMarkup:
+    return _kb([[Btn(text="📞 Звонок", callback_data=f"{prefix}:call"),
+                 Btn(text="✉️ СМС", callback_data=f"{prefix}:sms"),
+                 Btn(text="💬 Telegram", callback_data=f"{prefix}:telegram")]])
+
+
+def recognize_skip() -> InlineKeyboardMarkup:
+    return _kb([[Btn(text="Пропустить", callback_data="rc:skip")]])
+
+
+def erase_blocked(cancellable_ids: list[int], has_paid: bool) -> InlineKeyboardMarkup:
+    rows = [[Btn(text=f"❌ Отменить заказ №{i}", callback_data=f"cancel:{i}")] for i in cancellable_ids]
+    if has_paid:
+        rows.append([Btn(text="📨 Попросить администратора", callback_data="del:ping")])
+    rows.append([Btn(text="⬅️ В меню", callback_data="menu:home")])
+    return _kb(rows)
+
+
+def admin_new_order(order_id: int, chat_url: str) -> InlineKeyboardMarkup:
+    return _kb([[Btn(text="✅ Подтвердить", callback_data=f"ap:ok:{order_id}"),
+                 Btn(text="❌ Отклонить", callback_data=f"ap:no:{order_id}")],
+                [Btn(text="💬 Чат с клиентом", url=chat_url)]])
+
+
+def pay_options(order_id: int, link: str | None, *, sbp: bool, card: bool) -> InlineKeyboardMarkup:
+    rows = []
+    if link:
+        rows.append([Btn(text="💳 Оплатить по ссылке", url=link)])
+    if sbp:
+        rows.append([Btn(text="📱 Оплатить по СБП", callback_data=f"pay:sbp:{order_id}")])
+    if card:
+        rows.append([Btn(text="💳 Перевод на карту", callback_data=f"pay:card:{order_id}")])
+    rows.append([Btn(text="✅ Я оплатил", callback_data=f"pay:claim:{order_id}")])
+    return _kb(rows)
+
+
+def admin_paid_check(order_id: int, chat_url: str) -> InlineKeyboardMarkup:
+    return _kb([[Btn(text="✅ Оплата пришла", callback_data=f"ap:paid:{order_id}"),
+                 Btn(text="❌ Не вижу", callback_data=f"ap:nopay:{order_id}")],
+                [Btn(text="💬 Чат с клиентом", url=chat_url)]])
+
+
+def admin_after_confirm(order_id: int, chat_url: str, *, methods: bool) -> InlineKeyboardMarkup:
+    rows = []
+    if methods:
+        rows.append([Btn(text="📲 Отправить способы оплаты", callback_data=f"ap:methods:{order_id}")])
+    rows.append([Btn(text="💬 Чат с клиентом", url=chat_url)])
+    return _kb(rows)
+
+
+def admin_assign(order_id: int, executors: list[dict]) -> InlineKeyboardMarkup:
+    rows = [[Btn(text=f"👷 {e['name']}", callback_data=f"ap:as:{order_id}:{e['id']}")] for e in executors]
+    return _kb(rows or [[Btn(text="Нет подходящих исполнителей — /executors", callback_data="adm:execs")]])
+
+
+def admin_menu() -> InlineKeyboardMarkup:
+    return _kb([
+        [Btn(text="📋 Активные заказы", callback_data="adm:orders")],
+        [Btn(text="📊 Отчёт за сегодня", callback_data="adm:report")],
+        [Btn(text="💰 Услуги и цены", callback_data="adm:services")],
+        [Btn(text="⚙️ Наценки", callback_data="adm:rules")],
+        [Btn(text="👷 Исполнители", callback_data="adm:execs")],
+        [Btn(text="💳 Способы оплаты", callback_data="adm:pay")],
+        [Btn(text="❓ Все команды", callback_data="adm:help")],
+    ])
+
+
+def link_choose(orders_: list[dict]) -> InlineKeyboardMarkup:
+    return _kb([[Btn(text=f"№{o['id']} · {o['client_name'] or '—'} · {rub(o['price_total'])}",
+                     callback_data=f"lnk:{o['id']}")] for o in orders_])
+
+
+def rules_panel(rules: list[dict]) -> InlineKeyboardMarkup:
+    rows = []
+    for r in rules:
+        unit = "₽" if r["effect_type"] == "fixed" else "%"
+        rows.append([Btn(text=f"{r['name'][:18]} {r['value']:g}{unit}", callback_data="adm:rules"),
+                     Btn(text="➖", callback_data=f"rl:dn:{r['id']}"), Btn(text="➕", callback_data=f"rl:up:{r['id']}"),
+                     Btn(text="🗑", callback_data=f"rl:off:{r['id']}")])
+    rows.append([Btn(text="⬅️ Админ-меню", callback_data="adm:home")])
+    return _kb(rows)
+
+
+def chat_button(url: str) -> InlineKeyboardMarkup:
+    return _kb([[Btn(text="💬 Чат с клиентом", url=url)]])

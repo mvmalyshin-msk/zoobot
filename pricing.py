@@ -44,7 +44,28 @@ async def _holiday(service: dict, p: dict) -> bool:
     return await db.fetch_one("SELECT 1 FROM holidays WHERE day=?", (day,)) is not None
 
 
+async def _pet_danger(service: dict, p: dict) -> bool:
+    import traits
+    return traits.has_danger(traits.unpack(p.get("pet_traits")))
+
+
+async def _pet_notes(service: dict, p: dict) -> bool:
+    return bool((p.get("pet_notes") or "").strip())
+
+
+async def _weekend(service: dict, p: dict) -> bool:
+    return bool(p.get("start_at")) and to_local(p["start_at"]).weekday() >= 5
+
+
+async def _pet_other(service: dict, p: dict) -> bool:
+    return p.get("pet_species") == "другое"
+
+
 CONDITIONS = {
+    "pet_danger": _pet_danger,
+    "pet_notes": _pet_notes,
+    "weekend": _weekend,
+    "pet_other": _pet_other,
     "pet_size_l": _pet_size_l,
     "night": _night,
     "urgent_today": _urgent_today,
@@ -63,6 +84,7 @@ async def calculate_price(service_id: int, params: dict) -> tuple[int, list[tupl
       pet_size     — 'S' / 'M' / 'L' (только для собак, иначе None)
       is_urgent    — заказ «на сегодня»
       outside_mkad — выезд за МКАД
+      pet_traits / pet_notes / pet_species — повадки, особенности здоровья и вид питомца (сложность работы)
     """
     service = await db.fetch_one("SELECT * FROM services WHERE id=? AND active=1", (service_id,))
     if service is None:

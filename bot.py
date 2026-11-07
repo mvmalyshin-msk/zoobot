@@ -28,6 +28,8 @@ class ConsentMiddleware(BaseMiddleware):
 
     async def __call__(self, handler, event, data):
         user = event.from_user
+        if user.id in config.admin_ids:  # администратору согласие клиента не нужно: у него меню управления ботом
+            return await handler(event, data)
         if isinstance(event, Message):
             text = (event.text or "").split("@")[0]
             cmd = text.split(" ")[0]
@@ -41,7 +43,7 @@ class ConsentMiddleware(BaseMiddleware):
                 return await handler(event, data)
             answer_to = event
         else:  # CallbackQuery
-            if event.data in ("pdn:agree", "pol:show", "del:yes", "del:no") or (event.data or "").startswith(("ex:", "rp:")):
+            if event.data in ("pdn:agree", "pol:show", "del:yes", "del:no", "del:ask", "del:ping") or (event.data or "").startswith(("ex:", "rp:")):
                 return await handler(event, data)
             answer_to = event.message
 
