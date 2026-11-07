@@ -35,6 +35,8 @@ MIGRATIONS: dict[int, str] = {
     ALTER TABLE users ADD COLUMN contact_pref TEXT NOT NULL DEFAULT 'telegram';
     ALTER TABLE orders ADD COLUMN comment TEXT;
     """,
+    # 7: служебные значения (какое обновление уже объявлено админам)
+    7: "CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
     # 4: повадки питомца (анкета для выгульщика): коды через запятую, см. traits.py
     4: "ALTER TABLE pets ADD COLUMN traits TEXT;",
     3: """

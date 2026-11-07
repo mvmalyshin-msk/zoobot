@@ -1,0 +1,59 @@
+"""Журнал обновлений. При запуске бот один раз пишет админам: «Прошло обновление №N» и что изменилось.
+Правило: каждый PR, меняющий поведение бота, добавляет сюда запись СВЕРХУ (номер = номер PR) — тест это проверяет."""
+import logging
+
+import db
+import orders
+
+log = logging.getLogger(__name__)
+
+RELEASES = [
+    {"number": 8, "title": "Сообщение админу о каждом обновлении", "items": [
+        "После каждого обновления бот сам пишет админу его номер и что изменилось по пунктам.",
+    ]},
+    {"number": 7, "title": "Кнопки админа, оплата, узнавание клиента", "items": [
+        "п.1 «Удали меня»: если есть заказы, кнопки отмены или «Попросить администратора».",
+        "п.2 Узнавание по телефону: кличка или улица+дом возвращают профиль и питомцев.",
+        "п.3 Адрес с карты показывается клиенту на проверку.",
+        "п.4 Уведомления о заказах всегда включены; клиент выбирает звонок, СМС или Telegram.",
+        "п.5 Четыре услуги (выгул, зооняня, передержка, зоотакси), варианты внутри.",
+        "п.6 Наценки: новые условия и кнопки ➖/➕/🗑 в админ-меню.",
+        "п.7 Заявка: «Подтвердить / Отклонить / Чат с клиентом».",
+        "п.8 Ссылку на оплату достаточно вставить; дежурные СБП и карта (реквизиты в Railway Variables).",
+        "п.9 «Оплата пришла» и выбор исполнителя кнопками.",
+        "п.10 Меню админа только для управления ботом.",
+        "п.11 Часы до 12 кнопками, «Другое» до 24, комментарий к заказу.",
+        "п.12 «Мои заказы»: активные сверху с 🟢.",
+        "п.13 В меню подсказка о последнем заказе.",
+    ]},
+]
+CURRENT = RELEASES[0]["number"]
+
+
+def render(release: dict) -> str:
+    return (f"🆕 Прошло обновление №{release['number']}: {release['title']}\n\n"
+            + "\n".join(f"• {i}" for i in release["items"]))
+
+
+async def announce(bot, admin_ids=None) -> bool:
+    """Шлёт админам описание ещё не объявленных обновлений (старые первыми). Отмечаем только после доставки."""
+    row = await db.fetch_one("SELECT value FROM kv WHERE key='last_release'")
+    last = int(row["value"]) if row else 0
+    pending = [r for r in reversed(RELEASES) if r["number"] > last]
+    if not pending:
+        return False
+    from config import config
+    ids = config.admin_ids if admin_ids is None else admin_ids
+    sent = False
+    for rel in pending:
+        ok = False
+        for admin_id in ids:
+            ok = await orders.notify(bot, admin_id, render(rel)) or ok
+        if not ok:
+            break
+        sent = True
+        await db.execute("INSERT INTO kv (key, value) VALUES ('last_release', ?) "
+                         "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(rel["number"]),))
+    if not sent:
+        log.warning("Обновление №%s: некому отправить описание (админ должен нажать /start)", CURRENT)
+    return sent

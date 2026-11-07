@@ -16,6 +16,7 @@ from config import config
 from handlers import admin, client, executor
 from handlers.executor import Report
 import policy
+import releases
 from scheduler import setup_scheduler
 
 log = logging.getLogger("zoobot")
@@ -130,6 +131,10 @@ async def main() -> None:
     scheduler.start()
     await set_commands(bot)
     await set_profile_texts(bot)
+    try:
+        await releases.announce(bot)  # админам: «Прошло обновление №N» и что изменилось
+    except Exception:
+        log.exception("Не удалось объявить обновление")
     log.info("Бот запущен")
     try:
         await dp.start_polling(bot)
