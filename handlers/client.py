@@ -20,6 +20,7 @@ import payinfo
 import policy
 import pricing
 import repo
+import ribbons
 import talk
 import texts
 import traits
@@ -166,11 +167,11 @@ def is_admin(tg_user) -> bool:
 
 async def show_menu(msg: Message, tg_user, text: str | None = None) -> None:
     if is_admin(tg_user):  # у админа меню только управления ботом, заказать с него нельзя
-        await msg.answer(texts.ADMIN_MENU_TEXT, reply_markup=kb.admin_menu())
+        await msg.answer(ribbons.tg_prefix(ribbons.ADMIN) + texts.ADMIN_MENU_TEXT, reply_markup=kb.admin_menu())
         return
     user = await repo.get_or_create_user(tg_user)
     last = next(iter(await repo.user_orders(user["id"], 1)), None)
-    await msg.answer(text or texts.menu_text(last),
+    await msg.answer(ribbons.tg_prefix(ribbons.CLIENT) + (text or texts.menu_text(last)),
                      reply_markup=kb.main_menu(last is not None, last["name"] if last else None))
 
 

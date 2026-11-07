@@ -16,6 +16,7 @@ from urllib.parse import quote, urlencode
 from aiohttp import web
 
 import brand
+import ribbons
 import db
 import mailer
 import orders
@@ -163,7 +164,7 @@ def page(title: str, body: str, active: str = "", flash: str | None = None) -> s
     fl = f'<div class="flash">{_e(flash)}</div>' if flash else ""
     return (f'<!doctype html><html lang="ru"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
-            f'<title>{brand.NAME} — {_e(title)}</title>{brand.HEAD}<style>{CSS}</style></head><body>'
+            f'<title>{brand.NAME} — {_e(title)}</title>{brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.ADMIN)}'
             f'<div class="top"><a href="/portal" class="brand" style="text-decoration:none"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</a>'
             f'<nav>{nav}<a href="#" id="perm" hidden>🔔</a><a href="/portal/logout">Выйти</a></nav></div>'
             f'<main>{fl}{body}</main><a id="newbar" class="btn" href="">.</a>{NOTIFY_JS}</body></html>')
@@ -212,7 +213,7 @@ def login_page(msg: str | None = None, code_form: bool = False) -> str:
             '<button class="btn" style="width:100%;margin-top:10px">Войти</button></form>') if code_form else ""
     return (f'<!doctype html><html lang="ru"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{brand.NAME} — вход</title>'
-            f'{brand.HEAD}<style>{CSS}</style></head><body><main style="max-width:460px">'
+            f'{brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.ADMIN)}<main style="max-width:460px">'
             f'<div style="text-align:center;font-size:26px;margin:18px 0 6px">{brand.LOGO}</div>'
             f'<h1 style="text-align:center">Вход в портал</h1>{fl}{code}'
             f'<div class="card" style="padding:16px;margin-bottom:12px"><b>Через Telegram</b>'
