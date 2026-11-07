@@ -74,6 +74,11 @@ def parse_user_datetime(text: str, now: datetime | None = None) -> datetime | No
         return None
 
 
+def min_age(birth_year: int) -> int:
+    """Минимально возможный возраст по одному году рождения (дня рождения не знаем, поэтому осторожно)."""
+    return now_utc().year - birth_year - 1
+
+
 def normalize_phone(raw: str) -> str | None:
     """Российский номер → '+7XXXXXXXXXX' или None."""
     digits = re.sub(r"\D", "", raw)

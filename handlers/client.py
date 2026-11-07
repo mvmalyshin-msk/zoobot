@@ -521,6 +521,9 @@ async def got_when(m: Message, state: FSMContext) -> None:
     if dt < to_local(now_utc()) + timedelta(minutes=30):
         await m.answer(texts.PAST_WHEN)
         return
+    if dt > to_local(now_utc()) + timedelta(days=366):
+        await m.answer(texts.FAR_WHEN)
+        return
     data = await state.get_data()
     service = await db.fetch_one("SELECT * FROM services WHERE id=?", (data["service_id"],))
     await state.update_data(start_at=to_db(dt))

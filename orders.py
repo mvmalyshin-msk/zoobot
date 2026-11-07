@@ -15,7 +15,7 @@ import db
 import keyboards as kb
 import texts
 from config import config
-from utils import fmt_local, from_db, now_utc, rub, to_db
+from utils import fmt_local, from_db, min_age, now_utc, rub, to_db
 
 log = logging.getLogger(__name__)
 
@@ -272,8 +272,7 @@ async def assign_executor(bot: Bot, order_id: int, executor_id: int, actor: str)
     if o["category"] not in ex["services"].split(","):
         return False, f"{ex['name']} не выполняет услуги категории «{o['category']}» (у него: {ex['services']})."
     if ex["legal_status"] == "individual" and ex["birth_year"]:
-        age = now_utc().year - ex["birth_year"]
-        if age < 18 and not ex["parent_consent"]:
+        if min_age(ex["birth_year"]) < 18 and not ex["parent_consent"]:
             return False, f"{ex['name']} несовершеннолетний, нет согласия родителей."
 
     pay = calc_executor_pay(o["price_total"], ex)

@@ -286,6 +286,13 @@ async def main():
     r = await say(ADMIN, "/add_executor Петя | +79001112233 | individual | walk | Химки | 300 | 2001 | " +
                   str(datetime.now().year - 15) + " | 0")
     ok("согласие родителей" in last_text(r), "15-летний без согласия родителей отклонён")
+    yr = datetime.now().year
+    r = await say(ADMIN, f"/add_executor Вася | +79001112244 | individual | walk | Химки | 300 | 2002 | {yr - 14} | 1")
+    ok("младше 14" in last_text(r), "родился в год «текущий − 14»: возможно, ему ещё 13 — отклонён (год без даты считаем осторожно)")
+    r = await say(ADMIN, "/add_executor Коля | +79001112255 | individual | walk | Химки | 300 | 2003")
+    ok("год рождения" in last_text(r).lower(), "физлицо без года рождения не добавляется (возраст неизвестен)")
+    r = await say(ADMIN, f"/add_executor Лена | +79001112266 | individual | walk | Химки | 300 | 2004 | {yr - 16} | 1")
+    ok("добавлен" in last_text(r), "физлицо 15–17 лет с согласием родителей добавлено")
     r = await say(ADMIN, "/assign 1 1")
     txt = last_text(r, ADMIN)
     ok("Ваша маржа: 312 ₽" in txt and "Вознаграждение: 728 ₽" in txt, "маржа: 1040 − 70% = 312 ₽ → " + txt.splitlines()[-1])
@@ -322,6 +329,8 @@ async def main():
     await say(CLIENT, "через неделю")
     r = await say(CLIENT, "01.01.2020 10:00")
     ok("будущем" in last_text(r), "дата в прошлом отклоняется")
+    r = await say(CLIENT, "01.01.2099 10:00")
+    ok("далеко" in last_text(r), "дата через десятилетия (опечатка в годе) отклоняется")
     future = (datetime.now() + timedelta(days=3)).strftime("%d.%m %H:%M")
     r = await say(CLIENT, future.replace(future[-5:], "11:00"))
     r = await click(CLIENT, "3")
