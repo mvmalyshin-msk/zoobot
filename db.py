@@ -17,7 +17,15 @@ SCHEMA_FILE = Path(__file__).parent / "schema.sql"
 
 # Будущие миграции добавляем сюда. Пример:
 # MIGRATIONS = {2: "ALTER TABLE orders ADD COLUMN comment TEXT;"}
-MIGRATIONS: dict[int, str] = {}
+MIGRATIONS: dict[int, str] = {
+    # 2: проверка адреса по карте. outside_mkad у клиента — «адрес из профиля за МКАД»;
+    #    address_unverified у заказа — карта была недоступна или клиент оставил адрес как написал.
+    2: """
+    ALTER TABLE users ADD COLUMN outside_mkad INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN address_verified INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE orders ADD COLUMN address_unverified INTEGER NOT NULL DEFAULT 0;
+    """,
+}
 
 
 async def get_conn() -> aiosqlite.Connection:

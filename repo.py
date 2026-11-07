@@ -1,7 +1,7 @@
 """Операции с клиентами, согласиями и питомцами."""
 import db
 
-USER_FIELDS = {"name", "phone", "district", "address"}
+USER_FIELDS = {"name", "phone", "district", "address", "outside_mkad", "address_verified"}
 
 
 async def get_or_create_user(tg_user) -> dict:

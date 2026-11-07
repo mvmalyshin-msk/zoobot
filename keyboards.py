@@ -136,3 +136,28 @@ def executor_start(order_id: int) -> InlineKeyboardMarkup:
 
 def executor_done(order_id: int) -> InlineKeyboardMarkup:
     return _kb([[Btn(text="✅ Завершил", callback_data=f"ex:done:{order_id}")]])
+
+
+def address_ask() -> ReplyKeyboardMarkup:
+    """Кнопка «отправить геопозицию» под строкой ввода (один раз)."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📍 Отправить геопозицию", request_location=True)]],
+        resize_keyboard=True, one_time_keyboard=True,
+    )
+
+
+def address_options(labels: list[str], can_keep: bool) -> InlineKeyboardMarkup:
+    rows = [[Btn(text=f"📍 {lb if len(lb) <= 55 else lb[:52] + '…'}", callback_data=f"ad:{i}")]
+            for i, lb in enumerate(labels)]
+    rows.append([Btn(text="✏️ Ввести заново", callback_data="ad:retry")])
+    if can_keep:
+        rows.append([Btn(text="Оставить как написано", callback_data="ad:keep")])
+    return _kb(rows)
+
+
+def breed_options(options: list[str], can_keep: bool) -> InlineKeyboardMarkup:
+    rows = [[Btn(text=o, callback_data=f"pb:{i}")] for i, o in enumerate(options)]
+    rows.append([Btn(text="✏️ Ввести заново", callback_data="pb:retry")])
+    if can_keep:
+        rows.append([Btn(text="Оставить как написано", callback_data="pb:keep")])
+    return _kb(rows)

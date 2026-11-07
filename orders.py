@@ -68,6 +68,8 @@ def order_card(o: dict, *, for_staff: bool = False) -> str:
         lines.append(f"Адрес: {o['address']}")
     if o["outside_mkad"]:
         lines.append("За МКАД: да")
+    if for_staff and o.get("address_unverified"):
+        lines.append("⚠️ Адрес не подтверждён картой — уточните у клиента")
     if o["pet_name"]:
         size = f", {o['pet_size']}" if o["pet_size"] else ""
         pet = f"Питомец: {o['pet_name']} ({o['pet_species']}{size})"
@@ -111,13 +113,13 @@ async def create_order(data: dict, total: int, breakdown: list, actor: str) -> i
         cur = await conn.execute(
             """INSERT INTO orders (user_id, pet_id, service_id, status, start_at, end_at, quantity,
                                    address, address_to, is_urgent, outside_mkad, params_json,
-                                   price_total, price_breakdown)
-               VALUES (?,?,?,'created',?,?,?,?,?,?,?,?,?,?)""",
+                                   price_total, price_breakdown, address_unverified)
+               VALUES (?,?,?,'created',?,?,?,?,?,?,?,?,?,?,?)""",
             (data["user_id"], data["pet_id"], data["service_id"], to_db(data["start_at"]),
              to_db(data["end_at"]) if data.get("end_at") else None, data["quantity"],
              data["address"], data.get("address_to"), int(data["is_urgent"]),
              int(data["outside_mkad"]), json.dumps(params, ensure_ascii=False), total,
-             json.dumps(breakdown, ensure_ascii=False)),
+             json.dumps(breakdown, ensure_ascii=False), int(data.get("address_unverified", False))),
         )
         order_id = cur.lastrowid
         await conn.execute(
