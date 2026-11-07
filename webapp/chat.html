@@ -105,11 +105,15 @@ function setReply(rows){
   rk.style.display='flex';
 }
 function bottom(){log.scrollTop=log.scrollHeight}
+// «прилипание» к низу: пока человек внизу, новые сообщения и появление клавиатуры не уводят ленту
+var stick=true;
+log.addEventListener('scroll',function(){stick=log.scrollHeight-log.scrollTop-log.clientHeight<80});
+window.addEventListener('resize',function(){if(stick)bottom()});
+if(window.visualViewport)visualViewport.addEventListener('resize',function(){if(stick)bottom()});
 function apply(ev){
   if(ev.id)last=Math.max(last,ev.id);
   if(ev.op==='send'||ev.op==='edit'){
-    var near=log.scrollHeight-log.scrollTop-log.clientHeight<120;
-    render(ev);if(near||ev.who==='me')bottom();
+    render(ev);if(stick||ev.who==='me')bottom();
     if(ev.op==='send'&&ev.who==='bot'&&!initial)alert_(ev.text)
   }else if(ev.op==='delete'){var d=nodes[ev.mid];if(d){d.remove();delete nodes[ev.mid]}}
 }
@@ -126,15 +130,31 @@ function send(body){
     else st.textContent='';
   }).catch(function(){st.textContent='Нет связи. Повторите.'});
 }
+// Опрос с таймаутом: если запрос «завис» (телефон уснул, сеть сменилась), он прерывается и начинается заново.
+var pollCtl=null;
 function poll(){
   if(polling)return;polling=true;
-  fetch('/chat/api/poll?after='+last,{credentials:'same-origin'}).then(function(r){
+  var ctl=new AbortController();pollCtl=ctl;
+  var tm=setTimeout(function(){ctl.abort()},30000);
+  fetch('/chat/api/poll?after='+last,{credentials:'same-origin',signal:ctl.signal}).then(function(r){
     if(r.status===401){location.reload();return null}
     return r.json()}).then(function(j){
+    clearTimeout(tm);if(pollCtl!==ctl)return;
     polling=false;if(!j)return;fails=0;st.textContent='';
     (j.events||[]).forEach(apply);poll();
-  }).catch(function(){polling=false;fails++;st.textContent='Нет связи, пробую снова…';setTimeout(poll,Math.min(15000,1000*fails))});
+  }).catch(function(){
+    clearTimeout(tm);if(pollCtl!==ctl)return;
+    polling=false;fails++;st.textContent='Нет связи, пробую снова…';setTimeout(poll,Math.min(15000,1000*fails))});
 }
+// возврат из фона (iPhone): старый запрос могли потерять — начинаем опрос заново с последнего события
+function kick(){
+  if(initial)return;
+  if(pollCtl){var old=pollCtl;pollCtl=null;polling=false;old.abort()}
+  poll();
+  if(stick)bottom();
+}
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')kick()});
+window.addEventListener('pageshow',kick);
 document.getElementById('f').onsubmit=function(e){
   e.preventDefault();var v=inp.value.trim();if(!v)return;inp.value='';send({text:v});
 };

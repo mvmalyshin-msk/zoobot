@@ -104,8 +104,19 @@ async def set_profile_texts(bot: Bot) -> None:
         log.warning("Не удалось задать описание бота: %s", e)
 
 
+_DP: Dispatcher | None = None
+
+
 def build_dispatcher() -> Dispatcher:
-    """Диспетчер со всеми настройками. Тесты строят его же, поэтому ведут себя как настоящий бот."""
+    """Диспетчер со всеми настройками. Тесты строят его же, поэтому ведут себя как настоящий бот.
+    Роутеры общие на процесс и подключаются один раз, поэтому диспетчер собирается один раз на процесс."""
+    global _DP
+    if _DP is None:
+        _DP = _make_dispatcher()
+    return _DP
+
+
+def _make_dispatcher() -> Dispatcher:
     # SimpleEventIsolation: события одного пользователя обрабатываются по очереди.
     # Иначе двойное нажатие «Подтвердить» создаёт два заказа (проверено тестом).
     dp = Dispatcher(storage=MemoryStorage(), events_isolation=SimpleEventIsolation())
