@@ -233,8 +233,11 @@ def pick_pet(pets: list[dict]) -> InlineKeyboardMarkup:
     return _kb([[Btn(text=f"{p['name']} ({p['species']})", callback_data=f"pick:{p['id']}")] for p in pets])
 
 
-def my_orders(cancellable_ids: list[int]) -> InlineKeyboardMarkup:
+def my_orders(cancellable_ids: list[int], active_ids: list[int] = ()) -> InlineKeyboardMarkup:
     rows = [[Btn(text=f"❌ Отменить №{i}", callback_data=f"cancel:{i}")] for i in cancellable_ids]
+    for i in active_ids:
+        rows.append([Btn(text=f"⚠️ Проблема №{i}", callback_data=f"req:problem:{i}"),
+                     Btn(text=f"🔁 Перенос №{i}", callback_data=f"req:move:{i}")])
     rows.append([Btn(text="⬅️ В меню", callback_data="menu:home")])
     return _kb(rows)
 

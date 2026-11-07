@@ -1432,7 +1432,45 @@ async def cb_my_orders(cb: CallbackQuery, state: FSMContext) -> None:
         await cb.message.answer("Заказов пока нет.", reply_markup=kb.back_to_menu())
         return
     cancellable = [r["id"] for r in rows if r["status"] in ("created", "confirmed")]
-    await cb.message.answer(orders.format_my_orders(rows), reply_markup=kb.my_orders(cancellable))
+    active = [r["id"] for r in rows if r["status"] in orders.ACTIVE_STATUSES]
+    await cb.message.answer(orders.format_my_orders(rows), reply_markup=kb.my_orders(cancellable, active))
+
+
+class RequestOrder(StatesGroup):
+    """Клиент нажал «Проблема» или «Перенос» и пишет текст заявки одним сообщением."""
+    wait = State()
+
+
+@router.callback_query(F.data.startswith("req:"))
+async def cb_request_start(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    _, kind, oid_s = cb.data.split(":")
+    oid = int(oid_s)
+    user = await repo.get_or_create_user(cb.from_user)
+    o = await orders.get_order_full(oid)
+    if not o or o["user_id"] != user["id"]:  # чужие заказы не трогаем
+        return
+    await state.set_state(RequestOrder.wait)
+    await state.update_data(kind=kind, order_id=oid)
+    if kind == "problem":
+        ask = "Опишите, пожалуйста, что случилось"
+    else:
+        ask = "Напишите, на какое время перенести заказ"
+    await cb.message.answer(f"{ask} по заказу №{oid}. Одним сообщением.")
+
+
+@router.message(StateFilter(RequestOrder.wait), F.text)
+async def msg_request_text(msg: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    await state.clear()
+    user = await repo.get_or_create_user(msg.from_user)
+    o = await orders.get_order_full(data["order_id"])
+    if not o or o["user_id"] != user["id"]:
+        await msg.answer("Заказ не найден.", reply_markup=kb.back_to_menu())
+        return
+    ok, text = await orders.client_request(msg.bot, data["order_id"], data["kind"], msg.text,
+                                           f"client:{msg.from_user.id}")
+    await msg.answer(text, reply_markup=kb.back_to_menu())
 
 
 @router.callback_query(F.data.startswith("cancel:"))

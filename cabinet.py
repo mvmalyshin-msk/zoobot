@@ -3,10 +3,12 @@
 Один клиент — один кабинет: если веб-гость привязан к Telegram (users.verified_tg_id),
 кабинет тот же, что у клиента в Telegram. Иначе — кабинет самой сессии (гость видит пустой)."""
 import html as _h
+from urllib.parse import quote, urlparse
 
 from aiohttp import web
 
 import brand
+import orders
 import repo
 import texts
 import webchat
@@ -33,16 +35,68 @@ def _pets_html(pets: list[dict]) -> str:
     return "<ul>" + "".join(items) + "</ul>"
 
 
-def _orders_html(rows: list[dict]) -> str:
+def _history_html(events: list[dict]) -> str:
+    lines = []
+    for h in events:
+        what = texts.STATUS_LABELS.get(h["to_status"], h["to_status"])
+        note = f"<br>{_e(h['note'])}" if h.get("note") else ""
+        lines.append(f"<div class=muted>{_e(fmt_local(h['created_at']))} · {_e(what)}{note}</div>")
+    return "".join(lines)
+
+
+def _actions_html(oid: int, status: str) -> str:
+    out = []
+    if status in ("created", "confirmed"):
+        out.append(f"<form method=post action='/cabinet/order/{oid}'>"
+                   "<button name=action value=cancel class='btn small ghost'>Отменить заказ</button></form>")
+    if status in orders.ACTIVE_STATUSES:
+        out.append(f"<form method=post action='/cabinet/order/{oid}'>"
+                   "<textarea name=text maxlength='500' placeholder='Что случилось или на какое время перенести'"
+                   " style='width:100%;min-height:60px'></textarea>"
+                   "<button name=action value=problem class='btn small ghost'>⚠️ Сообщить о проблеме</button> "
+                   "<button name=action value=move class='btn small ghost'>🔁 Попросить перенос</button></form>")
+    return "".join(out)
+
+
+async def _orders_html(rows: list[dict]) -> str:
     if not rows:
         return "<p class=muted>Заказов пока нет.</p>"
     items = []
     for o in rows:
         pet = f" · {o['pet_name']}" if o.get("pet_name") else ""
         status = texts.STATUS_LABELS.get(o["status"], o["status"])
+        hist = _history_html(await orders.order_history(o["id"]))
         items.append(f"<li>№{_e(o['id'])} · {_e(o['name'])}{_e(pet)} · {_e(fmt_local(o['start_at']))}"
-                     f" · {_e(rub(o['price_total']))}<br><span class=muted>{_e(status)}</span></li>")
+                     f" · {_e(rub(o['price_total']))}<br><b>{_e(status)}</b>"
+                     f"<details><summary>История</summary>{hist}</details>"
+                     f"{_actions_html(o['id'], o['status'])}</li>")
     return "<ul>" + "".join(items) + "</ul>"
+
+
+async def order_action(request: web.Request) -> web.Response:
+    """Отмена и заявки по заказу с сайта. Защита от чужих страниц: Origin должен совпадать с нашим адресом."""
+    uid = await webchat.session_uid(request)
+    if uid is None:
+        return _html("<p>Войдите в кабинет, чтобы управлять заказом.</p>", status=401)
+    origin = request.headers.get("Origin")
+    if origin and urlparse(origin).netloc != request.host:
+        return _html("<p>Запрос отклонён.</p>", status=403)
+    user = await repo.get_user_by_tg(await canonical_tg(uid))
+    oid = int(request.match_info["oid"])
+    o = await orders.get_order_full(oid) if user else None
+    if not o or o["user_id"] != user["id"]:
+        return _html("<p>Заказ не найден.</p>", status=404)
+    form = await request.post()
+    action = form.get("action")
+    actor = f"client:{user['tg_id']}"
+    bot = request.app.get("bot")
+    if action == "cancel":
+        _, msg = await orders.client_cancel(bot, oid, user["id"], actor)
+    elif action in ("problem", "move"):
+        _, msg = await orders.client_request(bot, oid, action, form.get("text"), actor)
+    else:
+        return _html("<p>Неизвестное действие.</p>", status=400)
+    raise web.HTTPFound(f"/cabinet?m={quote(msg)}")
 
 
 async def page(request: web.Request) -> web.Response:
@@ -55,9 +109,10 @@ async def page(request: web.Request) -> web.Response:
     user = await repo.get_user_by_tg(tg)
     pets = await repo.list_pets(user["id"]) if user else []
     rows = await repo.user_orders(user["id"], limit=50) if user else []
-    body = (f"<h2>Ваш кабинет</h2>"
+    note = request.query.get("m")
+    body = (f"<h2>Ваш кабинет</h2>{f'<p><b>{_e(note)}</b></p>' if note else ''}"
             f"<h3>Питомцы</h3>{_pets_html(pets)}"
-            f"<h3>История заказов</h3>{_orders_html(rows)}"
+            f"<h3>История заказов</h3>{await _orders_html(rows)}"
             f"<p><a href='/chat'>💬 Чат</a></p>")
     return _html(body)
 
@@ -73,3 +128,4 @@ def _html(body: str, status: int = 200) -> web.Response:
 
 def setup(app: web.Application) -> None:
     app.router.add_get("/cabinet", page)
+    app.router.add_post("/cabinet/order/{oid}", order_action)
