@@ -431,7 +431,9 @@ async def p_name(m: Message, state: FSMContext) -> None:
         return
     await state.update_data(name=name)
     await state.set_state(Profile.phone)
-    await m.answer(texts.ASK_PHONE, reply_markup=kb.phone_request())
+    import webchat
+    ask = texts.ASK_PHONE_WEB if webchat.ORIGIN.get() is not None else texts.ASK_PHONE  # в браузере Telegram ни при чём
+    await m.answer(ask, reply_markup=kb.phone_request())
 
 
 @router.message(Profile.phone, F.contact)
