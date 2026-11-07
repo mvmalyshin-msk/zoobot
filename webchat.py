@@ -10,6 +10,7 @@ import asyncio
 import contextvars
 import hashlib
 import json
+import math
 import logging
 import secrets
 import time
@@ -62,9 +63,14 @@ def serialize_markup(markup) -> dict:
         for row in markup.keyboard:
             out = []
             for b in row:
-                if getattr(b, "web_app", None) or getattr(b, "request_location", None):
-                    continue
-                out.append({"t": b.text, "contact": True} if getattr(b, "request_contact", None) else {"t": b.text})
+                if getattr(b, "web_app", None):  # карта: в браузере открывается та же страница
+                    out.append({"t": b.text, "map": b.web_app.url})
+                elif getattr(b, "request_location", None):  # геопозиция: браузер спросит разрешение сам
+                    out.append({"t": b.text, "loc": True})
+                elif getattr(b, "request_contact", None):
+                    out.append({"t": b.text, "contact": True})
+                else:
+                    out.append({"t": b.text})
             if out:
                 rows.append(out)
         return {"reply": rows}
@@ -265,7 +271,8 @@ async def page_chat(request: web.Request) -> web.Response:
     token = None
     if uid is None:
         token = await new_session()
-    resp = web.Response(text=_ui("chat.html"), content_type="text/html",
+    html = _ui("chat.html").replace("__TG_URL__", f"https://t.me/{config.bot_username}")
+    resp = web.Response(text=html, content_type="text/html",
                         headers={"Cache-Control": "no-cache", "Referrer-Policy": "no-referrer"})
     if token:
         _set_cookie(request, resp, token)
@@ -383,15 +390,33 @@ async def api_send(request: web.Request, uid: int) -> web.Response:
     text = str(body.get("text") or "")[:1000]
     cb = str(body.get("cb") or "")[:64]
     phone = str(body.get("phone") or "")[:30]
-    if not (text.strip() or cb or phone.strip()):
+    pick = str(body.get("pick") or "")[:500]
+    loc = _parse_loc(body.get("loc"))
+    if body.get("loc") is not None and loc is None:
+        return web.json_response({"error": "loc"}, status=400)
+    if not (text.strip() or cb or phone.strip() or pick or loc):
         return web.json_response({"error": "empty"}, status=400)
     lock = _locks.setdefault(uid, asyncio.Lock())
     async with lock:
-        await feed(request.app, uid, text=text, cb=cb, mid=body.get("mid"), phone=phone)
+        await feed(request.app, uid, text=text, cb=cb, mid=body.get("mid"), phone=phone, pick=pick, loc=loc)
     return web.json_response({"ok": True})
 
 
-async def feed(app, uid: int, *, text: str = "", cb: str = "", mid=None, phone: str = "") -> None:
+def _parse_loc(raw) -> dict | None:
+    """Геопозиция из браузера: конечные координаты в допустимых пределах, иначе None."""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        lat, lon = float(raw["lat"]), float(raw["lon"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not (math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180):
+        return None
+    return {"lat": lat, "lon": lon}
+
+
+async def feed(app, uid: int, *, text: str = "", cb: str = "", mid=None, phone: str = "",
+               pick: str = "", loc: dict | None = None) -> None:
     """Превращает действие из браузера в обновление Telegram и отдаёт диспетчеру."""
     bot, dp = app["bot"], app["dp"]
     now = int(time.time())
@@ -407,7 +432,13 @@ async def feed(app, uid: int, *, text: str = "", cb: str = "", mid=None, phone: 
             "message": {"message_id": int(mid or 0), "date": now, "chat": chat, "text": shown or "·"}}}
     else:
         msg = {"message_id": upd_id, "date": now, "chat": chat, "from": user}
-        if phone.strip():
+        if pick:  # адрес выбран на карте: тот же ответ, что приходит из мини-приложения в Telegram
+            msg["web_app_data"] = {"data": pick, "button_text": "Карта"}
+            shown = "🗺 Адрес выбран на карте"
+        elif loc:
+            msg["location"] = {"latitude": loc["lat"], "longitude": loc["lon"]}
+            shown = "📍 Геопозиция отправлена"
+        elif phone.strip():
             # user_id не указываем: телефон из браузера не подтверждён Telegram, профиль по нему не раскрываем
             msg["contact"] = {"phone_number": phone.strip(), "first_name": "Гость"}
             shown = "📱 " + phone.strip()

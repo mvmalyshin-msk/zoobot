@@ -43,7 +43,7 @@ form button{font:700 20px var(--font);border:0;border-radius:999px;width:48px;ba
 </style>
 </head>
 <body>
-<header><span class="brand"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</span><nav><a id="nt" href="#" hidden>🔔 Уведомления</a><a id="ad" class="on" href="/portal" hidden>Портал</a><a href="/chat/logout">Выйти</a></nav></header>
+<header><span class="brand"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</span><nav><a id="nt" href="#" hidden>🔔 Уведомления</a><a href="__TG_URL__" target="_blank" rel="noopener">В Telegram</a><a id="ad" class="on" href="/portal" hidden>Портал</a><a href="/chat/logout">Выйти</a></nav></header>
 <div id="ios">Чтобы открывать как приложение: нажмите <b>«Поделиться»</b> → <b>«На экран „Домой“»</b>. Иконка и название будут «Зооконсьерж».</div>
 <div id="log" aria-live="polite"></div>
 <div id="st"></div>
@@ -99,10 +99,21 @@ function setReply(rows){
       var e=document.createElement('button');e.type='button';e.textContent=b.t;
       e.onclick=function(){
         if(b.contact){var p=prompt('Ваш номер телефона (например, +7 900 123-45-67):');if(p)send({phone:p})}
+        else if(b.map){location.href=b.map}
+        else if(b.loc){locate()}
         else send({text:b.t})};
       r.appendChild(e)});
     rk.appendChild(r)});
   rk.style.display='flex';
+}
+// геопозиция из браузера — то же, что кнопка «Отправить геопозицию» в Telegram
+function locate(){
+  if(!navigator.geolocation){st.textContent='Геопозиция в этом браузере недоступна. Впишите адрес текстом.';return}
+  st.textContent='Определяю геопозицию…';
+  navigator.geolocation.getCurrentPosition(function(p){
+    send({loc:{lat:p.coords.latitude,lon:p.coords.longitude}});
+  },function(){st.textContent='Не получилось определить геопозицию. Разрешите доступ к геопозиции в настройках браузера или впишите адрес.'},
+  {enableHighAccuracy:true,timeout:15000,maximumAge:60000});
 }
 function bottom(){log.scrollTop=log.scrollHeight}
 // «прилипание» к низу: пока человек внизу, новые сообщения и появление клавиатуры не уводят ленту
@@ -154,7 +165,7 @@ function kick(){
   if(stick)bottom();
 }
 document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')kick()});
-window.addEventListener('pageshow',kick);
+window.addEventListener('pageshow',function(e){if(e.persisted)kick()});  // только возврат из кэша Safari, не обычная загрузка
 document.getElementById('f').onsubmit=function(e){
   e.preventDefault();var v=inp.value.trim();if(!v)return;inp.value='';send({text:v});
 };

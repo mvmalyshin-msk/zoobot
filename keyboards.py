@@ -108,9 +108,17 @@ def profile() -> InlineKeyboardMarkup:
     ])
 
 
-def settings(marketing_on: bool, tg_url: str | None = None) -> InlineKeyboardMarkup:
+def settings(marketing_on: bool, tg_url: str | None = None, site_url: str | None = None,
+             open_tg_url: str | None = None) -> InlineKeyboardMarkup:
+    """Одинаковые настройки в боте и на сайте; отличаются только ссылки на другую площадку."""
     mk = "🔕 Отключить акции и новости" if marketing_on else "📣 Получать акции и новости"
-    top = [[Btn(text="✅ Подтвердить через Telegram", url=tg_url)]] if tg_url else []
+    top = []
+    if tg_url:
+        top.append([Btn(text="✅ Подтвердить через Telegram", url=tg_url)])
+    if open_tg_url:
+        top.append([Btn(text="✈️ Открыть в Telegram", url=open_tg_url)])
+    if site_url:
+        top.append([Btn(text=texts.SITE_LOGIN_BUTTON, url=site_url)])
     return _kb(top + [
         [Btn(text="📞 Способ связи", callback_data="cp:menu")],
         [Btn(text=mk, callback_data="mk:off" if marketing_on else "mk:on")],

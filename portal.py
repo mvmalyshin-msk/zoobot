@@ -391,7 +391,9 @@ async def order_page(request: web.Request, uid: int) -> web.Response:
                      f'<div class="card msgs">{msgs or "<span class=muted>Сообщений пока нет.</span>"}</div>')
     hist = await db.fetch_all("SELECT * FROM order_statuses_log WHERE order_id=? ORDER BY id", (o["id"],))
     hist_html = "".join(f'<div class="sub muted">{_e(fmt_local(h["created_at"]))}: {_e(texts.STATUS_LABELS.get(h["to_status"], h["to_status"]))}'
-                        f' · {_e(h["actor"])}</div>' for h in hist)
+                        f' · {_e(h["actor"])}'
+                        + (f'<br><span class="muted">{_e(h["note"])}</span>' if h.get("note") else "")
+                        + '</div>' for h in hist)
     links = [f'<a class="btn small ghost" href="/portal/chat/{o["client_tg_id"]}">💬 Написать клиенту</a>']
     if o.get("client_phone"):
         links.append(f'<a class="btn small ghost" href="tel:{_e(o["client_phone"])}">📞 Позвонить</a>')
