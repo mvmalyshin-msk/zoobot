@@ -55,6 +55,7 @@ __RIBBON__<header><span class="brand"><span class="zoo">ЗОО</span>КОНСЬ�
 <div id="cmds" hidden><button type="button" data-cmd="/menu">Главное меню</button><button type="button" data-cmd="/profile">Профиль и питомцы</button><button type="button" data-cmd="/policy">Политика обработки данных</button><button type="button" data-cmd="/delete_me">Удалить мои данные</button></div><form id="f" autocomplete="off"><button type="button" id="cmd" class="cmd" aria-label="Меню команд" aria-expanded="false">☰</button><input id="t" placeholder="Сообщение…" enterkeyhint="send" maxlength="1000"><button>➤</button></form>
 <script>
 (function(){
+var API='__API__';  // /chat — клиент, /portal/bot — администратор (подставляет сервер)
 var log=document.getElementById('log'),rk=document.getElementById('rk'),st=document.getElementById('st'),inp=document.getElementById('t');
 var nodes={},last=0,polling=false,fails=0,initial=true,unread=0,baseTitle=document.title;
 function H(h,o){h=h||{};h['X-Zc']='1';h['Content-Type']='application/json';return h}
@@ -146,7 +147,8 @@ function apply(ev){
 function alert_(text){
   if(document.visibilityState==='visible')return;
   unread++;document.title='('+unread+') '+baseTitle;
-  try{if(window.Notification&&Notification.permission==='granted')new Notification('Зооконсьерж',{body:(text||'').slice(0,140)})}catch(e){}
+  // если включены push-уведомления, их покажет служебный скрипт; иначе — простое уведомление открытой вкладки
+  try{if(!window.__pushOn&&window.Notification&&Notification.permission==='granted')new Notification('Зооконсьерж',{body:(text||'').slice(0,140)})}catch(e){}
 }
 document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'){unread=0;document.title=baseTitle}});
 function send(body){
@@ -189,8 +191,37 @@ document.getElementById('f').onsubmit=function(e){
 };
 try{var standalone=window.navigator.standalone||matchMedia('(display-mode: standalone)').matches;
   if(/iPhone|iPad/.test(navigator.userAgent)&&!standalone&&!localStorage.getItem('zc_ios')){var ios=document.getElementById('ios');ios.style.display='block';ios.onclick=function(){ios.style.display='none';localStorage.setItem('zc_ios','1')}}}catch(e){}
+// Уведомления (Web Push): приходят, даже когда сайт закрыт. На iPhone — если сайт добавлен на экран «Домой».
 var nt=document.getElementById('nt');
-if(window.Notification&&Notification.permission==='default'){nt.hidden=false;nt.onclick=function(e){e.preventDefault();Notification.requestPermission().then(function(){nt.hidden=true})}}
+var canPush='serviceWorker' in navigator&&'PushManager' in window&&!!window.Notification;
+function keyBytes(k){k=k.replace(/-/g,'+').replace(/_/g,'/');while(k.length%4)k+='=';var b=atob(k),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a}
+function pushOn(){
+  if(!canPush)return Promise.resolve(false);
+  return navigator.serviceWorker.register('/sw.js').then(function(reg){
+    return reg.pushManager.getSubscription().then(function(sub){
+      if(sub)return sub;
+      return fetch(API+'/api/push/key',{credentials:'same-origin'}).then(function(r){return r.json()}).then(function(j){
+        return reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:keyBytes(j.key)})});
+    });
+  }).then(function(sub){
+    return fetch(API+'/api/push/subscribe',{method:'POST',headers:H(),body:JSON.stringify(sub.toJSON()),credentials:'same-origin'})
+      .then(function(r){window.__pushOn=r.ok;return r.ok});
+  }).catch(function(){return false});
+}
+function askPush(e){
+  if(e)e.preventDefault();
+  if(!canPush){st.textContent=/iPhone|iPad/.test(navigator.userAgent)?
+    'На iPhone уведомления работают, когда сайт добавлен на экран «Домой»: «Поделиться» → «На экран „Домой“», затем откройте его оттуда и нажмите 🔔.':
+    'Этот браузер не умеет уведомления для сайтов. Сообщения всё равно появятся здесь, в чате.';return}
+  Notification.requestPermission().then(function(p){
+    if(p!=='granted'){st.textContent='Уведомления для этого сайта запрещены. Разрешите их: значок слева в адресной строке → «Уведомления» → «Разрешить», затем нажмите 🔔 ещё раз.';return}
+    pushOn().then(function(ok){nt.hidden=ok;st.textContent=ok?'Уведомления включены ✅':'Не получилось включить уведомления в этом браузере.'});
+  });
+}
+nt.onclick=askPush;
+// уже разрешено — подписываемся молча; иначе кнопка видна всегда (в том числе если запрещено: подскажет, как разрешить)
+if(canPush&&Notification.permission==='granted')pushOn().then(function(ok){nt.hidden=ok});
+else nt.hidden=false;
 fetch('__API__/api/history',{credentials:'same-origin'}).then(function(r){return r.json()}).then(function(j){
   (j.messages||[]).forEach(function(m){render(m)});bottom();last=j.last;initial=false;
   if(j.admin)document.getElementById('ad').hidden=false;

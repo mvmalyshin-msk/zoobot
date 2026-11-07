@@ -37,6 +37,12 @@ async def _brand_css(request: web.Request) -> web.Response:
     return web.FileResponse(WEBAPP_DIR / "brand.css", headers={"Cache-Control": "no-cache", "Content-Type": "text/css"})
 
 
+async def _sw(request: web.Request) -> web.Response:
+    """Служебный скрипт уведомлений: с корня сайта, чтобы работать и для /chat, и для /portal/bot."""
+    return web.FileResponse(WEBAPP_DIR / "sw.js", headers={"Cache-Control": "no-cache",
+                                                          "Content-Type": "application/javascript; charset=utf-8"})
+
+
 async def _manifest(request: web.Request) -> web.Response:
     return web.FileResponse(WEBAPP_DIR / "manifest.webmanifest",
                             headers={"Cache-Control": "no-cache", "Content-Type": "application/manifest+json"})
@@ -63,6 +69,7 @@ def make_app() -> web.Application:
     app.router.add_static("/icons/", WEBAPP_DIR / "icons", follow_symlinks=False)
     app.router.add_get("/brand.css", _brand_css)
     app.router.add_get("/manifest.webmanifest", _manifest)
+    app.router.add_get("/sw.js", _sw)
     app.router.add_get("/apple-touch-icon.png", _touch_icon)  # iOS ищет иконку и по этому адресу  # add_static не выходит из папки
     return app
 
