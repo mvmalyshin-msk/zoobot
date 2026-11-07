@@ -1,0 +1,118 @@
+"""Слой доступа к SQLite (aiosqlite) + простые миграции.
+
+Принцип: schema.sql = версия 1. Любое следующее изменение схемы — новая запись
+в MIGRATIONS (номер версии → SQL). При старте бот применяет всё, чего ещё нет.
+"""
+import logging
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+import aiosqlite
+
+from config import config
+
+log = logging.getLogger(__name__)
+
+SCHEMA_FILE = Path(__file__).parent / "schema.sql"
+
+# Будущие миграции добавляем сюда. Пример:
+# MIGRATIONS = {2: "ALTER TABLE orders ADD COLUMN comment TEXT;"}
+MIGRATIONS: dict[int, str] = {}
+
+
+async def get_conn() -> aiosqlite.Connection:
+    """Открыть соединение. Row-фабрика позволяет обращаться к колонкам по имени."""
+    conn = await aiosqlite.connect(config.db_path)
+    conn.row_factory = aiosqlite.Row
+    await conn.execute("PRAGMA foreign_keys = ON")
+    await conn.execute("PRAGMA journal_mode = WAL")  # устойчивее к параллельным записям
+    return conn
+
+
+async def current_version(conn: aiosqlite.Connection) -> int:
+    """Текущая версия схемы (0 — БД пустая)."""
+    cur = await conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
+    )
+    if not await cur.fetchone():
+        return 0
+    cur = await conn.execute("SELECT COALESCE(MAX(version), 0) AS v FROM schema_version")
+    row = await cur.fetchone()
+    return row["v"]
+
+
+async def init_db() -> None:
+    """Создать БД и применить недостающие миграции. Вызывается при старте бота."""
+    conn = await get_conn()
+    try:
+        version = await current_version(conn)
+
+        if version == 0:
+            log.info("Создаю БД из schema.sql (версия 1)")
+            await conn.executescript(SCHEMA_FILE.read_text(encoding="utf-8"))
+            await conn.execute("INSERT INTO schema_version (version) VALUES (1)")
+            await conn.commit()
+            version = 1
+
+        for v in sorted(MIGRATIONS):
+            if v > version:
+                log.info("Применяю миграцию %s", v)
+                await conn.executescript(MIGRATIONS[v])
+                await conn.execute("INSERT INTO schema_version (version) VALUES (?)", (v,))
+                await conn.commit()
+    finally:
+        await conn.close()
+
+
+# ---------- Небольшие хелперы, чтобы не плодить boilerplate в хендлерах ----------
+
+async def fetch_one(sql: str, params: tuple = ()) -> dict | None:
+    conn = await get_conn()
+    try:
+        cur = await conn.execute(sql, params)
+        row = await cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        await conn.close()
+
+
+async def fetch_all(sql: str, params: tuple = ()) -> list[dict]:
+    conn = await get_conn()
+    try:
+        cur = await conn.execute(sql, params)
+        return [dict(r) for r in await cur.fetchall()]
+    finally:
+        await conn.close()
+
+
+async def execute(sql: str, params: tuple = ()) -> int:
+    """Выполнить запись. Возвращает lastrowid.
+    updated_at обновляем явно в SQL там, где это UPDATE (см. touch())."""
+    conn = await get_conn()
+    try:
+        cur = await conn.execute(sql, params)
+        await conn.commit()
+        return cur.lastrowid
+    finally:
+        await conn.close()
+
+
+@asynccontextmanager
+async def transaction():
+    """Несколько запросов как одно целое: либо все применились, либо ни один.
+    Использование:  async with db.transaction() as conn:  await conn.execute(...)"""
+    conn = await get_conn()
+    try:
+        await conn.execute("BEGIN")
+        yield conn
+        await conn.commit()
+    except BaseException:
+        await conn.rollback()
+        raise
+    finally:
+        await conn.close()
+
+
+def touch() -> str:
+    """Фрагмент SQL для обновления updated_at: UPDATE t SET x=?, {touch()} WHERE ..."""
+    return "updated_at = datetime('now')"

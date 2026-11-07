@@ -1,0 +1,302 @@
+"""Сквозной тест без Telegram: подменяем сетевой слой aiogram и «нажимаем» кнопки/пишем сообщения.
+
+Запуск из папки проекта:
+    BOT_TOKEN=1:x ADMIN_IDS=111 DB_PATH=/tmp/e2e.db python tests/e2e_test.py
+"""
+import asyncio
+import os
+import sys
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+os.environ.setdefault("BOT_TOKEN", "1:x")
+os.environ.setdefault("ADMIN_IDS", "111")
+os.environ.setdefault("DB_PATH", "/tmp/zoobot_e2e.db")
+for suffix in ("", "-wal", "-shm"):
+    try:
+        os.remove(os.environ["DB_PATH"] + suffix)
+    except FileNotFoundError:
+        pass
+
+from aiogram import Bot, Dispatcher, F  # noqa: E402
+from aiogram.client.session.base import BaseSession  # noqa: E402
+from aiogram.fsm.storage.memory import MemoryStorage  # noqa: E402
+from aiogram.methods import SendMessage  # noqa: E402
+from aiogram.types import Chat, Message  # noqa: E402
+
+import db  # noqa: E402
+from bot import ConsentMiddleware  # noqa: E402
+from handlers import admin, client, executor  # noqa: E402
+from scheduler import process_due_reminders  # noqa: E402
+
+CLIENT, ADMIN, EXEC = 1000, 111, 2000
+SENT: list[dict] = []  # всё, что бот «отправил»
+
+
+class FakeSession(BaseSession):
+    async def close(self): ...
+    async def stream_content(self, *a, **kw): ...
+
+    async def make_request(self, bot, method, timeout=None):
+        if isinstance(method, SendMessage):
+            markup = method.reply_markup
+            SENT.append({"to": method.chat_id, "text": method.text, "markup": markup})
+            return Message(message_id=len(SENT), date=datetime.now(), chat=Chat(id=method.chat_id, type="private"),
+                           text=method.text)
+        return True
+
+
+bot = Bot("1:x", session=FakeSession())
+dp = Dispatcher(storage=MemoryStorage())
+dp.message.filter(F.chat.type == "private")
+consent = ConsentMiddleware()
+dp.message.outer_middleware(consent)
+dp.callback_query.outer_middleware(consent)
+for r in (admin.router, executor.router, client.router):
+    dp.include_router(r)
+
+_uid = 0
+
+
+def _user(uid):
+    return {"id": uid, "is_bot": False, "first_name": f"U{uid}", "username": f"u{uid}"}
+
+
+async def say(uid: int, text: str) -> list[dict]:
+    """Пользователь пишет сообщение. Возвращает ответы бота."""
+    global _uid
+    _uid += 1
+    start = len(SENT)
+    msg = {"message_id": _uid, "date": int(time.time()), "chat": {"id": uid, "type": "private"},
+           "from": _user(uid), "text": text}
+    if text.startswith("/"):
+        msg["entities"] = [{"type": "bot_command", "offset": 0, "length": len(text.split()[0])}]
+    await dp.feed_raw_update(bot, {"update_id": _uid, "message": msg})
+    return SENT[start:]
+
+
+async def contact(uid: int, phone: str) -> list[dict]:
+    global _uid
+    _uid += 1
+    start = len(SENT)
+    msg = {"message_id": _uid, "date": int(time.time()), "chat": {"id": uid, "type": "private"},
+           "from": _user(uid), "contact": {"phone_number": phone, "first_name": "x", "user_id": uid}}
+    await dp.feed_raw_update(bot, {"update_id": _uid, "message": msg})
+    return SENT[start:]
+
+
+def _buttons(m):
+    if not m["markup"] or not hasattr(m["markup"], "inline_keyboard"):
+        return []
+    return [b for row in m["markup"].inline_keyboard for b in row]
+
+
+async def click(uid: int, label: str) -> list[dict]:
+    """Нажать inline-кнопку, чей текст содержит label (ищем в последних сообщениях бота этому пользователю)."""
+    global _uid
+    for m in reversed([s for s in SENT if s["to"] == uid]):
+        for b in _buttons(m):
+            if label in b.text and b.callback_data:
+                _uid += 1
+                start = len(SENT)
+                cb = {"id": str(_uid), "from": _user(uid), "chat_instance": "ci", "data": b.callback_data,
+                      "message": {"message_id": _uid, "date": int(time.time()),
+                                  "chat": {"id": uid, "type": "private"},
+                                  "from": {"id": 999, "is_bot": True, "first_name": "bot"}, "text": m["text"]}}
+                await dp.feed_raw_update(bot, {"update_id": _uid, "callback_query": cb})
+                return SENT[start:]
+    raise AssertionError(f"Кнопка «{label}» не найдена у {uid}")
+
+
+def last_text(msgs, to=None):
+    msgs = [m for m in msgs if to is None or m["to"] == to]
+    return msgs[-1]["text"] if msgs else ""
+
+
+def ok(cond, title):
+    print(("  ✅ " if cond else "  ❌ ") + title)
+    if not cond:
+        raise AssertionError(title)
+
+
+async def main():
+    await db.init_db()
+    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%d.%m.%Y")  # для проверки формата даты
+
+    print("1. Согласие на ПДн")
+    r = await say(CLIENT, "/start")
+    ok("Согласен на обработку ПДн" in str(_buttons(r[-1])), "экран согласия с отдельной кнопкой")
+    r = await say(CLIENT, "/menu")
+    ok("согласие" in last_text(r).lower(), "без согласия дальше не пускает")
+    r = await click(CLIENT, "Согласен")
+    c = await db.fetch_one("SELECT * FROM consents WHERE type='pdn'")
+    ok(c and c["granted"] == 1 and c["text_version"], "согласие записано в consents с версией текста")
+    u = await db.fetch_one("SELECT * FROM users")
+    ok(u["marketing_consent"] == 0, "согласие на рассылки по умолчанию выключено")
+
+    print("2. Профиль при первом заказе")
+    await click(CLIENT, "Заказать")
+    await say(CLIENT, "Анна")
+    r = await say(CLIENT, "abc")
+    ok("не получилось" in last_text(r).lower(), "неверный телефон отклоняется")
+    await contact(CLIENT, "79001234567")
+    await say(CLIENT, "Химки")
+    await say(CLIENT, "ул. Ленина, 1, кв. 5")
+    await say(CLIENT, "Рекс")
+    await click(CLIENT, "Собака")
+    await say(CLIENT, "Лабрадор")
+    await click(CLIENT, "L")
+    r = await click(CLIENT, "Ничего")
+    ok("Выберите услугу" in last_text(r), "после профиля сразу выбор услуги")
+    u = await db.fetch_one("SELECT * FROM users")
+    ok(u["phone"] == "+79001234567" and u["address"].startswith("ул. Ленина"), "профиль сохранён")
+
+    print("3. Выгул 60 мин ночью: расчёт цены")
+    await click(CLIENT, "Выгул 60")
+    r = await say(CLIENT, "завтра 22:30")
+    txt = last_text(r)
+    # (700 + 100 за крупную собаку) × 1.3 ночью = 1040
+    ok("1 040 ₽" in txt and "Крупная собака" in txt and "Ночное" in txt, "разбивка: база + L + ночь = 1 040 ₽")
+    r = await click(CLIENT, "За МКАД")
+    ok("(700 + 100 + 150) × 1.3" or "1 235 ₽" in last_text(r), "за МКАД пересчитывает")
+    ok("1 235 ₽" in last_text(r), "итог за МКАД = 1 235 ₽")
+    await click(CLIENT, "За МКАД")
+    r = await click(CLIENT, "Подтвердить")
+    ok("принята" in last_text(r, CLIENT), "клиент получил подтверждение заявки")
+    ok(any(m["to"] == ADMIN and "Новая заявка" in m["text"] for m in r), "админ получил уведомление")
+    o = await db.fetch_one("SELECT * FROM orders WHERE id=1")
+    ok(o["status"] == "created" and o["price_total"] == 1040, "заказ создан, цена зафиксирована")
+
+    print("4. Статусы, оплата, исполнитель (админ)")
+    r = await say(ADMIN, "/confirm 1")
+    ok(any(m["to"] == CLIENT and "подтверждён" in m["text"] for m in r), "created → confirmed, клиент уведомлён")
+    r = await say(ADMIN, "/progress 1")
+    ok("Нельзя" in last_text(r, ADMIN), "перескочить confirmed → in_progress нельзя")
+    r = await say(ADMIN, "/send_payment 1 https://pay.example/1")
+    p = await db.fetch_one("SELECT * FROM payments WHERE order_id=1")
+    ok(p["status"] == "link_sent" and p["payment_link"], "платёж: pending → link_sent, ссылка в БД")
+    ok(any(m["to"] == CLIENT and "оплаты" in m["text"] for m in r), "клиент получил ссылку")
+    rem = await db.fetch_one("SELECT * FROM reminders WHERE kind='pay_3h'")
+    ok(rem is not None, "напоминание об оплате через 3 ч запланировано")
+    # перематываем время: делаем напоминание «созревшим»
+    await db.execute("UPDATE reminders SET send_at=datetime('now','-1 minute')")
+    n = await process_due_reminders(bot)
+    ok(any("ещё не оплачен" in m["text"] for m in SENT if m["to"] == CLIENT), "клиент получил напоминание об оплате")
+    r = await say(ADMIN, "/paid 1")
+    p = await db.fetch_one("SELECT * FROM payments WHERE order_id=1")
+    ok(p["status"] == "paid", "платёж: link_sent → paid")
+    kinds = {x["kind"] for x in await db.fetch_all("SELECT kind FROM reminders WHERE order_id=1")}
+    ok({"client_24h", "client_2h"} <= kinds, "запланированы напоминания клиенту за 24 ч и за 2 ч")
+
+    r = await say(ADMIN, "/add_executor Мария | +79005554433 | self_employed | walk,sitter | Химки | 70% | 2000")
+    ok("добавлен" in last_text(r), "исполнитель добавлен")
+    r = await say(ADMIN, "/add_executor Петя | +79001112233 | individual | walk | Химки | 300 | 2001 | " +
+                  str(datetime.now().year - 15) + " | 0")
+    ok("согласие родителей" in last_text(r), "15-летний без согласия родителей отклонён")
+    r = await say(ADMIN, "/assign 1 1")
+    txt = last_text(r, ADMIN)
+    ok("Ваша маржа: 312 ₽" in txt and "Вознаграждение: 728 ₽" in txt, "маржа: 1040 − 70% = 312 ₽ → " + txt.splitlines()[-1])
+    ok(any(m["to"] == EXEC and "Вам назначен заказ" in m["text"] for m in r), "исполнитель уведомлён")
+    ok(any(m["to"] == CLIENT and "Мария" in m["text"] for m in r), "клиент уведомлён о назначении")
+    await db.execute("UPDATE reminders SET send_at=datetime('now','-1 minute')")
+    await process_due_reminders(bot)
+    ok(any(m["to"] == EXEC and "Через 2 часа" in m["text"] for m in SENT), "исполнитель получил напоминание за 2 ч")
+    ok(any(m["to"] == CLIENT and "завтра в 22:30" in m["text"] for m in SENT), "клиент получил напоминание за 24 ч")
+
+    print("5. Исполнитель ведёт заказ, клиент оставляет отзыв")
+    await click(EXEC, "Начал")
+    o = await db.fetch_one("SELECT status FROM orders WHERE id=1")
+    ok(o["status"] == "in_progress", "assigned → in_progress (кнопкой исполнителя)")
+    r = await click(EXEC, "Завершил")
+    ok(any(m["to"] == CLIENT and "Оцените" in m["text"] for m in r), "completed → клиенту запрос оценки")
+    await click(CLIENT, "⭐⭐⭐⭐⭐")
+    r = await say(CLIENT, "Всё отлично, спасибо!")
+    rv = await db.fetch_one("SELECT * FROM reviews")
+    ok(rv and rv["rating"] == 5 and rv["executor_id"] == 1, "отзыв сохранён")
+    r = await say(ADMIN, "/executors")
+    ok("⭐ 5.0 (1)" in last_text(r), "средний рейтинг в /executors")
+
+    print("6. Повтор заказа, такси, зооняня")
+    r = await click(CLIENT, "Повторить") if any("Повторить" in str(_buttons(m)) for m in SENT if m["to"] == CLIENT) else await say(CLIENT, "/menu")
+    if "Повторяем" not in last_text(r):
+        await click(CLIENT, "Повторить")
+    r = await say(CLIENT, "завтра 10:00")
+    ok("Проверьте заказ" in last_text(r) and "Рекс" in last_text(r), "повтор: спросил только время, остальное из профиля")
+    await click(CLIENT, "Отмена")
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    await click(CLIENT, "Зооняня приходящая")
+    await say(CLIENT, "через неделю")
+    r = await say(CLIENT, "01.01.2020 10:00")
+    ok("будущем" in last_text(r), "дата в прошлом отклоняется")
+    future = (datetime.now() + timedelta(days=3)).strftime("%d.%m %H:%M")
+    r = await say(CLIENT, future.replace(future[-5:], "11:00"))
+    r = await click(CLIENT, "3")
+    ok("3 ч × 600 ₽" in last_text(r) and "1 900 ₽" in last_text(r), "зооняня 3 ч: 1 800 + 100 за крупную = 1 900 ₽")
+    await click(CLIENT, "Отмена")
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    await click(CLIENT, "Зоотакси")
+    await say(CLIENT, future.replace(future[-5:], "12:00"))
+    await click(CLIENT, "📍")
+    r = await say(CLIENT, "Москва, Шереметьево, терминал B")
+    t = last_text(r)
+    ok("Откуда: ул. Ленина" in t and "Куда: Москва" in t, "такси: точки А и Б на экране подтверждения")
+    await click(CLIENT, "Подтвердить")
+    ok(await db.fetch_one("SELECT 1 FROM orders WHERE address_to IS NOT NULL") is not None, "заказ такси создан с точкой Б")
+    r = await say(ADMIN, "/cancel 2 клиент передумал")
+    ok("Отменён" in last_text(r, ADMIN), "админ отменил заказ")
+    ok(any(m["to"] == CLIENT and "отменён" in m["text"] for m in r), "клиент уведомлён об отмене")
+    r = await say(ADMIN, "/confirm 2")
+    ok("Нельзя" in last_text(r, ADMIN), "из cancelled назад нельзя")
+
+    print("7. Отмена клиентом, чужие данные")
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    await click(CLIENT, "Выгул 30")
+    await say(CLIENT, future.replace(future[-5:], "15:00"))
+    await click(CLIENT, "Подтвердить")
+    await click(CLIENT, "Мои заказы")
+    await click(CLIENT, "Отменить №3")
+    r = await click(CLIENT, "Да, отменить")
+    o = await db.fetch_one("SELECT status FROM orders WHERE id=3")
+    ok(o["status"] == "cancelled", "клиент сам отменил неоплаченный заказ")
+    ok(any(m["to"] == ADMIN and "client:" in m["text"] and "Отменён" in m["text"] for m in r), "админ узнал об отмене клиентом")
+
+    print("8. Админка: цены, правила, статистика, рассылка")
+    r = await say(ADMIN, "/price_set 2 800")
+    ok("800" in last_text(r), "/price_set меняет цену без правки кода")
+    await say(ADMIN, "/rule_add 0 holiday percent 20 Праздничный день тест")
+    rules = await db.fetch_all("SELECT * FROM price_rules WHERE active=1")
+    ok(len(rules) == 6, "/rule_add добавил правило")
+    r = await say(ADMIN, "/rule_add 0 nonsense fixed 10 Плохое")
+    ok("Условия:" in last_text(r), "неизвестное условие отклоняется")
+    await say(ADMIN, "/rule_del 6")
+    ok(len(await db.fetch_all("SELECT * FROM price_rules WHERE active=1")) == 5, "/rule_del отключил правило")
+    r = await say(ADMIN, "/stats")
+    ok("Заявок: 3" in last_text(r) and "Отмен: 2" in last_text(r), "/stats: " + last_text(r).replace("\n", " | ")[:160])
+    r = await say(ADMIN, "/orders")
+    ok("Активных заказов нет" in last_text(r) or "№" in last_text(r), "/orders работает")
+    r = await say(ADMIN, "/broadcast Скидка 10% на выгул")
+    ok("получателей с согласием: 0" in last_text(r), "рассылка без согласий уходит 0 получателям")
+    await say(CLIENT, "/profile")
+    await click(CLIENT, "Получать рассылки")
+    r = await say(ADMIN, "/broadcast Скидка 10% на выгул")
+    ok("доставлено 1" in last_text(r), "после согласия рассылка доходит")
+    ok(any(m["to"] == CLIENT and "Скидка 10%" in m["text"] for m in SENT), "клиент получил рассылку")
+    log_n = (await db.fetch_one("SELECT COUNT(*) n FROM admin_log"))["n"]
+    ok(log_n >= 15, f"действия админа в admin_log ({log_n} записей)")
+    r = await say(CLIENT, "/orders")
+    ok("Что нужно вашему питомцу" in last_text(r), "обычному клиенту админ-команды недоступны")
+
+    bad = await db.fetch_all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT IN "
+                             "('schema_version','holidays','sqlite_sequence') AND name NOT LIKE 'sqlite_%'")
+    for t in bad:
+        cols = [c["name"] for c in await db.fetch_all(f"PRAGMA table_info({t['name']})")]
+        ok("updated_at" in cols, f"updated_at есть в {t['name']}")
+    print("\nВСЕ ПРОВЕРКИ ПРОЙДЕНЫ")
+
+
+asyncio.run(main())
