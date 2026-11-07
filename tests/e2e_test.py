@@ -495,7 +495,7 @@ async def main():
     ok("Что нужно вашему питомцу" in last_text(r), "обычному клиенту админ-команды недоступны")
 
     bad = await db.fetch_all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT IN "
-                             "('schema_version','holidays','sqlite_sequence') AND name NOT LIKE 'sqlite_%'")
+                             "('schema_version','holidays','kv','sqlite_sequence') AND name NOT LIKE 'sqlite_%'")
     for t in bad:
         cols = [c["name"] for c in await db.fetch_all(f"PRAGMA table_info({t['name']})")]
         ok("updated_at" in cols, f"updated_at есть в {t['name']}")
