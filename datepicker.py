@@ -18,6 +18,9 @@ from aiogram.types import InlineKeyboardButton as Btn, InlineKeyboardMarkup
 
 from config import config
 
+# Заказы принимаем на время с 06:00 до 22:00 включительно (решение владельца) — и кнопками, и текстом.
+WORK_FROM = 6
+WORK_TO = 22
 MIN_AHEAD = timedelta(minutes=30)
 MAX_AHEAD = timedelta(days=366)
 QUARTERS = (0, 15, 30, 45)
@@ -34,8 +37,27 @@ def _dead(text: str = BLANK) -> Btn:
     return Btn(text=text, callback_data=_NOOP)
 
 
+def in_work_hours(dt: datetime) -> bool:
+    """С WORK_FROM:00 до WORK_TO:00 включительно (в 22:00 — можно, в 22:15 — уже нет)."""
+    sec = dt.hour * 3600 + dt.minute * 60 + dt.second
+    return WORK_FROM * 3600 <= sec <= WORK_TO * 3600 and not (sec == WORK_TO * 3600 and dt.microsecond)
+
+
+def first_allowed(dt: datetime) -> datetime:
+    """Самое раннее время в рабочие часы не раньше dt: ночь переносится на утро."""
+    if in_work_hours(dt):
+        return dt
+    morning = dt.replace(hour=WORK_FROM, minute=0, second=0, microsecond=0)
+    return morning if dt < morning else morning + timedelta(days=1)
+
+
 def _slot_ok(dt: datetime, now: datetime, min_ahead: timedelta = MIN_AHEAD) -> bool:
-    return now + min_ahead <= dt <= now + MAX_AHEAD
+    return in_work_hours(dt) and now + min_ahead <= dt <= now + MAX_AHEAD
+
+
+def allowed(dt: datetime, now: datetime, min_ahead: timedelta = MIN_AHEAD) -> bool:
+    """То же правило, что у кнопок календаря: рабочие часы, запас до начала, не дальше года."""
+    return _slot_ok(dt, now, min_ahead)
 
 
 def _at(day: date, hour: int, minute: int = 0) -> datetime:

@@ -336,7 +336,9 @@ async def main():
 
     print("3. Выгул 60 мин ночью: расчёт цены")
     await svc(CLIENT, "Выгул 60")
-    r = await say(CLIENT, "послезавтра 22:30")
+    r = await say(CLIENT, "послезавтра 23:30")
+    ok("с 06:00 до 22:00" in last_text(r), "ночью (вне 06:00–22:00) заказ не принимается")
+    r = await say(CLIENT, "послезавтра 06:30")  # рабочие часы, но ещё «ночной» тариф (до 07:00)
     txt = last_text(r)
     # (700 + 100 за крупную собаку) × 1.3 ночью = 1040
     ok("1 040 ₽" in txt and "Крупная собака" in txt and "Ночное" in txt, "разбивка: база + L + ночь = 1 040 ₽")
@@ -391,7 +393,7 @@ async def main():
     await db.execute("UPDATE reminders SET send_at=datetime('now','-1 minute')")
     await process_due_reminders(bot)
     ok(any(m["to"] == EXEC and "Через 2 часа" in m["text"] for m in SENT), "исполнитель получил напоминание за 2 ч")
-    ok(any(m["to"] == CLIENT and "завтра в 22:30" in m["text"] for m in SENT), "клиент получил напоминание за 24 ч")
+    ok(any(m["to"] == CLIENT and "завтра в 06:30" in m["text"] for m in SENT), "клиент получил напоминание за 24 ч")
 
     print("5. Исполнитель ведёт заказ, клиент оставляет отзыв")
     await click(EXEC, "Начал")
@@ -607,8 +609,9 @@ async def main():
     ok("не раньше чем за сутки" in last_text(r) and "Проверьте заказ" not in last_text(r), "выгул через 2 часа не принимается")
     r = await say(CLIENT, _fmt(_now + timedelta(hours=23)))
     ok("не раньше чем за сутки" in last_text(r), "выгул через 23 часа не принимается")
-    r = await say(CLIENT, _fmt(_now + timedelta(hours=25)))
-    ok("Проверьте заказ" in last_text(r), "выгул через 25 часов принимается")
+    import datepicker as _dp
+    r = await say(CLIENT, _fmt(_dp.first_allowed(_now + timedelta(hours=25))))  # ночью — ближайшее рабочее время
+    ok("Проверьте заказ" in last_text(r), "выгул через 25 часов (в рабочие часы) принимается")
     await click(CLIENT, "Отмена")
     for name in ("Зооняня приходящая", "Передержка в частном доме"):  # другие услуги — то же правило
         await say(CLIENT, "/menu")
@@ -622,10 +625,10 @@ async def main():
     r = await svc(CLIENT, "Зоотакси")
     r = await taxi_pre(CLIENT, "Рекс")
     ok("за сутки" not in last_text(r) and "машину" in last_text(r), "у такси про сутки не говорится")
-    if _now.hour < 23:
-        ok(today_btn in str(_buttons(r[-1])), "в календаре такси сегодня доступно")
-    r = await say(CLIENT, _fmt(_now + timedelta(hours=1)))
-    ok(any(_texts.ASK_POINT_A in m["text"] for m in r), "такси через час принимается")
+    if _now + timedelta(minutes=30) <= _now.replace(hour=_dp.WORK_TO, minute=0, second=0, microsecond=0):
+        ok(today_btn in str(_buttons(r[-1])), "в календаре такси сегодня доступно")  # пока не поздно (до 22:00)
+    r = await say(CLIENT, _fmt(_dp.first_allowed(_now + timedelta(hours=1))))  # ночью — ближайшее рабочее время
+    ok(any(_texts.ASK_POINT_A in m["text"] for m in r), "такси через час (в рабочие часы) принимается")
     r = await say(CLIENT, "01.01.2020 10:00")
     await click(CLIENT, "Отмена")
 
@@ -635,7 +638,7 @@ async def main():
     await say(CLIENT, "/menu")
     await click(CLIENT, "Заказать")
     await svc(CLIENT, "Выгул 60")
-    r = await say(CLIENT, f"{day} 22:30")
+    r = await say(CLIENT, f"{day} 06:30")  # рабочие часы, «ночной» тариф до 07:00
     t = last_text(r)
     ok("Ориентировочная стоимость: от 1 170 ₽ до 1 350 ₽" in t, "цена показана диапазоном: от расчёта до +15 %")
     ok("Итого" not in t, "точный «Итого» на экране заказа не показывается")

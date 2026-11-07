@@ -84,11 +84,14 @@ class Buttons(unittest.TestCase):
 
 
 class Hours(unittest.TestCase):
-    def test_future_day_has_all_24_hours(self):
+    def test_future_day_has_working_hours_6_to_22(self):
+        # заказы принимаем на время с 06:00 до 22:00 (решение владельца)
         d = [x for x in datas(dp.hours_markup(date(2026, 11, 8), NOW)) if x.startswith("cal:h:")]
-        self.assertEqual(len(d), 24)
-        self.assertIn("cal:h:2026-11-08:00", d)
-        self.assertIn("cal:h:2026-11-08:23", d)
+        self.assertEqual(len(d), 17)
+        self.assertIn("cal:h:2026-11-08:06", d)
+        self.assertIn("cal:h:2026-11-08:22", d)
+        for night in ("00", "05", "23"):
+            self.assertNotIn(f"cal:h:2026-11-08:{night}", d)
 
     def test_today_hides_hours_that_are_too_soon(self):
         # сейчас 15:46, нужен запас 30 минут → самый ранний слот 16:16, значит час 16 ещё можно (16:30)
@@ -151,7 +154,9 @@ class LeadTime(unittest.TestCase):
         self.assertNotIn("cal:h:2026-11-08:15", h)
         self.assertIn("cal:h:2026-11-08:16", h)
         self.assertNotIn("cal:h:2026-11-08:00", h)
-        self.assertIn("cal:h:2026-11-09:00", datas(dp.hours_markup(date(2026, 11, 9), NOW, DAY)))
+        after = datas(dp.hours_markup(date(2026, 11, 9), NOW, DAY))
+        self.assertIn("cal:h:2026-11-09:06", after)      # послезавтра — с начала рабочего дня
+        self.assertNotIn("cal:h:2026-11-09:00", after)   # ночью не принимаем
 
     def test_minutes_tomorrow(self):
         late = datetime(2026, 11, 7, 15, 20, tzinfo=config.tz)
