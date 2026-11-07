@@ -20,16 +20,15 @@ for suffix in ("", "-wal", "-shm"):
     except FileNotFoundError:
         pass
 
-from aiogram import Bot, Dispatcher, F  # noqa: E402
+from aiogram import Bot  # noqa: E402
 from aiogram.client.session.base import BaseSession  # noqa: E402
-from aiogram.fsm.storage.memory import MemoryStorage  # noqa: E402
-from aiogram.methods import SendMessage  # noqa: E402
+from aiogram.exceptions import TelegramForbiddenError  # noqa: E402
+from aiogram.methods import AnswerCallbackQuery, SendMessage  # noqa: E402
 from aiogram.types import Chat, Message  # noqa: E402
 
 import db  # noqa: E402
 import geo  # noqa: E402
-from bot import ConsentMiddleware  # noqa: E402
-from handlers import admin, client, executor  # noqa: E402
+from bot import build_dispatcher  # noqa: E402
 from scheduler import process_due_reminders  # noqa: E402
 
 CLIENT, ADMIN, EXEC = 1000, 111, 2000
@@ -54,6 +53,8 @@ async def fake_search(text):
 
 geo.search = fake_search
 SENT: list[dict] = []  # всё, что бот «отправил»
+BLOCKED: set[int] = set()  # кто «заблокировал бота»
+ANSWERS: list[str] = []  # всплывающие ответы на кнопки (answerCallbackQuery)
 
 
 class FakeSession(BaseSession):
@@ -62,21 +63,19 @@ class FakeSession(BaseSession):
 
     async def make_request(self, bot, method, timeout=None):
         if isinstance(method, SendMessage):
+            if method.chat_id in BLOCKED:
+                raise TelegramForbiddenError(method=method, message="Forbidden: bot was blocked by the user")
             markup = method.reply_markup
             SENT.append({"to": method.chat_id, "text": method.text, "markup": markup})
             return Message(message_id=len(SENT), date=datetime.now(), chat=Chat(id=method.chat_id, type="private"),
                            text=method.text)
+        if isinstance(method, AnswerCallbackQuery) and method.text:
+            ANSWERS.append(method.text)
         return True
 
 
 bot = Bot("1:x", session=FakeSession())
-dp = Dispatcher(storage=MemoryStorage())
-dp.message.filter(F.chat.type == "private")
-consent = ConsentMiddleware()
-dp.message.outer_middleware(consent)
-dp.callback_query.outer_middleware(consent)
-for r in (admin.router, executor.router, client.router):
-    dp.include_router(r)
+dp = build_dispatcher()
 
 _uid = 0
 
@@ -129,6 +128,18 @@ async def click(uid: int, label: str) -> list[dict]:
                 await dp.feed_raw_update(bot, {"update_id": _uid, "callback_query": cb})
                 return SENT[start:]
     raise AssertionError(f"Кнопка «{label}» не найдена у {uid}")
+
+
+async def raw_callback(uid: int, data: str) -> list[dict]:
+    """Нажатие кнопки с произвольным callback_data (в том числе «битым»)."""
+    global _uid
+    _uid += 1
+    start = len(SENT)
+    cb = {"id": str(_uid), "from": _user(uid), "chat_instance": "ci", "data": data,
+          "message": {"message_id": _uid, "date": int(time.time()), "chat": {"id": uid, "type": "private"},
+                      "from": {"id": 999, "is_bot": True, "first_name": "bot"}, "text": "x"}}
+    await dp.feed_raw_update(bot, {"update_id": _uid, "callback_query": cb})
+    return SENT[start:]
 
 
 def last_text(msgs, to=None):
@@ -387,6 +398,36 @@ async def main():
     for t in bad:
         cols = [c["name"] for c in await db.fetch_all(f"PRAGMA table_info({t['name']})")]
         ok("updated_at" in cols, f"updated_at есть в {t['name']}")
+    print("9. Устойчивость к «битым» кнопкам")
+    for bad_data in ("svc:abc", "ex:x", "ex:a:b:c", "cancel:x", "qty:"):
+        n = len(ANSWERS)
+        await raw_callback(CLIENT, bad_data)
+        ok(len(ANSWERS) > n and ("не так" in ANSWERS[-1] or "устарела" in ANSWERS[-1]), f"битая кнопка «{bad_data}» не оставляет клиента без ответа")
+
+    print("10. Клиент заблокировал бота: админ должен об этом узнать")
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    await click(CLIENT, "Выгул 30")
+    await say(CLIENT, future.replace(future[-5:], "16:00"))
+    await click(CLIENT, "Подтвердить")
+    n = (await db.fetch_one("SELECT MAX(id) n FROM orders"))["n"]
+    BLOCKED.add(CLIENT)
+    r = await say(ADMIN, f"/confirm {n}")
+    ok("не получил" in last_text(r, ADMIN), "админ видит: клиент не получил уведомление о статусе")
+    r = await say(ADMIN, f"/send_payment {n} https://pay.example/blocked")
+    ok("не получил" in last_text(r, ADMIN), "админ видит: клиент не получил ссылку на оплату")
+    BLOCKED.discard(CLIENT)
+
+    print("11. Двойное нажатие «Подтвердить» не создаёт два заказа")
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    await click(CLIENT, "Выгул 30")
+    await say(CLIENT, future.replace(future[-5:], "17:00"))
+    before = (await db.fetch_one("SELECT COUNT(*) n FROM orders"))["n"]
+    await asyncio.gather(click(CLIENT, "Подтвердить"), click(CLIENT, "Подтвердить"))
+    after = (await db.fetch_one("SELECT COUNT(*) n FROM orders"))["n"]
+    ok(after == before + 1, f"двойной тап: создан один заказ (было {before}, стало {after})")
+
     print("\nВСЕ ПРОВЕРКИ ПРОЙДЕНЫ")
 
 

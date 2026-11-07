@@ -3,8 +3,8 @@ import asyncio
 import logging
 
 from aiogram import BaseMiddleware, Bot, Dispatcher, F
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import BotCommand, BotCommandScopeChat, CallbackQuery, Message
+from aiogram.fsm.storage.memory import MemoryStorage, SimpleEventIsolation
+from aiogram.types import BotCommand, BotCommandScopeChat, CallbackQuery, ErrorEvent, Message
 
 import db
 import keyboards as kb
@@ -47,6 +47,20 @@ class ConsentMiddleware(BaseMiddleware):
         await answer_to.answer(texts.CONSENT_TEXT, reply_markup=kb.consent(config.policy_url))
 
 
+async def on_error(event: ErrorEvent) -> bool:
+    """Любая необработанная ошибка в хендлере: пишем в журнал и отвечаем клиенту, чтобы кнопка не «висела»."""
+    log.error("Необработанная ошибка в обработчике", exc_info=event.exception)
+    upd = event.update
+    try:
+        if upd.callback_query:
+            await upd.callback_query.answer(texts.OOPS, show_alert=True)
+        elif upd.message:
+            await upd.message.answer(texts.OOPS)
+    except Exception:  # ответить не вышло (клиент заблокировал бота) — ошибка уже в журнале
+        log.warning("Не удалось сообщить клиенту об ошибке")
+    return True
+
+
 async def set_commands(bot: Bot) -> None:
     """Клиентам показываем 3 команды, админам — ещё и /admin. Остальные админ-команды скрыты."""
     await bot.set_my_commands([
@@ -74,23 +88,30 @@ async def set_profile_texts(bot: Bot) -> None:
         log.warning("Не удалось задать описание бота: %s", e)
 
 
+def build_dispatcher() -> Dispatcher:
+    """Диспетчер со всеми настройками. Тесты строят его же, поэтому ведут себя как настоящий бот."""
+    # SimpleEventIsolation: события одного пользователя обрабатываются по очереди.
+    # Иначе двойное нажатие «Подтвердить» создаёт два заказа (проверено тестом).
+    dp = Dispatcher(storage=MemoryStorage(), events_isolation=SimpleEventIsolation())
+    dp.message.filter(F.chat.type == "private")
+    consent = ConsentMiddleware()
+    dp.message.outer_middleware(consent)
+    dp.callback_query.outer_middleware(consent)
+    dp.errors.register(on_error)
+    # порядок важен: админ → исполнитель → клиент (у клиента внизу «запасные» обработчики)
+    dp.include_router(admin.router)
+    dp.include_router(executor.router)
+    dp.include_router(client.router)
+    return dp
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     await db.init_db()
 
     bot = Bot(config.bot_token)
-    dp = Dispatcher(storage=MemoryStorage())  # состояния диалогов; при перезапуске клиент начинает с /menu
-    dp.message.filter(F.chat.type == "private")
-
-    consent = ConsentMiddleware()
-    dp.message.outer_middleware(consent)
-    dp.callback_query.outer_middleware(consent)
-
-    # порядок важен: админ → исполнитель → клиент (у клиента внизу «запасные» обработчики)
-    dp.include_router(admin.router)
-    dp.include_router(executor.router)
-    dp.include_router(client.router)
+    dp = build_dispatcher()
 
     scheduler = setup_scheduler(bot)
     scheduler.start()

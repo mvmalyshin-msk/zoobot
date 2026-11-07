@@ -172,16 +172,21 @@ async def change_status(bot: Bot, order_id: int, new: str, actor: str,
             await _transition(conn, order_id, old, new, actor, extra, params)
     except StatusConflict:
         return False, f"Статус заказа №{order_id} уже изменился, проверьте /orders."
-    await _after_transition(bot, order_id, old, new, actor)
+    delivered = await _after_transition(bot, order_id, old, new, actor)
 
     note = ""
     if new == "cancelled" and old in ("paid", "assigned", "in_progress"):
         note = " Заказ был оплачен — при необходимости оформите возврат: /refund " + str(order_id)
+    if not delivered:
+        note += _NOT_DELIVERED.format(phone=o["client_phone"] or "—")
     return True, f"Заказ №{order_id}: {texts.STATUS_LABELS[new]}.{note}"
 
 
-async def _after_transition(bot: Bot, order_id: int, old: str, new: str, actor: str) -> None:
-    """Напоминания и уведомления после успешной смены статуса."""
+_NOT_DELIVERED = "\n⚠️ Клиент не получил уведомление (заблокировал бота) — свяжитесь с ним по телефону {phone}."
+
+
+async def _after_transition(bot: Bot, order_id: int, old: str, new: str, actor: str) -> bool:
+    """Напоминания и уведомления после успешной смены статуса. True — клиент получил уведомление."""
     o = await get_order_full(order_id)
 
     if new == "paid":
@@ -193,12 +198,13 @@ async def _after_transition(bot: Bot, order_id: int, old: str, new: str, actor: 
     if new == "completed":
         await notify(bot, o["client_tg_id"], text)
         text, markup = texts.REVIEW_ASK.format(id=order_id), kb.rating(order_id)
-    await notify(bot, o["client_tg_id"], text, markup)
+    delivered = await notify(bot, o["client_tg_id"], text, markup)
 
     # --- админам: если статус поменял не админ (клиент отменил, исполнитель начал/завершил) ---
     if not actor.startswith("admin"):
         await notify_admins(bot, f"ℹ️ Заказ №{order_id}: {texts.STATUS_LABELS[old]} → "
                                  f"{texts.STATUS_LABELS[new]} ({actor})")
+    return delivered
 
 
 # ---------- Оплата ----------
@@ -224,9 +230,12 @@ async def send_payment(bot: Bot, order_id: int, link: str, actor: str) -> tuple[
         (link, order_id),
     )
     await schedule_reminder(order_id, "pay_3h", now_utc() + timedelta(hours=3))
-    await notify(bot, o["client_tg_id"],
-                 f"💳 Ссылка для оплаты заказа №{order_id} на {rub(o['price_total'])}:",
-                 kb.pay_button(link))
+    delivered = await notify(bot, o["client_tg_id"],
+                             f"💳 Ссылка для оплаты заказа №{order_id} на {rub(o['price_total'])}:",
+                             kb.pay_button(link))
+    if not delivered:
+        return True, (f"Ссылка по заказу №{order_id} сохранена, но клиент её не получил (заблокировал бота)."
+                      + _NOT_DELIVERED.format(phone=o["client_phone"] or "—") + f"\nСсылка: {link}")
     return True, f"Ссылка по заказу №{order_id} отправлена клиенту. Напомним ему через 3 часа, если не оплатит."
 
 
