@@ -121,6 +121,7 @@ def _make_dispatcher() -> Dispatcher:
     # Иначе двойное нажатие «Подтвердить» создаёт два заказа (проверено тестом).
     dp = Dispatcher(storage=MemoryStorage(), events_isolation=SimpleEventIsolation())
     dp.message.filter(F.chat.type == "private")
+    dp.update.outer_middleware(webchat.tg_origin_middleware)  # что копировать в чат на сайте, см. WebRouterSession
     consent = ConsentMiddleware()
     dp.message.outer_middleware(consent)
     dp.callback_query.outer_middleware(consent)
