@@ -19,6 +19,9 @@ class Config:
     admin_ids: frozenset = frozenset(_admin_ids())
     db_path: str = os.getenv("DB_PATH", "zoobot.db")
     policy_url: str = os.getenv("POLICY_URL", "https://example.com/privacy")
+    # Публичный адрес сайта бота (страница карты). Railway подставляет RAILWAY_PUBLIC_DOMAIN сам, когда у сервиса есть домен.
+    webapp_url: str = os.getenv("WEBAPP_URL") or (
+        f"https://{os.environ['RAILWAY_PUBLIC_DOMAIN']}" if os.getenv("RAILWAY_PUBLIC_DOMAIN") else "")
     tz: ZoneInfo = ZoneInfo(os.getenv("TIMEZONE", "Europe/Moscow"))
 
 

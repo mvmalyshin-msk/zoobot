@@ -203,7 +203,7 @@ async def _save_phone(m: Message, state: FSMContext, raw: str) -> None:
         return
     await state.update_data(phone=phone)
     await state.set_state(Profile.address)
-    await m.answer(texts.ASK_ADDRESS, reply_markup=kb.address_ask())
+    await m.answer(texts.ASK_ADDRESS + texts.MAP_HINT * bool(config.webapp_url), reply_markup=kb.address_ask())
 
 
 # =====================================================================
@@ -301,6 +301,23 @@ async def addr_location(m: Message, state: FSMContext) -> None:
                             addr_fails=0)
     await state.set_state(Addr.pick)
     await m.answer(texts.ADDR_PICK, reply_markup=kb.address_options([place.label], False))
+
+
+@router.message(StateFilter(Profile.address, Order.point_a, Order.point_b, Order.edit_address, Addr.pick),
+                F.web_app_data)
+async def addr_webapp(m: Message, state: FSMContext) -> None:
+    """Адрес выбран в мини-приложении с картой. Координаты и текст перепроверяем, как и любой другой ввод."""
+    cur = await state.get_state()
+    data = await state.get_data()
+    target = ADDR_STATES.get(cur) or data.get("addr_target")
+    pick = geo.parse_pick(m.web_app_data.data)
+    if not pick:
+        await m.answer(texts.ADDR_WEB_BAD, reply_markup=kb.address_ask())
+        return
+    place = await geo.reverse(pick["lat"], pick["lon"])  # район и МКАД; если карта молчит — по координатам
+    outside = place.outside_mkad if place else geo.outside_by_coords(pick["lat"], pick["lon"])
+    await _address_done(m, state, target, pick["label"][:200], place.district if place else None, outside,
+                        True, m.from_user)
 
 
 async def _address_done(msg: Message, state: FSMContext, target: str, label: str, district: str | None,

@@ -1,6 +1,7 @@
 """Точка входа: python bot.py"""
 import asyncio
 import logging
+import os
 
 from aiogram import BaseMiddleware, Bot, Dispatcher, F
 from aiogram.fsm.storage.memory import MemoryStorage, SimpleEventIsolation
@@ -10,6 +11,7 @@ import db
 import keyboards as kb
 import repo
 import texts
+import webserver
 from config import config
 from handlers import admin, client, executor
 from scheduler import setup_scheduler
@@ -113,6 +115,9 @@ async def main() -> None:
     bot = Bot(config.bot_token)
     dp = build_dispatcher()
 
+    web_runner = None
+    if os.getenv("PORT"):  # Railway задаёт PORT: поднимаем страницу карты рядом с ботом
+        web_runner = await webserver.start(int(os.environ["PORT"]))
     scheduler = setup_scheduler(bot)
     scheduler.start()
     await set_commands(bot)
@@ -122,6 +127,8 @@ async def main() -> None:
         await dp.start_polling(bot)
     finally:
         scheduler.shutdown(wait=False)
+        if web_runner:
+            await web_runner.cleanup()
         await bot.session.close()
 
 

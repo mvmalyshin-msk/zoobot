@@ -197,8 +197,8 @@ async def smart_step(rnd, uid):
 
 def rand_update_kind(rnd):
     garbage = 0 if os.environ.get("FUZZ_REAL_ONLY") else 8  # 0: нажимаем только настоящие кнопки
-    return rnd.choices(["smart", "text", "cmd", "btn", "garbage", "sticker", "photo", "contact", "location", "voice", "admin"],
-                       [60, 12, 3, 12, garbage, 2, 2, 2, 2, 1, 8])[0]
+    return rnd.choices(["smart", "text", "cmd", "btn", "garbage", "sticker", "photo", "contact", "location", "voice", "admin", "webapp"],
+                       [60, 12, 3, 12, garbage, 2, 2, 2, 2, 1, 8, 4])[0]
 
 
 async def step(rnd, uid):
@@ -227,6 +227,12 @@ async def step(rnd, uid):
     elif kind == "contact":
         ph = rnd.choice(["79001234567", "abc", "", "+7", "1" * 30, "8 (900) 123-45-67"])
         await feed({"message": _msg(uid, contact={"phone_number": ph, "first_name": "x", "user_id": uid})})
+    elif kind == "webapp":
+        payload = rnd.choice([
+            '{"lat":55.9,"lon":37.3,"label":"Химки, Ленина 5","flat":"12"}', '{"lat":55.97,"lon":37.2,"label":"Зеленоград 1105"}',
+            '{"lat":0,"lon":0,"label":"x"}', "not json", "[]", "", "{" * 500, '{"lat":"a","lon":null,"label":5}',
+            '{"lat":55.9,"lon":37.3,"label":"' + "я" * 3000 + '"}', '{"lat":1e999,"lon":1,"label":"ул Ленина 5"}'])
+        await feed({"message": _msg(uid, web_app_data={"data": payload, "button_text": "x"})})
     elif kind == "location":
         await feed({"message": _msg(uid, location={"latitude": rnd.choice([55.7, 0.0, 89.9, -33.0, 55.97]),
                                                    "longitude": rnd.choice([37.6, 0.0, 179.0, 151.0, 37.4])})})

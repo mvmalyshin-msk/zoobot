@@ -4,6 +4,7 @@
     BOT_TOKEN=1:x ADMIN_IDS=111 DB_PATH=/tmp/e2e.db python tests/e2e_test.py
 """
 import asyncio
+import json
 import os
 import sys
 import time
@@ -51,7 +52,11 @@ async def fake_search(text):
     return []
 
 
-geo.search = fake_search
+async def fake_reverse(lat, lon):
+    return None  # карта «не отвечает» на обратный поиск: район и МКАД определяются по координатам
+
+
+geo.search, geo.reverse = fake_search, fake_reverse
 SENT: list[dict] = []  # всё, что бот «отправил»
 BLOCKED: set[int] = set()  # кто «заблокировал бота»
 ANSWERS: list[str] = []  # всплывающие ответы на кнопки (answerCallbackQuery)
@@ -139,6 +144,17 @@ async def raw_callback(uid: int, data: str) -> list[dict]:
           "message": {"message_id": _uid, "date": int(time.time()), "chat": {"id": uid, "type": "private"},
                       "from": {"id": 999, "is_bot": True, "first_name": "bot"}, "text": "x"}}
     await dp.feed_raw_update(bot, {"update_id": _uid, "callback_query": cb})
+    return SENT[start:]
+
+
+async def web_app_pick(uid: int, payload: dict) -> list[dict]:
+    """Клиент выбрал адрес в мини-приложении с картой (Telegram присылает web_app_data)."""
+    global _uid
+    _uid += 1
+    start = len(SENT)
+    msg = {"message_id": _uid, "date": int(time.time()), "chat": {"id": uid, "type": "private"},
+           "from": _user(uid), "web_app_data": {"data": json.dumps(payload), "button_text": "Найти на карте"}}
+    await dp.feed_raw_update(bot, {"update_id": _uid, "message": msg})
     return SENT[start:]
 
 
@@ -436,6 +452,26 @@ async def main():
     await asyncio.gather(click(CLIENT, "Подтвердить"), click(CLIENT, "Подтвердить"))
     after = (await db.fetch_one("SELECT COUNT(*) n FROM orders"))["n"]
     ok(after == before + 1, f"двойной тап: создан один заказ (было {before}, стало {after})")
+
+    print("12. Адрес из мини-приложения с картой")
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    await click(CLIENT, "Выгул 30")
+    r = await say(CLIENT, future.replace(future[-5:], "18:00"))
+    await click(CLIENT, "Изменить адрес")
+    r = await web_app_pick(CLIENT, {"lat": 59.9, "lon": 30.3, "label": "Невский проспект, 1", "flat": ""})
+    ok("не получилось" in last_text(r).lower(), "точка вне Москвы и области отклоняется")
+    r = await web_app_pick(CLIENT, {"lat": 55.97, "lon": 37.2, "label": "ывфвф 5", "flat": ""})
+    ok("не получилось" in last_text(r).lower(), "мусорный текст адреса из карты отклоняется")
+    r = await web_app_pick(CLIENT, {"lat": 55.97, "lon": 37.2, "label": "Зеленоград, корпус 1105", "flat": "12"})
+    t = last_text(r)
+    ok("Адрес: Зеленоград, корпус 1105, кв. 12" in t, "адрес с карты и квартира попали на экран заказа")
+    ok("За МКАД: да" in str(_buttons(r[-1])), "«за МКАД» определено по координатам точки")
+    r = await click(CLIENT, "Подтвердить")
+    o = await db.fetch_one("SELECT * FROM orders ORDER BY id DESC LIMIT 1")
+    ok(o["address_unverified"] == 0 and o["outside_mkad"] == 1, "заказ: адрес подтверждён картой, за МКАД")
+    r = await web_app_pick(CLIENT, {"lat": 55.97, "lon": 37.2, "label": "Зеленоград 1", "flat": ""})
+    ok(not any("Проверьте заказ" in m["text"] for m in r), "картой вне диалога адреса ничего не меняется")
 
     print("\nВСЕ ПРОВЕРКИ ПРОЙДЕНЫ")
 
