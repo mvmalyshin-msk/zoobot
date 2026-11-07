@@ -152,6 +152,25 @@ class PhoneRulesTest(unittest.TestCase):
             self.assertEqual(row["phone_verified"], "telegram")
         run(t)
 
+    def test_typed_number_while_waiting_for_link_gets_the_button_hint(self):
+        """Ждём номер по ссылке, а клиент печатает его текстом: бот объясняет кнопку, а не молчит и не пишет общую фразу."""
+        async def t(bot):
+            web = -6108
+            await new_client(bot, web, Profile.phone)
+            await db.execute("UPDATE users SET phone=?, phone_verified=NULL WHERE tg_id=?", ("+79005550000", web))
+            tg = 6109
+            key = await new_client(bot, tg, Profile.phone)
+            token = (await webchat.make_tg_link(web)).split("wl_", 1)[1]
+            await feed(bot, tg, text="/start wl_" + token,
+                       entities=[{"type": "bot_command", "offset": 0, "length": 6}])
+            TG.clear()
+            await feed(bot, tg, text="+7 900 999-88-77")
+            from handlers.client import LinkPhone
+            self.assertEqual(await state_of(key), LinkPhone.wait.state)
+            self.assertTrue(any(texts.PHONE_ONLY_BUTTON in x for x in sent_texts()), sent_texts())
+            self.assertNotEqual((await user_row(web))["phone_verified"], "telegram")
+        run(t)
+
 
 class SiteLoginTest(unittest.TestCase):
     def test_telegram_client_gets_one_time_site_button(self):
