@@ -46,6 +46,19 @@ async def events_text(uid):
     return " ".join(r["payload"] for r in rows)
 
 
+# Настоящий telegram-web-app.js создаёт Telegram.WebApp в ЛЮБОМ браузере: вне Telegram platform="unknown",
+# а sendData ничего не делает. Без этой подмены в песочнице скрипт не грузится и баг не виден.
+TG_OUTSIDE = ("window.Telegram={WebApp:{platform:'unknown',initData:'',version:'6.0',"
+              "ready:function(){},expand:function(){},sendData:function(){window.__sentToTelegram=true}}};")
+TG_INSIDE = ("window.Telegram={WebApp:{platform:'ios',initData:'',version:'7.0',"
+             "ready:function(){},expand:function(){},sendData:function(d){window.__sentToTelegram=d}}};")
+TG_JS = "https://telegram.org/js/telegram-web-app.js"
+
+
+async def _fake_tg(ctx, body):
+    await ctx.route(TG_JS, lambda route: route.fulfill(status=200, content_type="application/javascript", body=body))
+
+
 async def main():
     await db.init_db()
     bot = Bot("1:x", session=webchat.WebRouterSession(Inner()))
@@ -60,6 +73,7 @@ async def main():
         br = await p.chromium.launch()
         ctx = await br.new_context(viewport={"width": 390, "height": 780}, geolocation={"latitude": 55.9, "longitude": 37.4},
                                    permissions=["geolocation"])
+        await _fake_tg(ctx, TG_OUTSIDE)
         page = await ctx.new_page()
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
@@ -78,6 +92,12 @@ async def main():
 
         await page.click("text=🗺 Найти на карте")
         await page.wait_for_url(base + "/", timeout=8000)
+        rib = await page.evaluate("""() => { const r = document.querySelector('.role-ribbon'); if (!r) return null;
+            const b = r.getBoundingClientRect(); const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+            return {h: b.height, top: b.top, visible: !!top && (top === r || r.contains(top))}; }""")
+        check(bool(rib) and rib["visible"] and rib["h"] > 0 and rib["top"] >= 0, f"синяя лента на карте видна сверху: {rib}")
+        over = await page.evaluate("() => document.documentElement.scrollHeight - window.innerHeight")
+        check(over <= 1, f"карта помещается в экран, без прокрутки страницы (лишние {over}px)")
         await page.evaluate("() => window.__test.setPoint(55.9, 37.4, '', null)")
         await page.fill("#label", "Химки, Железнодорожная, 33")
         await page.click("#ok")
@@ -85,6 +105,19 @@ async def main():
         await page.wait_for_timeout(1500)
         check("🗺 Адрес выбран на карте" in await events_text(uid), "адрес с карты вернулся в чат")
         check(not errors, "в консоли нет ошибок JS: " + "; ".join(errors))
+
+        # внутри Telegram (мини-приложение с кнопки) адрес по-прежнему уходит через sendData, а не на сайт
+        ctx2 = await br.new_context(viewport={"width": 390, "height": 780})
+        await _fake_tg(ctx2, TG_INSIDE)
+        page2 = await ctx2.new_page()
+        await page2.goto(base + "/")
+        await page2.evaluate("() => window.__test.setPoint(55.9, 37.4, '', null)")
+        await page2.fill("#label", "Химки, Железнодорожная, 33")
+        await page2.click("#ok")
+        await page2.wait_for_timeout(800)
+        sent = await page2.evaluate("() => window.__sentToTelegram || null")
+        check(bool(sent) and "Железнодорожная" in str(sent), "в Telegram адрес уходит через sendData")
+        check(page2.url == base + "/", "в Telegram страница не уходит на сайт")
         await br.close()
     await runner.cleanup()
     print("\nИТОГ: " + ("ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ" if not FAILS else f"НЕ ПРОЙДЕНО: {len(FAILS)}"))

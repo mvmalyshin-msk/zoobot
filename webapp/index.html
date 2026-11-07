@@ -44,8 +44,8 @@
 </style>
 </head>
 <body>
-<div class="role-ribbon" role="banner" style="background:#1d6fd6;color:#fff;font:700 13px/1.3 -apple-system,system-ui,sans-serif;text-align:center;padding:7px 10px">🔵 КЛИЕНТСКОЕ МЕНЮ · Зооконсьерж</div>
 <div id="app">
+<div class="role-ribbon" role="banner" style="flex:none;background:#1d6fd6;color:#fff;font:700 13px/1.3 -apple-system,system-ui,sans-serif;text-align:center;padding:7px 10px">🔵 КЛИЕНТСКОЕ МЕНЮ · Зооконсьерж</div>
   <div id="top">
     <input id="q" type="search" placeholder="Начните вводить адрес: улица, дом" autocomplete="off" enterkeyhint="search">
     <div id="sugg"></div>
@@ -63,7 +63,10 @@
 <script src="vendor/leaflet.js"></script>
 <script>
 (function () {
-  var tg = window.Telegram && window.Telegram.WebApp;
+  // telegram-web-app.js создаёт Telegram.WebApp в ЛЮБОМ браузере; внутри Telegram platform — ios/android/tdesktop…,
+  // снаружи — "unknown". Поэтому смотрим на platform, а не на сам объект, иначе в браузере кнопка «молчит».
+  var tgApi = window.Telegram && window.Telegram.WebApp;
+  var tg = tgApi && tgApi.platform && tgApi.platform !== "unknown" ? tgApi : null;
   if (tg) { tg.ready(); tg.expand(); }
 
   // Москва и Московская область: lon_min, lat_min, lon_max, lat_max (как на сервере)
