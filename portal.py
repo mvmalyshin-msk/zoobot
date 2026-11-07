@@ -62,7 +62,7 @@ def _limit(store: dict, key: str, n: int, window: int) -> bool:
 
 
 async def _admin(request: web.Request) -> int | None:
-    uid = await webchat.session_uid(request)
+    uid = await webchat.session_uid(request, admin=True)
     return uid if uid is not None and uid in config.admin_ids else None
 
 
@@ -160,7 +160,7 @@ def page(title: str, body: str, active: str = "", flash: str | None = None) -> s
     nav = "".join(f'<a href="{href}" class="{"on" if key == active else ""}">{label}</a>' for key, href, label in (
         ("orders", "/portal", "Заявки"), ("clients", "/portal/clients", "Клиенты"),
         ("executors", "/portal/executors", "Исполнители"), ("settings", "/portal/settings", "Вход и почта"),
-        ("bot", "/chat", "Бот")))
+        ("bot", "/portal/bot", "Бот")))
     fl = f'<div class="flash">{_e(flash)}</div>' if flash else ""
     return (f'<!doctype html><html lang="ru"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
@@ -266,17 +266,18 @@ async def post_verify(request: web.Request) -> web.Response:
     _fails.pop(_ip(request), None)
     token = await webchat.new_session(row["tg_id"])
     resp = web.Response(status=303, headers={"Location": "/portal"})
-    webchat._set_cookie(request, resp, token)
+    webchat._set_cookie(request, resp, token, admin=True)
     return resp
 
 
 async def logout(request: web.Request) -> web.Response:
-    token = request.cookies.get(webchat.COOKIE)
+    token = request.cookies.get(webchat.ADMIN_COOKIE)
     if token:
         await db.execute("DELETE FROM web_sessions WHERE token_hash=?", (webchat._hash(token),))
         webchat._linked_cache.clear()
+        webchat._targets_cache.clear()
     resp = web.Response(status=303, headers={"Location": "/portal"})
-    resp.del_cookie(webchat.COOKIE, path="/")
+    resp.del_cookie(webchat.ADMIN_COOKIE, path="/")
     return resp
 
 

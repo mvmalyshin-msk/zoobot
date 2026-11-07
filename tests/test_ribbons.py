@@ -68,7 +68,8 @@ class FormRibbonTest(unittest.TestCase):
 
 
 class ChatRibbonTest(unittest.TestCase):
-    def _page(self, uid_sessions):
+    def _page(self, uid_sessions, admin=False):
+        """admin=True — чат администратора в портале (/portal/bot, админская cookie); иначе клиентский /chat."""
         async def go():
             await db.init_db()
             await db.execute("DELETE FROM web_sessions")
@@ -78,8 +79,8 @@ class ChatRibbonTest(unittest.TestCase):
                 headers = {}
                 if uid_sessions is not None:
                     token = await webchat.new_session(uid_sessions)
-                    headers = {"Cookie": f"{webchat.COOKIE}={token}"}
-                return await (await c.get("/chat", headers=headers)).text()
+                    headers = {"Cookie": f"{webchat.ADMIN_COOKIE if admin else webchat.COOKIE}={token}"}
+                return await (await c.get("/portal/bot" if admin else "/chat", headers=headers)).text()
         return LOOP.run_until_complete(go())
 
     def test_guest_chat_is_blue(self):
@@ -88,13 +89,13 @@ class ChatRibbonTest(unittest.TestCase):
         self.assertNotIn(RED, out)
 
     def test_admin_chat_is_red(self):
-        out = self._page(111)
+        out = self._page(111, admin=True)
         self.assertIn(RED, out)
         self.assertNotIn(BLUE, out)
 
     def test_admin_chat_has_no_client_links(self):
         """Не переплетаем: клиентский «Кабинет» админу не показываем, у клиента он есть."""
-        self.assertNotIn('href="/cabinet"', self._page(111))
+        self.assertNotIn('href="/cabinet"', self._page(111, admin=True))
         self.assertIn('href="/cabinet"', self._page(None))
 
     def test_client_cabinet_is_blue(self):

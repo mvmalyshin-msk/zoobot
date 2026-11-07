@@ -151,7 +151,9 @@ class AdminLoginTest(unittest.TestCase):
             self.assertIn(tok, await page.text())  # GET ничего не сжигает
             r = await c.post("/chat/login", data={"t": tok}, allow_redirects=False)
             self.assertEqual(r.status, 302)
-            self.assertEqual((await history(c))["admin"], True)
+            self.assertEqual(r.headers["Location"], "/portal/bot")  # админ пишет боту из портала, не из клиентского чата
+            self.assertEqual((await (await c.get("/portal/bot/api/history")).json())["admin"], True)
+            self.assertEqual((await c.get("/chat/api/history")).status, 401)  # клиентский чат админом не становится
             again = await c.post("/chat/login", data={"t": tok}, allow_redirects=False)
             self.assertEqual(again.status, 403)
         run(t)
@@ -199,8 +201,8 @@ class RoutingTest(unittest.TestCase):
             await orders.notify(bot, 111, "новая заявка")
             await asyncio.sleep(0.05)
             self.assertEqual(len(TG), 2)
-            texts = [m["text"] for m in (await history(c))["messages"]]
-            self.assertIn("новая заявка", texts)
+            texts = [m["text"] for m in (await (await c.get("/portal/bot/api/history")).json())["messages"]]
+            self.assertIn("новая заявка", texts)  # админский чат с ботом — в портале
             self.assertNotIn("без браузера", texts)
         run(t)
 
