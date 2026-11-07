@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Зоо-консьерж — чат</title>
+<style>
+:root{--bg:#efeae2;--me:#d9fdd3;--bot:#fff;--ink:#111;--mute:#667;--acc:#2a7de1;--bar:#f7f7f7}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1621;--me:#2b5278;--bot:#182533;--ink:#eee;--mute:#8a9;--acc:#6ab3f3;--bar:#17212b}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.35 -apple-system,system-ui,sans-serif;display:flex;flex-direction:column}
+header{background:var(--bar);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #8883}
+header b{font-size:17px}header a{color:var(--acc);text-decoration:none;font-size:14px}
+#log{flex:1;overflow-y:auto;padding:10px 10px 4px;display:flex;flex-direction:column;gap:6px}
+.m{max-width:86%;padding:8px 11px;border-radius:14px;white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere}
+.m.bot{background:var(--bot);align-self:flex-start;border-bottom-left-radius:4px}
+.m.me{background:var(--me);align-self:flex-end;border-bottom-right-radius:4px}
+.m a{color:var(--acc)}
+.kb{display:flex;flex-direction:column;gap:5px;margin-top:8px}
+.kb .r{display:flex;gap:5px}
+.kb button,.kb a.b{flex:1;font:inherit;font-size:15px;padding:9px 6px;border:0;border-radius:9px;background:#8883;color:var(--acc);text-align:center;text-decoration:none;cursor:pointer}
+.kb button:active{opacity:.6}
+#rk{display:none;padding:6px 8px;background:var(--bar);gap:5px;flex-direction:column;border-top:1px solid #8883}
+#rk .r{display:flex;gap:5px}
+#rk button{flex:1;font:inherit;padding:11px 6px;border:0;border-radius:9px;background:#8884;color:var(--ink)}
+form{display:flex;gap:8px;padding:8px;background:var(--bar);padding-bottom:max(8px,env(safe-area-inset-bottom))}
+input{flex:1;font:inherit;font-size:16px;padding:11px 14px;border-radius:22px;border:1px solid #8885;background:var(--bg);color:var(--ink);min-width:0}
+form button{font:inherit;border:0;border-radius:22px;padding:0 18px;background:var(--acc);color:#fff}
+#st{font-size:12px;color:var(--mute);text-align:center;padding:2px}
+</style>
+</head>
+<body>
+<header><b>🐾 Зоо-консьерж</b><span><a id="nt" href="#" hidden>🔔 Уведомления</a> <a id="ad" hidden>админ</a> <a href="/chat/logout">выйти</a></span></header>
+<div id="log" aria-live="polite"></div>
+<div id="st"></div>
+<div id="rk"></div>
+<form id="f" autocomplete="off"><input id="t" placeholder="Сообщение…" enterkeyhint="send" maxlength="1000"><button>➤</button></form>
+<script>
+(function(){
+var log=document.getElementById('log'),rk=document.getElementById('rk'),st=document.getElementById('st'),inp=document.getElementById('t');
+var nodes={},last=0,polling=false,fails=0,initial=true,unread=0,baseTitle=document.title;
+function H(h,o){h=h||{};h['X-Zc']='1';h['Content-Type']='application/json';return h}
+function linkify(el,text){
+  var re=/https?:\/\/[^\s<>"]+/g,i=0,m;
+  while((m=re.exec(text))){
+    el.appendChild(document.createTextNode(text.slice(i,m.index)));
+    var u=m[0].replace(/[.,;:!?)]+$/,'');
+    var a=document.createElement('a');a.href=u;a.target='_blank';a.rel='noopener noreferrer';a.textContent=u;el.appendChild(a);
+    i=m.index+u.length;re.lastIndex=i;
+  }
+  el.appendChild(document.createTextNode(text.slice(i)));
+}
+function keyboard(msg,div){
+  var old=div.querySelector('.kb');if(old)old.remove();
+  if(!msg.inline||!msg.inline.length)return;
+  var kb=document.createElement('div');kb.className='kb';
+  msg.inline.forEach(function(row){
+    var r=document.createElement('div');r.className='r';
+    row.forEach(function(b){
+      var e;
+      if(b.url){e=document.createElement('a');e.className='b';e.href=b.url;e.target='_blank';e.rel='noopener noreferrer'}
+      else{e=document.createElement('button');e.type='button';e.onclick=function(){send({cb:b.cb,mid:msg.mid})}}
+      e.textContent=b.t;r.appendChild(e)});
+    kb.appendChild(r)});
+  div.appendChild(kb);
+}
+function render(msg){
+  var div=nodes[msg.mid];
+  if(!div){div=document.createElement('div');div.className='m '+(msg.who==='me'?'me':'bot');nodes[msg.mid]=div;log.appendChild(div);div._d={}}
+  var d=div._d;for(var k in msg)d[k]=msg[k];
+  var body=div.querySelector('.tx');
+  if(!body){body=document.createElement('span');body.className='tx';div.insertBefore(body,div.firstChild)}
+  body.textContent='';linkify(body,d.text||'');
+  var old=div.querySelector('.fl');if(old)old.remove();
+  if(d.file){var a=document.createElement('a');a.className='fl';a.href='/chat/file/'+d.file.id;a.textContent='\n📎 '+d.file.name;a.style.display='block';div.appendChild(a)}
+  keyboard(d,div);
+  if(d.reply!==undefined)setReply(d.reply);
+}
+function setReply(rows){
+  rk.textContent='';
+  if(!rows||!rows.length){rk.style.display='none';return}
+  rows.forEach(function(row){
+    var r=document.createElement('div');r.className='r';
+    row.forEach(function(b){
+      var e=document.createElement('button');e.type='button';e.textContent=b.t;
+      e.onclick=function(){
+        if(b.contact){var p=prompt('Ваш номер телефона (например, +7 900 123-45-67):');if(p)send({phone:p})}
+        else send({text:b.t})};
+      r.appendChild(e)});
+    rk.appendChild(r)});
+  rk.style.display='flex';
+}
+function bottom(){log.scrollTop=log.scrollHeight}
+function apply(ev){
+  if(ev.id)last=Math.max(last,ev.id);
+  if(ev.op==='send'||ev.op==='edit'){
+    var near=log.scrollHeight-log.scrollTop-log.clientHeight<120;
+    render(ev);if(near||ev.who==='me')bottom();
+    if(ev.op==='send'&&ev.who==='bot'&&!initial)alert_(ev.text)
+  }else if(ev.op==='delete'){var d=nodes[ev.mid];if(d){d.remove();delete nodes[ev.mid]}}
+}
+function alert_(text){
+  if(document.visibilityState==='visible')return;
+  unread++;document.title='('+unread+') '+baseTitle;
+  try{if(window.Notification&&Notification.permission==='granted')new Notification('Зоо-консьерж',{body:(text||'').slice(0,140)})}catch(e){}
+}
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'){unread=0;document.title=baseTitle}});
+function send(body){
+  return fetch('/chat/api/send',{method:'POST',headers:H(),body:JSON.stringify(body),credentials:'same-origin'}).then(function(r){
+    if(r.status===429)st.textContent='Слишком часто, подождите минуту';
+    else if(r.status===401)location.reload();
+    else st.textContent='';
+  }).catch(function(){st.textContent='Нет связи. Повторите.'});
+}
+function poll(){
+  if(polling)return;polling=true;
+  fetch('/chat/api/poll?after='+last,{credentials:'same-origin'}).then(function(r){
+    if(r.status===401){location.reload();return null}
+    return r.json()}).then(function(j){
+    polling=false;if(!j)return;fails=0;st.textContent='';
+    (j.events||[]).forEach(apply);poll();
+  }).catch(function(){polling=false;fails++;st.textContent='Нет связи, пробую снова…';setTimeout(poll,Math.min(15000,1000*fails))});
+}
+document.getElementById('f').onsubmit=function(e){
+  e.preventDefault();var v=inp.value.trim();if(!v)return;inp.value='';send({text:v});
+};
+var nt=document.getElementById('nt');
+if(window.Notification&&Notification.permission==='default'){nt.hidden=false;nt.onclick=function(e){e.preventDefault();Notification.requestPermission().then(function(){nt.hidden=true})}}
+fetch('/chat/api/history',{credentials:'same-origin'}).then(function(r){return r.json()}).then(function(j){
+  (j.messages||[]).forEach(function(m){render(m)});bottom();last=j.last;initial=false;
+  if(j.admin)document.getElementById('ad').hidden=false;
+  if(!j.messages.length)send({text:'/start'});
+  poll();
+}).catch(function(){st.textContent='Не удалось загрузить чат';initial=false;poll()});
+})();
+</script>
+</body>
+</html>

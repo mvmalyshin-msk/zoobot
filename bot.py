@@ -11,7 +11,9 @@ import db
 import keyboards as kb
 import repo
 import texts
+import webchat
 import webserver
+from aiogram.client.session.aiohttp import AiohttpSession
 from config import config
 from handlers import admin, client, executor
 from handlers.executor import Report
@@ -121,12 +123,12 @@ async def main() -> None:
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     await db.init_db()
 
-    bot = Bot(config.bot_token)
+    bot = Bot(config.bot_token, session=webchat.WebRouterSession(AiohttpSession()))
     dp = build_dispatcher()
 
     web_runner = None
     if os.getenv("PORT"):  # Railway задаёт PORT: поднимаем страницу карты рядом с ботом
-        web_runner = await webserver.start(int(os.environ["PORT"]), bot)
+        web_runner = await webserver.start(int(os.environ["PORT"]), bot, dp)
     scheduler = setup_scheduler(bot)
     scheduler.start()
     await set_commands(bot)

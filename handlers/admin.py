@@ -58,6 +58,7 @@ HELP = """Команды админа
    ставка: 70% (доля от цены) или 500 (фикс за заказ); необязательные поля можно оставить пустыми
 
 Прочее:
+/webadmin — одноразовая ссылка, чтобы открыть бота в браузере под своим аккаунтом (без Telegram и VPN)
 /stats — статистика за месяц
 /report [ГГГГ-ММ-ДД] — Excel: новые клиенты и заказы за день (сам приходит в 23:55)
 /broadcast <текст> — рассылка тем, кто дал согласие"""
@@ -504,6 +505,49 @@ async def msg_payment_link(m: Message) -> None:
         return
     _pending_links[m.from_user.id] = link
     await m.answer("К какому заказу эта ссылка?", reply_markup=kb.link_choose(pend))
+
+
+# ---------- Чат с клиентом из браузера (у него нет Telegram, переписка идёт через бота) ----------
+
+_relay: dict[int, int] = {}  # админ → id веб-клиента, которому он сейчас отвечает
+
+
+@router.message(Command("webadmin"))
+async def cmd_webadmin(m: Message) -> None:
+    import webchat
+    link = await webchat.make_login_link(m.from_user.id)
+    await m.answer("🔐 Бот в браузере для администратора. Ссылка одноразовая, действует 10 минут "
+                   "(откройте её на телефоне, нажмите «Войти»):\n" + link +
+                   "\nКлиентам даётся обычная ссылка без входа: " + f"{config.webapp_url}/chat")
+
+
+@router.callback_query(F.data.startswith("wc:"))
+async def cb_web_client(cb: CallbackQuery) -> None:
+    await cb.answer()
+    cid = int(cb.data[3:])
+    _relay[cb.from_user.id] = cid
+    row = await db.fetch_one("SELECT name FROM users WHERE tg_id=?", (cid,))
+    await cb.message.answer(f"💬 Чат с клиентом {row['name'] if row else cid}. Всё, что вы напишете сейчас, "
+                            "уйдёт ему в браузер. Команды и ссылки на оплату работают как обычно.",
+                            reply_markup=kb.relay_end())
+
+
+@router.callback_query(F.data == "wcx")
+async def cb_web_client_end(cb: CallbackQuery) -> None:
+    await cb.answer()
+    _relay.pop(cb.from_user.id, None)
+    await cb.message.answer("Чат с клиентом закрыт. Сообщения клиента снова придут с кнопкой «Ответить».")
+
+
+def _relaying(m: Message) -> bool:
+    return bool(m.text) and not m.text.startswith("/") and m.from_user.id in _relay
+
+
+@router.message(_relaying)
+async def msg_relay(m: Message) -> None:
+    cid = _relay[m.from_user.id]
+    ok = await orders.notify(m.bot, cid, "👤 Администратор:\n" + m.text)
+    await m.answer("✅ Отправлено клиенту" if ok else "⚠️ Не доставлено")
 
 
 @router.callback_query(F.data.startswith("lnk:"))
