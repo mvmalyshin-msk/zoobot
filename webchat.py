@@ -248,6 +248,13 @@ async def make_login_link(tg_id: int, nxt: str = "chat") -> str:
     return f"{config.webapp_url}/chat/login?t={token}" + ("&n=portal" if nxt == "portal" else "")
 
 
+async def site_link_for(tg_id: int) -> str | None:
+    """Ссылка «Открыть на сайте» для клиента из Telegram; без адреса сайта — None."""
+    if not config.webapp_url:
+        return None
+    return await make_login_link(tg_id)
+
+
 def _ui(name: str) -> str:
     from pathlib import Path
     return (Path(__file__).parent / "webapp" / name).read_text(encoding="utf-8")
@@ -270,10 +277,12 @@ async def page_login(request: web.Request) -> web.Response:
     t = _h.escape(request.query.get("t", ""), quote=True)
     n = "portal" if request.query.get("n") == "portal" else "chat"
     import brand
+    title, text = (("Вход администратора", "Нажмите кнопку, чтобы войти под своим аккаунтом администратора.")
+                   if n == "portal" else ("Ваш кабинет", "Нажмите кнопку, чтобы открыть кабинет Зооконсьерж на этом телефоне."))
     page = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
             f"<title>{brand.NAME} — вход</title>{brand.HEAD}<body style='max-width:420px;margin:10vh auto;padding:16px'>"
             f"<div style='text-align:center;font-size:26px'>{brand.LOGO}</div>"
-            "<h2 style='text-align:center'>Вход администратора</h2><p>Нажмите кнопку, чтобы войти под своим аккаунтом администратора.</p>"
+            f"<h2 style='text-align:center'>{title}</h2><p>{text}</p>"
             f"<form method=post action=/chat/login><input type=hidden name=t value='{t}'><input type=hidden name=n value='{n}'>"
             "<button class='btn' style='width:100%'>Войти</button></form></body>")
     return web.Response(text=page, content_type="text/html",
@@ -285,8 +294,10 @@ async def post_login(request: web.Request) -> web.Response:
     h = _hash(str(form.get("t", "")))
     row = await db.fetch_one(
         "SELECT * FROM web_login WHERE token_hash=? AND used=0 AND expires_at > datetime('now')", (h,))
-    if not row or row["tg_id"] not in config.admin_ids:
-        return web.Response(status=403, text="Ссылка не действует. Запросите новую командой /webadmin в Telegram.")
+    tg = row["tg_id"] if row else None
+    # по ссылке из Telegram заходит и клиент (в свой кабинет); портал — только администратор
+    if not row or tg is None or tg <= 0 or (form.get("n") == "portal" and tg not in config.admin_ids):
+        return web.Response(status=403, text="Ссылка не действует. Нажмите кнопку в Telegram ещё раз.")
     await db.execute(f"UPDATE web_login SET used=1, {db.touch()} WHERE token_hash=?", (h,))
     token = await new_session(row["tg_id"])
     resp = web.Response(status=302, headers={"Location": "/portal" if form.get("n") == "portal" else "/chat"})
@@ -384,7 +395,8 @@ async def feed(app, uid: int, *, text: str = "", cb: str = "", mid=None, phone: 
     """Превращает действие из браузера в обновление Telegram и отдаёт диспетчеру."""
     bot, dp = app["bot"], app["dp"]
     now = int(time.time())
-    user = {"id": uid, "is_bot": False, "first_name": "Гость" if uid < 0 else "Админ"}
+    user = {"id": uid, "is_bot": False,
+            "first_name": "Гость" if uid < 0 else ("Администратор" if uid in config.admin_ids else "Клиент")}
     chat = {"id": uid, "type": "private"}
     upd_id = int(time.time() * 1000) % 2_000_000_000
     if cb:

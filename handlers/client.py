@@ -46,6 +46,11 @@ class Profile(StatesGroup):
     recognize = State()
 
 
+class LinkPhone(StatesGroup):
+    """Клиент с сайта подтвердил себя в Telegram и теперь делится своим номером кнопкой."""
+    wait = State()
+
+
 class Order(StatesGroup):
     when = State()
     qty = State()
@@ -179,6 +184,29 @@ async def cmd_start_web_link(m: Message, command: CommandObject, state: FSMConte
         return
     await m.answer(texts.TG_LINK_OK_TG)
     await orders.notify(m.bot, web_uid, texts.TG_LINK_OK_WEB)
+    row = await db.fetch_one("SELECT phone, phone_verified FROM users WHERE tg_id=?", (web_uid,))
+    if row and row["phone"] and row["phone_verified"] != "telegram":
+        await state.set_state(LinkPhone.wait)
+        await state.update_data(web_uid=web_uid)
+        await m.answer(texts.ASK_LINK_PHONE, reply_markup=kb.phone_request())
+
+
+@router.message(LinkPhone.wait, F.contact)
+async def link_phone_contact(m: Message, state: FSMContext) -> None:
+    if m.contact.user_id != m.from_user.id:
+        await m.answer(texts.PHONE_NOT_OWN, reply_markup=kb.phone_request())
+        return
+    data = await state.get_data()
+    await state.clear()
+    phone = normalize_phone(m.contact.phone_number)
+    if not phone:
+        await m.answer(texts.BAD_PHONE)
+        return
+    web_row = await db.fetch_one("SELECT id FROM users WHERE tg_id=?", (data["web_uid"],))
+    if web_row:
+        await repo.update_user(web_row["id"], phone=phone, phone_verified="telegram")
+    await m.answer(texts.PHONE_VERIFIED_WEB.format(phone=phone))
+    await orders.notify(m.bot, data["web_uid"], texts.PHONE_VERIFIED_WEB.format(phone=phone))
 
 
 @router.message(CommandStart())
@@ -398,22 +426,32 @@ async def p_name(m: Message, state: FSMContext) -> None:
 
 @router.message(Profile.phone, F.contact)
 async def p_phone_contact(m: Message, state: FSMContext) -> None:
-    # узнаём по номеру только тех, кто прислал СВОЙ контакт кнопкой: напечатанный номер может быть чужим
-    await _save_phone(m, state, m.contact.phone_number, verified=m.contact.user_id == m.from_user.id)
+    own = m.contact.user_id == m.from_user.id
+    if m.from_user.id > 0 and not own:  # в Telegram принимаем только свой контакт: чужая карточка — не номер клиента
+        await m.answer(texts.PHONE_NOT_OWN, reply_markup=kb.phone_request())
+        return
+    # гость с сайта присылает номер без user_id: Telegram его не подтверждал
+    await _save_phone(m, state, m.contact.phone_number, verified="telegram" if own else None)
 
 
 @router.message(Profile.phone, F.text)
 async def p_phone_text(m: Message, state: FSMContext) -> None:
+    if m.from_user.id > 0:  # в Telegram номер набирают только кнопкой, иначе его не подтвердить
+        if not normalize_phone(m.text):
+            await m.answer(texts.BAD_PHONE)
+        else:
+            await m.answer(texts.PHONE_ONLY_BUTTON, reply_markup=kb.phone_request())
+        return
     await _save_phone(m, state, m.text)
 
 
-async def _save_phone(m: Message, state: FSMContext, raw: str, verified: bool = False) -> None:
+async def _save_phone(m: Message, state: FSMContext, raw: str, verified: str | None = None) -> None:
     phone = normalize_phone(raw)
     if not phone:
         await m.answer(texts.BAD_PHONE)
         return
-    await state.update_data(phone=phone)
-    if verified:
+    await state.update_data(phone=phone, phone_verified=verified)
+    if verified == "telegram":
         me = await repo.get_or_create_user(m.from_user)
         known = await repo.find_profile_by_phone(phone, me["id"])
         if known:  # этот номер уже есть в базе: просим второй признак и подтягиваем данные
@@ -603,8 +641,8 @@ async def _address_done(msg: Message, state: FSMContext, target: str, label: str
     if target == "profile":
         data = await state.get_data()
         user = await repo.get_or_create_user(tg_user)
-        fields = {"name": data["name"], "phone": data["phone"], "address": label,
-                  "address_verified": int(verified), "outside_mkad": int(bool(outside))}
+        fields = {"name": data["name"], "phone": data["phone"], "phone_verified": data.get("phone_verified"),
+                  "address": label, "address_verified": int(verified), "outside_mkad": int(bool(outside))}
         if district:
             fields["district"] = district
         await repo.update_user(user["id"], **fields)
@@ -815,14 +853,25 @@ async def _save_pet(msg: Message, tg_user, state: FSMContext, notes: str | None)
     await finish_profile(msg, state, tg_user, pet_id)
 
 
+async def site_login_markup(tg_id: int):
+    """Кнопка «Открыть на сайте»: одноразовая ссылка входа в кабинет этого же Telegram-аккаунта."""
+    import webchat
+    link = await webchat.site_link_for(tg_id)
+    return kb.site_login(link) if link else None
+
+
 async def _registration_confirm(msg: Message, tg_user, data: dict) -> None:
     name, phone = data.get("name") or "—", data.get("phone")
     if tg_user.id > 0:  # Telegram уже проверил, что это реальный аккаунт
-        await msg.answer(texts.REG_DONE_TG.format(name=name, phone=phone))
+        await msg.answer(texts.REG_DONE_TG.format(name=name, phone=phone),
+                         reply_markup=await site_login_markup(tg_user.id))
         return
+    import phoneverify
     import webchat
+    from config import config
+    ya = f"{config.webapp_url}/verify/yandex" if phoneverify.enabled() else None
     await msg.answer(texts.REG_DONE_WEB.format(name=name, phone=phone),
-                     reply_markup=kb.confirm_via_tg(await webchat.make_tg_link(tg_user.id)))
+                     reply_markup=kb.confirm_options(await webchat.make_tg_link(tg_user.id), ya))
 
 
 async def finish_profile(msg: Message, state: FSMContext, tg_user=None, pet_id: int | None = None) -> None:

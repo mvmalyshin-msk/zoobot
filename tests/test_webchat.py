@@ -156,9 +156,16 @@ class AdminLoginTest(unittest.TestCase):
             self.assertEqual(again.status, 403)
         run(t)
 
-    def test_non_admin_and_expired_and_garbage_rejected(self):
+    def test_client_may_open_own_cabinet_but_not_portal(self):
         async def t(c, bot):
-            link = await webchat.make_login_link(999)  # не админ
+            link = await webchat.make_login_link(999)  # клиент из Telegram: в свой кабинет — можно
+            tok = re.search(r"t=(.+)$", link).group(1)
+            self.assertEqual((await c.post("/chat/login", data={"t": tok}, allow_redirects=False)).status, 302)
+            self.assertEqual((await history(c))["admin"], False)
+            link = await webchat.make_login_link(999)  # а на портал — нет
+            tok = re.search(r"t=(.+)$", link).group(1)
+            self.assertEqual((await c.post("/chat/login", data={"t": tok, "n": "portal"}, allow_redirects=False)).status, 403)
+            link = await webchat.make_login_link(-5)  # гость с сайта никогда не получает такую ссылку
             tok = re.search(r"t=(.+)$", link).group(1)
             self.assertEqual((await c.post("/chat/login", data={"t": tok}, allow_redirects=False)).status, 403)
             link = await webchat.make_login_link(111)

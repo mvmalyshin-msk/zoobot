@@ -1058,7 +1058,8 @@ async def main():
     await click(REC5, "Заказать")
     await say(REC5, "Анна")
     r = await say(REC5, "+7 900 777-88-99")
-    ok("уже есть у нас" not in last_text(r) and "адрес" in last_text(r).lower(), "напечатанный номер (не контакт) профиль не раскрывает")
+    ok("кнопкой" in last_text(r).lower() and "уже есть у нас" not in last_text(r),
+       "напечатанный номер в Telegram не принимается и профиль не раскрывает")
     # профиль: только главное, остальное в подменю
     r = await say(NEW, "/profile")
     btns = [b.text for b in _buttons(r[-1])]

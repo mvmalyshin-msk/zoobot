@@ -54,6 +54,8 @@ def make_app() -> web.Application:
     app.router.add_post("/request", webform.post_form)
     webchat.setup(app)
     portal.setup(app)
+    import phoneverify
+    phoneverify.setup(app)
     app.router.add_static("/vendor/", WEBAPP_DIR / "vendor", follow_symlinks=False)
     app.router.add_static("/fonts/", WEBAPP_DIR / "fonts", follow_symlinks=False)
     app.router.add_static("/icons/", WEBAPP_DIR / "icons", follow_symlinks=False)

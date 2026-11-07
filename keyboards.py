@@ -37,6 +37,17 @@ def main_menu(has_orders: bool, last_name: str | None = None) -> InlineKeyboardM
     return _kb(rows)
 
 
+def site_login(url: str) -> InlineKeyboardMarkup:
+    return _kb([[Btn(text=texts.SITE_LOGIN_BUTTON, url=url)]])
+
+
+def confirm_options(tg_url: str, yandex_url: str | None = None) -> InlineKeyboardMarkup:
+    rows = [[Btn(text="✅ Подтвердить через Telegram", url=tg_url)]]
+    if yandex_url:
+        rows.append([Btn(text="✅ Подтвердить через Яндекс", url=yandex_url)])
+    return _kb(rows)
+
+
 def confirm_via_tg(url: str) -> InlineKeyboardMarkup:
     return _kb([[Btn(text="✅ Подтвердить через Telegram", url=url)]])
 

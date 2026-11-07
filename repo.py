@@ -3,7 +3,7 @@ import re
 
 import db
 
-USER_FIELDS = {"name", "phone", "district", "address", "outside_mkad", "address_verified", "contact_pref"}
+USER_FIELDS = {"name", "phone", "phone_verified", "district", "address", "outside_mkad", "address_verified", "contact_pref"}
 
 
 async def get_or_create_user(tg_user) -> dict:

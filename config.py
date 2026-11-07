@@ -25,6 +25,9 @@ class Config:
     tz: ZoneInfo = ZoneInfo(os.getenv("TIMEZONE", "Europe/Moscow"))
     # имя бота для ссылок t.me/<имя>?start=… (вход админа, подтверждение веб-клиента через Telegram)
     bot_username: str = os.getenv("BOT_USERNAME", "zooconcierge_bot")
+    # Яндекс ID для подтверждения телефона (см. phoneverify.py); без них кнопка не показывается
+    yandex_client_id: str = os.getenv("YANDEX_CLIENT_ID", "")
+    yandex_client_secret: str = os.getenv("YANDEX_CLIENT_SECRET", "")
 
 
 config = Config()
