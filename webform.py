@@ -1,0 +1,169 @@
+"""Веб-заявка: страница /request для клиентов, у которых Telegram без VPN не открывается.
+
+Страница без внешних ресурсов и без JavaScript (грузится на любой связи). Заявка сохраняется в web_requests,
+админу сразу уходит сообщение в Telegram с телефоном: дальше он связывается с клиентом по телефону или СМС.
+"""
+import html as _html
+import logging
+import time
+
+from aiohttp import web
+
+import db
+import orders
+import texts
+from utils import normalize_phone, rub
+
+log = logging.getLogger(__name__)
+
+RATE_LIMIT = 5          # заявок с одного адреса в час
+RATE: dict[str, list[float]] = {}
+CONTACTS = {"call": "звонок", "sms": "СМС", "telegram": "Telegram или мессенджер"}
+MAX = {"name": 80, "address": 200, "when": 100, "pet": 120, "comment": 500}
+
+
+def validate(form: dict) -> tuple[dict, dict]:
+    """→ (очищенные значения, ошибки по полям). Ошибки — только про то, что клиент может исправить."""
+    g = lambda k: str(form.get(k) or "").strip()  # noqa: E731
+    clean = {k: g(k)[:n] for k, n in MAX.items()}
+    clean["service_id"] = g("service_id")
+    clean["contact"] = g("contact") if g("contact") in CONTACTS else "call"
+    errors: dict[str, str] = {}
+    if g("site"):  # ловушка для ботов: настоящий человек это поле не видит
+        errors["bot"] = "spam"
+    phone = normalize_phone(g("phone"))
+    clean["phone"] = phone or g("phone")[:30]
+    if not phone:
+        errors["phone"] = "Проверьте номер: например, 8 900 123-45-67."
+    if not clean["name"]:
+        errors["name"] = "Напишите, как к вам обращаться."
+    if not clean["address"]:
+        errors["address"] = "Напишите адрес: улица и дом."
+    if not clean["service_id"].isdigit():
+        errors["service_id"] = "Выберите услугу."
+    if not form.get("consent"):
+        errors["consent"] = "Нужно согласие на обработку данных."
+    return clean, errors
+
+
+def _e(v) -> str:
+    return _html.escape(str(v or ""), quote=True)
+
+
+CSS = """
+:root{color-scheme:light dark;--bg:#fafaf7;--fg:#1d1d1b;--card:#fff;--line:#d9d6cc;--acc:#2f7d4f;--err:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#161715;--fg:#ecece6;--card:#20211f;--line:#3a3b37;--acc:#6cc08b;--err:#ff8a80}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.45 system-ui,sans-serif}
+main{max-width:560px;margin:0 auto;padding:20px 16px 48px}h1{font-size:1.5rem;margin:.2em 0 .3em}
+label{display:block;margin:14px 0 4px;font-weight:600}input,select,textarea{width:100%;padding:12px;font:inherit;
+color:inherit;background:var(--card);border:1px solid var(--line);border-radius:10px}textarea{min-height:84px}
+.err{color:var(--err);font-size:.92rem;margin-top:4px}.hint{opacity:.7;font-size:.92rem}
+.check{display:flex;gap:10px;align-items:flex-start;font-weight:400}.check input{width:auto;margin-top:5px}
+button{margin-top:22px;width:100%;padding:14px;font:inherit;font-weight:700;color:#fff;background:var(--acc);
+border:0;border-radius:12px}.hp{position:absolute;left:-9999px}a{color:var(--acc)}
+"""
+
+
+def render_form(services: list[dict], values: dict, errors: dict) -> str:
+    v = lambda k: _e(values.get(k, ""))  # noqa: E731
+    err = lambda k: f'<div class="err">{_e(errors[k])}</div>' if k in errors else ""  # noqa: E731
+    groups = []
+    for cat in texts.CATEGORY_ORDER:
+        opts = [s for s in services if s["category"] == cat]
+        if not opts:
+            continue
+        rows = "".join(
+            f'<option value="{s["id"]}"{" selected" if str(s["id"]) == str(values.get("service_id")) else ""}>'
+            f'{_e(texts.variant_label(cat, s["name"]))} — от {rub(s["base_price"])}</option>' for s in opts)
+        groups.append(f'<optgroup label="{_e(texts.CATEGORY_TITLES[cat])}">{rows}</optgroup>')
+    contacts = "".join(f'<option value="{k}"{" selected" if values.get("contact", "call") == k else ""}>{_e(t)}</option>'
+                       for k, t in CONTACTS.items())
+    checked = " checked" if values.get("consent") else ""
+    return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Заявка — Зооконсьерж</title>
+<style>{CSS}</style></head><body><main>
+<h1>🐾 Заявка на услугу</h1>
+<p class="hint">Работает без Telegram и без VPN. Мы позвоним или напишем СМС, уточним детали и сообщим точную цену.</p>
+<form method="post" action="/request">
+<label for="service_id">Услуга</label><select id="service_id" name="service_id"><option value="">Выберите…</option>{"".join(groups)}</select>{err("service_id")}
+<label for="when">Когда нужно</label><input id="when" name="when" maxlength="100" value="{v("when")}" placeholder="например, завтра в 10:00">
+<label for="address">Адрес</label><input id="address" name="address" maxlength="200" value="{v("address")}" placeholder="город, улица, дом, квартира">{err("address")}
+<label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="кличка, вид, порода">
+<label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name">{err("name")}
+<label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 900 123-45-67">{err("phone")}
+<label for="contact">Как с вами связаться</label><select id="contact" name="contact">{contacts}</select>
+<label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500">{v("comment")}</textarea>
+<div class="hp"><label>Не заполняйте <input name="site" tabindex="-1" autocomplete="off"></label></div>
+<label class="check"><input type="checkbox" name="consent"{checked}><span>Согласен(на) на обработку персональных данных, <a href="/policy">политика</a></span></label>{err("consent")}
+<button type="submit">Отправить заявку</button></form></main></body></html>"""
+
+
+def render_done(request_id: int) -> str:
+    return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Заявка принята</title>
+<style>{CSS}</style></head><body><main><h1>✅ Заявка принята</h1>
+<p>Номер заявки: <b>№{request_id}</b>. Мы свяжемся с вами по указанному телефону, уточним детали и сообщим цену.</p>
+<p class="hint">Данные используются только для выполнения заявки. Удалить их можно, написав нам.</p>
+<p><a href="/request">Отправить ещё одну заявку</a></p></main></body></html>"""
+
+
+def _client_ip(request: web.Request) -> str:
+    fwd = request.headers.get("X-Forwarded-For", "")
+    return (fwd.split(",")[0].strip() or request.remote or "?")[:64]
+
+
+def _limited(ip: str) -> bool:
+    now = time.time()
+    hits = [t for t in RATE.get(ip, []) if now - t < 3600]
+    limited = len(hits) >= RATE_LIMIT
+    if not limited:
+        hits.append(now)
+    RATE[ip] = hits
+    return limited
+
+
+async def _services() -> list[dict]:
+    return await db.fetch_all("SELECT * FROM services WHERE active=1 ORDER BY id")
+
+
+async def get_form(request: web.Request) -> web.Response:
+    return web.Response(text=render_form(await _services(), {}, {}), content_type="text/html",
+                        headers={"Cache-Control": "no-cache"})
+
+
+async def post_form(request: web.Request) -> web.Response:
+    if _limited(_client_ip(request)):
+        return web.Response(status=429, text="Слишком много заявок. Попробуйте через час или позвоните нам.")
+    form = dict(await request.post())
+    clean, errors = validate(form)
+    clean["consent"] = bool(form.get("consent"))
+    services = await _services()
+    if clean["service_id"].isdigit() and not any(str(s["id"]) == clean["service_id"] for s in services):
+        errors["service_id"] = "Выберите услугу."
+    if "bot" in errors:
+        return web.Response(text=render_done(0), content_type="text/html")  # боту делаем вид, что приняли
+    if errors:
+        return web.Response(status=400, text=render_form(services, clean, errors), content_type="text/html")
+    svc = next(s for s in services if str(s["id"]) == clean["service_id"])
+    async with db.transaction() as conn:
+        cur = await conn.execute(
+            """INSERT INTO web_requests (service_id, name, phone, contact_pref, address, when_text, pet, comment)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (svc["id"], clean["name"], clean["phone"], clean["contact"], clean["address"], clean["when"],
+             clean["pet"], clean["comment"]))
+        rid = cur.lastrowid
+    text = "\n".join(filter(None, [
+        f"🌐 Заявка с сайта №{rid}",
+        f"Услуга: {svc['name']} (от {rub(svc['base_price'])})",
+        f"Имя: {clean['name']}", f"Телефон: {clean['phone']}",
+        f"Связь: {CONTACTS[clean['contact']]}",
+        f"Когда: {clean['when']}" if clean["when"] else "",
+        f"Адрес: {clean['address']}",
+        f"Питомец: {clean['pet']}" if clean["pet"] else "",
+        f"Комментарий: {clean['comment']}" if clean["comment"] else "",
+        "Свяжитесь с клиентом по телефону: он без Telegram."]))
+    try:
+        await orders.notify_admins(request.app["bot"], text)
+    except Exception:
+        log.exception("Не удалось уведомить админа о заявке с сайта №%s", rid)
+    return web.Response(text=render_done(rid), content_type="text/html", headers={"Cache-Control": "no-cache"})

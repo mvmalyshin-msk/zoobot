@@ -37,6 +37,23 @@ MIGRATIONS: dict[int, str] = {
     """,
     # 7: служебные значения (какое обновление уже объявлено админам)
     7: "CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+    # 8: заявки с сайта (клиенты без Telegram); с клиентом связывается админ по телефону
+    8: """
+    CREATE TABLE IF NOT EXISTS web_requests (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        service_id   INTEGER REFERENCES services(id),
+        name         TEXT NOT NULL,
+        phone        TEXT NOT NULL,
+        contact_pref TEXT NOT NULL DEFAULT 'call',
+        address      TEXT NOT NULL,
+        when_text    TEXT,
+        pet          TEXT,
+        comment      TEXT,
+        status       TEXT NOT NULL DEFAULT 'new',
+        created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    """,
     # 4: повадки питомца (анкета для выгульщика): коды через запятую, см. traits.py
     4: "ALTER TABLE pets ADD COLUMN traits TEXT;",
     3: """
