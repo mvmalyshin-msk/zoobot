@@ -17,8 +17,11 @@ def _kb(rows: list[list[Btn]]) -> InlineKeyboardMarkup:
 
 # ---------- Согласие и меню ----------
 def consent(policy_url: str) -> InlineKeyboardMarkup:
+    """Без публичного адреса сайта ссылки нет: политику показываем текстом в чате (кнопка pol:show)."""
+    policy_btn = (Btn(text="📄 Политика обработки ПДн", url=policy_url) if policy_url
+                  else Btn(text="📄 Политика обработки ПДн", callback_data="pol:show"))
     return _kb([
-        [Btn(text="📄 Политика обработки ПДн", url=policy_url)],
+        [policy_btn],
         [Btn(text="✅ Согласен на обработку ПДн", callback_data="pdn:agree")],  # отдельная кнопка
     ])
 
@@ -54,6 +57,18 @@ def species() -> InlineKeyboardMarkup:
 
 def pet_size() -> InlineKeyboardMarkup:
     return _kb([[Btn(text=s, callback_data=f"sz:{s}") for s in ("S", "M", "L")]])
+
+
+def traits_kb(selected: list[str]) -> InlineKeyboardMarkup:
+    import traits
+    rows = [[Btn(text=("✅ " if c in selected else "") + label[0].upper() + label[1:], callback_data=f"tr:{c}")]
+            for c, label in traits.TRAITS]
+    rows.append([Btn(text="Готово ➡️", callback_data="tr:done")])
+    return _kb(rows)
+
+
+def report_done(order_id: int) -> InlineKeyboardMarkup:
+    return _kb([[Btn(text="✅ Готово, отчёт отправлен", callback_data=f"rp:done:{order_id}")]])
 
 
 def no_notes() -> InlineKeyboardMarkup:

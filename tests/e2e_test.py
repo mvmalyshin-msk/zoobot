@@ -24,7 +24,7 @@ for suffix in ("", "-wal", "-shm"):
 from aiogram import Bot  # noqa: E402
 from aiogram.client.session.base import BaseSession  # noqa: E402
 from aiogram.exceptions import TelegramForbiddenError  # noqa: E402
-from aiogram.methods import AnswerCallbackQuery, EditMessageText, SendMessage  # noqa: E402
+from aiogram.methods import AnswerCallbackQuery, EditMessageText, SendMessage, SendPhoto  # noqa: E402
 from aiogram.types import Chat, Message  # noqa: E402
 
 import db  # noqa: E402
@@ -74,6 +74,9 @@ class FakeSession(BaseSession):
             SENT.append({"to": method.chat_id, "text": method.text, "markup": markup})
             return Message(message_id=len(SENT), date=datetime.now(), chat=Chat(id=method.chat_id, type="private"),
                            text=method.text)
+        if isinstance(method, SendPhoto):
+            SENT.append({"to": method.chat_id, "text": method.caption or "", "markup": method.reply_markup, "photo": True})
+            return Message(message_id=len(SENT), date=datetime.now(), chat=Chat(id=method.chat_id, type="private"))
         if isinstance(method, EditMessageText):  # окно календаря меняется на месте
             SENT.append({"to": method.chat_id, "text": method.text, "markup": method.reply_markup, "edited": True})
             return True
@@ -101,6 +104,18 @@ async def say(uid: int, text: str) -> list[dict]:
            "from": _user(uid), "text": text}
     if text.startswith("/"):
         msg["entities"] = [{"type": "bot_command", "offset": 0, "length": len(text.split()[0])}]
+    await dp.feed_raw_update(bot, {"update_id": _uid, "message": msg})
+    return SENT[start:]
+
+
+async def photo(uid: int, caption: str = "") -> list[dict]:
+    global _uid
+    _uid += 1
+    start = len(SENT)
+    msg = {"message_id": _uid, "date": int(time.time()), "chat": {"id": uid, "type": "private"}, "from": _user(uid),
+           "photo": [{"file_id": "f", "file_unique_id": "u", "width": 5, "height": 5}]}
+    if caption:
+        msg["caption"] = caption
     await dp.feed_raw_update(bot, {"update_id": _uid, "message": msg})
     return SENT[start:]
 
@@ -232,7 +247,9 @@ async def main():
     r = await say(CLIENT, "ыыыы")
     ok("S, M, L" in last_text(r), "на мусор вместо размера бот подсказывает варианты")
     r = await say(CLIENT, "большой")
-    ok("Особенности" in last_text(r), "слово «большой» понято как размер L")
+    ok("Особенности" in last_text(r), "слово «большой» понято как размер L; дальше — анкета повадок")
+    r = await click(CLIENT, "Готово")
+    ok("Здоровье" in last_text(r), "после повадок — здоровье и аллергии")
     r = await click(CLIENT, "Ничего")
     pet = await db.fetch_one("SELECT * FROM pets")
     ok(pet["name"] == "Рекс" and pet["breed"] == "Лабрадор-ретривер" and pet["size"] == "L", "питомец сохранён с проверенной породой")
@@ -334,6 +351,16 @@ async def main():
     ok(o["status"] == "in_progress", "assigned → in_progress (кнопкой исполнителя)")
     r = await click(EXEC, "Завершил")
     ok(any(m["to"] == CLIENT and "Оцените" in m["text"] for m in r), "completed → клиенту запрос оценки")
+    ok(any(m["to"] == EXEC and "отчёт" in m["text"].lower() and "Готово" in str(_buttons(m)) for m in r),
+       "после выгула исполнителю предложено отправить отчёт")
+    r = await say(EXEC, "Гуляли в парке, настроение бодрое, большие дела в норме")
+    ok(any(m["to"] == CLIENT and "Отчёт о выгуле" in m["text"] for m in r) and any(m["to"] == CLIENT and "в парке" in m["text"] for m in r), "отчёт (заголовок и текст) ушёл клиенту")
+    r = await photo(EXEC, "Рекс в парке")
+    ok(any(m["to"] == CLIENT and m.get("photo") and "Рекс в парке" in m["text"] for m in r), "фото с подписью ушло клиенту")
+    r = await click(EXEC, "Готово")
+    ok(any(m["to"] == EXEC and "Спасибо" in m["text"] for m in r), "исполнитель закончил отчёт")
+    r = await say(EXEC, "это уже не отчёт")
+    ok(not any(m["to"] == CLIENT for m in r), "после «Готово» сообщения исполнителя клиенту не пересылаются")
     await click(CLIENT, "⭐⭐⭐⭐⭐")
     r = await say(CLIENT, "Всё отлично, спасибо!")
     rv = await db.fetch_one("SELECT * FROM reviews")
@@ -599,6 +626,79 @@ async def main():
     ok("Проверьте заказ" in last_text(r) and "3 ч" in last_text(r) and "Сколько часов" not in last_text(r),
        "зооняня: после смены времени снова экран заказа, часы не переспрашиваются")
     await click(CLIENT, "Отмена")
+
+
+    print("16. Анкета повадок собаки")
+    await say(CLIENT, "/profile")
+    await click(CLIENT, "питомц")
+    await say(CLIENT, "Бим")
+    await click(CLIENT, "Собака")
+    await say(CLIENT, "лабродор")
+    await click(CLIENT, "Лабрадор")
+    r = await say(CLIENT, "средний")
+    ok("Особенности" in last_text(r) and "Тянет поводок" in str(_buttons(r[-1])), "после размера собаки — анкета повадок")
+    r = await click(CLIENT, "Тянет")
+    ok("✅ Тянет поводок" in str(_buttons(r[-1])), "нажатая повадка отмечается галочкой")
+    await click(CLIENT, "Агрессия к собакам")
+    r = await click(CLIENT, "Тянет")
+    ok("✅ Тянет" not in str(_buttons(r[-1])), "повторное нажатие снимает отметку")
+    await click(CLIENT, "Подбирает")
+    r = await raw_callback(CLIENT, "tr:hack")
+    r = await say(CLIENT, "текст вместо кнопок")
+    ok("Готово" in last_text(r) or "отметьте" in last_text(r).lower(), "на текст бот напоминает про кнопки и «Готово»")
+    r = await click(CLIENT, "Готово")
+    r = await say(CLIENT, "Хромает на левую лапу")
+    bim = await db.fetch_one("SELECT * FROM pets WHERE name='Бим'")
+    ok(bim["traits"] == "pick,aggr_dog", "повадки сохранены кодами в порядке списка: " + str(bim["traits"]))
+    ok(bim["notes"] == "Хромает на левую лапу", "здоровье сохранено отдельно в заметках")
+    await say(CLIENT, "/profile")
+    await click(CLIENT, "питомц")
+    await say(CLIENT, "Тишка")
+    await click(CLIENT, "Кошка")
+    r = await say(CLIENT, "сиамская")
+    if "Сиам" in str(_buttons(r[-1])):
+        r = await click(CLIENT, "Сиам")
+    r = await click(CLIENT, "S")
+    ok("Здоровье" in last_text(r) and "Тянет поводок" not in str(_buttons(r[-1])), "у кошки анкеты повадок нет — сразу здоровье")
+    await click(CLIENT, "Ничего")
+    await db.execute("UPDATE pets SET is_active=0 WHERE name IN ('Бим','Тишка')")
+
+
+    print("17. Лид: админ узнаёт сразу, как клиент оставил телефон")
+    LEAD = 3000
+    n0 = len(SENT)
+    await say(LEAD, "/start")
+    await click(LEAD, "Согласен")
+    await click(LEAD, "Заказать")
+    await say(LEAD, "Ольга Петрова")
+    r = await contact(LEAD, "79161112233")
+    ok(any(m["to"] == ADMIN and "Новый лид" in m["text"] and "+79161112233" in m["text"] and "Ольга Петрова" in m["text"] for m in r),
+       "админ получил лид сразу после телефона: имя и номер")
+    ok(any(m["to"] == ADMIN and "Новый лид" in m["text"] and "tg://user?id=3000" in m["text"] for m in r), "в лиде есть ссылка на Telegram клиента")
+    n_leads = sum(1 for m in SENT[n0:] if m["to"] == ADMIN and "Новый лид" in m["text"])
+    r = await say(LEAD, "квартира 46")
+    ok("номер квартиры" in last_text(r).lower() and not any(m["to"] == ADMIN for m in r), "«квартира 46» вместо адреса: просит улицу и дом, поиск не запускается")
+    r = await say(LEAD, "ул. Ленина, 1")
+    ok(len(_buttons(r[-1])) >= 3, "адрес найден: варианты")
+    r = await say(LEAD, "кв 46")
+    ok("кв. 46" in str(_buttons(r[-1])) and "46" in last_text(r), "номер квартиры после вариантов добавлен к вариантам")
+    r = await click(LEAD, "Ленина, 1, Москва")
+    ok(any(m["to"] == ADMIN and "Адрес" in m["text"] and "кв. 46" in m["text"] for m in r), "админ получил адрес лида сразу")
+    r = await say(LEAD, "Бублик")
+    r = await say(LEAD, "кошка")
+    ok("Порода" in last_text(r), "вид питомца словом «кошка» понятен без кнопки")
+    ok(sum(1 for m in SENT[n0:] if m["to"] == ADMIN and "Новый лид" in m["text"]) == n_leads, "лид по одному клиенту приходит один раз")
+
+    print("18. Политика обработки ПДн")
+    POL = 3100
+    r = await say(POL, "/start")
+    ok("Политика" in str(_buttons(r[0])) or "Политика" in str([_buttons(m) for m in r]), "на экране согласия есть кнопка политики")
+    r = await say(POL, "/policy")
+    t = "".join(m["text"] for m in r)
+    ok("Политика обработки персональных данных" in t and "152-ФЗ" in t, "/policy присылает текст политики даже до согласия")
+    r = await click(POL, "Политика")
+    ok("Политика обработки персональных данных" in "".join(m["text"] for m in r), "кнопка политики без сайта показывает текст в чате")
+    ok(all(len(m["text"]) <= 4096 for m in r), "куски политики помещаются в сообщение Telegram")
 
     print("\nВСЕ ПРОВЕРКИ ПРОЙДЕНЫ")
 

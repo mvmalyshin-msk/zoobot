@@ -1,5 +1,6 @@
 """Клиентская часть: согласие ПДн, профиль, заказ (≤ 4 экрана), мои заказы, повтор, отзывы."""
 import logging
+import os
 from datetime import timedelta
 
 from aiogram import F, Router
@@ -15,9 +16,11 @@ import db
 import geo
 import keyboards as kb
 import orders
+import policy
 import pricing
 import repo
 import texts
+import traits
 from config import config
 from utils import (
     fmt_local, from_db, normalize_phone, now_utc, parse_user_datetime, rub, to_db, to_local,
@@ -35,6 +38,7 @@ class Profile(StatesGroup):
     pet_species = State()
     pet_breed = State()
     pet_size = State()
+    pet_traits = State()
     pet_notes = State()
 
 
@@ -60,7 +64,23 @@ class Review(StatesGroup):
 # =====================================================================
 
 async def show_consent(msg: Message) -> None:
-    await msg.answer(texts.CONSENT_TEXT, reply_markup=kb.consent(config.policy_url))
+    await msg.answer(texts.CONSENT_TEXT, reply_markup=kb.consent(policy.current_link()))
+
+
+async def send_policy(msg: Message) -> None:
+    for part in policy.chunks(policy.render_text(policy.operator_from_env(os.environ))):
+        await msg.answer(part)
+
+
+@router.message(Command("policy"))
+async def cmd_policy(m: Message) -> None:
+    await send_policy(m)
+
+
+@router.callback_query(F.data == "pol:show")
+async def cb_policy(cb: CallbackQuery) -> None:
+    await cb.answer()
+    await send_policy(cb.message)
 
 
 async def show_menu(msg: Message, tg_user, text: str = texts.WELCOME) -> None:
@@ -204,6 +224,8 @@ async def _save_phone(m: Message, state: FSMContext, raw: str) -> None:
         await m.answer(texts.BAD_PHONE)
         return
     await state.update_data(phone=phone)
+    name = (await state.get_data()).get("name") or m.from_user.full_name
+    await orders.notify_lead(m.bot, m.from_user, 1, name=name, phone=phone)  # лид — сразу, не ждём заказа
     await state.set_state(Profile.address)
     await m.answer(texts.ASK_ADDRESS + texts.MAP_HINT * bool(config.webapp_url), reply_markup=kb.address_ask())
 
@@ -223,6 +245,19 @@ async def p_address(m: Message, state: FSMContext) -> None:
 
 async def _address_input(m: Message, state: FSMContext, text: str, target: str, back: str, tg_user) -> None:
     text = " ".join(text.split())
+    flat = geo.flat_only(text)
+    if flat:  # «квартира 46» — это не адрес: на карте искать нечего
+        data = await state.get_data()
+        opts = [o for o in (data.get("addr_options") or []) if o.get("has_house")]
+        if not opts:
+            await m.answer(texts.FLAT_ONLY)
+            return
+        for o in opts:
+            o["label"] = o["label"].split(", кв.")[0] + f", кв. {flat}"
+        await state.update_data(addr_options=opts)
+        await m.answer(texts.ADDR_FLAT_ADDED.format(flat=flat),
+                       reply_markup=kb.address_options([o["label"] for o in opts], False))
+        return
     if not geo.looks_like_address(text):
         await m.answer(texts.BAD_ADDRESS)
         return
@@ -334,6 +369,7 @@ async def _address_done(msg: Message, state: FSMContext, target: str, label: str
         if district:
             fields["district"] = district
         await repo.update_user(user["id"], **fields)
+        await orders.notify_lead(msg.bot, tg_user, 2, name=data["name"], phone=data["phone"], address=label)
         if await repo.list_pets(user["id"]):
             await finish_profile(msg, state, tg_user)
         else:
@@ -364,13 +400,25 @@ async def p_pet_name(m: Message, state: FSMContext) -> None:
     await m.answer(texts.ASK_PET_SPECIES, reply_markup=kb.species())
 
 
+async def _set_species(msg: Message, state: FSMContext, species: str) -> None:
+    await state.update_data(pet_species=species, pet_breed=None, breed_unverified=False)
+    await state.set_state(Profile.pet_breed)
+    await msg.answer(texts.ASK_PET_OTHER if species == "другое" else texts.ASK_PET_BREED)
+
+
 @router.callback_query(Profile.pet_species, F.data.startswith("sp:"))
 async def p_pet_species(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
-    species = cb.data.split(":", 1)[1]
-    await state.update_data(pet_species=species, pet_breed=None, breed_unverified=False)
-    await state.set_state(Profile.pet_breed)
-    await cb.message.answer(texts.ASK_PET_OTHER if species == "другое" else texts.ASK_PET_BREED)
+    await _set_species(cb.message, state, cb.data.split(":", 1)[1])
+
+
+@router.message(Profile.pet_species, F.text)
+async def p_pet_species_text(m: Message, state: FSMContext) -> None:
+    species = breeds.parse_species(m.text)  # «кошка», «пёс» словами тоже понятны
+    if not species:
+        await m.answer(texts.HINT_SPECIES)
+        return
+    await _set_species(m, state, species)
 
 
 def _check_breed(species: str, text: str) -> breeds.Verdict:
@@ -434,9 +482,30 @@ async def cb_breed(cb: CallbackQuery, state: FSMContext) -> None:
 
 
 async def _set_size(msg: Message, state: FSMContext, size: str) -> None:
-    await state.update_data(pet_size=size)
+    await state.update_data(pet_size=size, pet_traits=[])
+    if (await state.get_data()).get("pet_species") == "собака":  # анкета повадок только для собак
+        await state.set_state(Profile.pet_traits)
+        await msg.answer(texts.ASK_TRAITS, reply_markup=kb.traits_kb([]))
+        return
     await state.set_state(Profile.pet_notes)
     await msg.answer(texts.ASK_PET_NOTES, reply_markup=kb.no_notes())
+
+
+@router.callback_query(Profile.pet_traits, F.data.startswith("tr:"))
+async def cb_traits(cb: CallbackQuery, state: FSMContext) -> None:
+    code = cb.data[3:]
+    if code == "done":
+        await cb.answer()
+        await state.set_state(Profile.pet_notes)
+        await cb.message.answer(texts.ASK_PET_NOTES, reply_markup=kb.no_notes())
+        return
+    if code not in traits.LABELS:
+        await cb.answer("Не получилось, нажмите ещё раз")
+        return
+    await cb.answer()
+    chosen = traits.toggle((await state.get_data()).get("pet_traits") or [], code)
+    await state.update_data(pet_traits=chosen)
+    await _edit(cb.message, texts.ASK_TRAITS, kb.traits_kb(chosen))
 
 
 @router.callback_query(Profile.pet_size, F.data.startswith("sz:"))
@@ -472,7 +541,8 @@ async def _save_pet(msg: Message, tg_user, state: FSMContext, notes: str | None)
         what = data.get("pet_breed") or data["pet_species"]
         notes = f"Не из справочника, уточнить: {what}. " + (notes or "")
     await repo.add_pet(user["id"], data["pet_name"], data["pet_species"], data.get("pet_breed"),
-                       data["pet_size"], notes.strip() if notes else None)
+                       data["pet_size"], notes.strip() if notes else None,
+                       traits.pack(data.get("pet_traits") or []))
     await finish_profile(msg, state, tg_user)
 
 
@@ -979,6 +1049,7 @@ async def cb_review_skip(cb: CallbackQuery, state: FSMContext) -> None:
 STATE_HINTS = {
     Profile.pet_species.state: texts.HINT_SPECIES,
     Profile.pet_size.state: texts.HINT_SIZE,
+    Profile.pet_traits.state: texts.HINT_TRAITS,
     Profile.phone.state: texts.HINT_PHONE,
     Addr.pick.state: texts.HINT_ADDR_PICK,
 }

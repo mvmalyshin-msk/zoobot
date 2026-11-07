@@ -27,6 +27,10 @@ MIGRATIONS: dict[int, str] = {
     """,
     # 3: праздничные дни из коробки (иначе надбавка за праздники не работала, пока админ не внесёт даты).
     #    Список правится командами /holiday_add и /holiday_del.
+    # 5: стадия лида: 1 — оставил телефон, 2 — оставил адрес (чтобы админу не слать одно и то же дважды)
+    5: "ALTER TABLE users ADD COLUMN lead_stage INTEGER NOT NULL DEFAULT 0;",
+    # 4: повадки питомца (анкета для выгульщика): коды через запятую, см. traits.py
+    4: "ALTER TABLE pets ADD COLUMN traits TEXT;",
     3: """
     INSERT OR IGNORE INTO holidays (day, title) VALUES
         ('2026-11-04','День народного единства'),

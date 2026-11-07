@@ -62,6 +62,15 @@ def looks_like_address(text: str) -> bool:
 _FLAT = re.compile(r"[,\s]+(?:кв(?:артира)?\.?|оф(?:ис)?\.?)\s*№?\s*(\w+)\s*$", re.I)
 
 
+_FLAT_ONLY = re.compile(r"(?:(?:кв(?:артира)?|оф(?:ис)?)[\s.]*№?\s*(\d\w{0,5})|(\d{1,4}[а-яa-z]?))", re.I)
+
+
+def flat_only(text: str) -> str | None:
+    """«квартира 46», «кв 46», «46» → «46»: это номер квартиры, а не адрес (искать на карте нечего)."""
+    m = _FLAT_ONLY.fullmatch(" ".join(text.split()))
+    return (m.group(1) or m.group(2)) if m else None
+
+
 def split_flat(text: str) -> tuple[str, str | None]:
     """«Ленина 1, кв. 5» → («Ленина 1», «5»). Карты квартир не знают, поэтому отделяем."""
     t = " ".join(text.split())

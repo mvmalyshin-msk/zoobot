@@ -14,6 +14,7 @@ from aiogram.exceptions import TelegramForbiddenError
 import db
 import keyboards as kb
 import texts
+import traits
 from config import config
 from utils import fmt_local, from_db, min_age, now_utc, rub, to_db
 
@@ -43,7 +44,7 @@ async def get_order_full(order_id: int) -> dict | None:
         """SELECT o.*, s.name AS service_name, s.category, s.unit,
                   u.tg_id AS client_tg_id, u.name AS client_name, u.phone AS client_phone,
                   p.name AS pet_name, p.species AS pet_species, p.breed AS pet_breed,
-                  p.size AS pet_size, p.notes AS pet_notes,
+                  p.size AS pet_size, p.notes AS pet_notes, p.traits AS pet_traits,
                   e.name AS executor_name, e.tg_id AS executor_tg_id, e.phone AS executor_phone
            FROM orders o
            JOIN services s ON s.id = o.service_id
@@ -76,8 +77,13 @@ def order_card(o: dict, *, for_staff: bool = False) -> str:
         if o["pet_breed"]:
             pet += f", {o['pet_breed']}"
         lines.append(pet)
-        if for_staff and o["pet_notes"]:
-            lines.append(f"Особенности: {o['pet_notes']}")
+        if for_staff:
+            codes = traits.unpack(o.get("pet_traits"))
+            if codes:
+                warn = "⚠️ " if traits.has_danger(codes) else ""
+                lines.append(f"{warn}Повадки: {traits.describe(codes)}")
+            if o["pet_notes"]:
+                lines.append(f"Здоровье и особенности: {o['pet_notes']}")
     if for_staff:
         lines.append(f"Клиент: {o['client_name']}, {o['client_phone']}")
     lines.append(f"Сумма: {rub(o['price_total'])}")
@@ -99,8 +105,26 @@ async def notify(bot: Bot, tg_id: int, text: str, reply_markup=None) -> bool:
 
 
 async def notify_admins(bot: Bot, text: str) -> None:
+    if not config.admin_ids:
+        log.error("ADMIN_IDS не задан: некому отправить уведомление")
     for admin_id in config.admin_ids:
-        await notify(bot, admin_id, text)
+        if not await notify(bot, admin_id, text):
+            log.error("Не удалось отправить уведомление админу %s (он нажал /start у бота?)", admin_id)
+
+
+async def notify_lead(bot: Bot, tg_user, stage: int, *, name: str, phone: str, address: str | None = None) -> None:
+    """Лид — админу мгновенно: на телефоне и на адресе. Каждая стадия шлётся один раз на клиента."""
+    row = await db.fetch_one("SELECT lead_stage FROM users WHERE tg_id=?", (tg_user.id,))
+    if row is None or row["lead_stage"] >= stage:
+        return
+    await db.execute(f"UPDATE users SET lead_stage=?, {db.touch()} WHERE tg_id=?", (stage, tg_user.id))
+    handle = f"@{tg_user.username}" if tg_user.username else "без username"
+    head = "🔔 Новый лид" if stage == 1 else "📍 Лид оставил адрес"
+    lines = [head, f"Имя: {name}", f"Телефон: {phone}"]
+    if address:
+        lines.append(f"Адрес: {address}")
+    lines.append(f"Telegram: {handle}, tg://user?id={tg_user.id}")
+    await notify_admins(bot, "\n".join(lines))
 
 
 # ---------- Создание заказа ----------
