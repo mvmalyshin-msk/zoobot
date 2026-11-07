@@ -65,6 +65,15 @@ async def set_commands(bot: Bot) -> None:
             log.warning("Не удалось задать меню для админа %s (он должен сначала нажать /start)", admin_id)
 
 
+async def set_profile_texts(bot: Bot) -> None:
+    """Текст на стартовой странице бота (до /start) и в шапке профиля. Задаём из кода, чтобы не зависеть от BotFather."""
+    try:
+        await bot.set_my_description(texts.BOT_DESCRIPTION)
+        await bot.set_my_short_description(texts.BOT_SHORT_DESCRIPTION)
+    except Exception as e:  # не критично: бот работает и без этого
+        log.warning("Не удалось задать описание бота: %s", e)
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -86,6 +95,7 @@ async def main() -> None:
     scheduler = setup_scheduler(bot)
     scheduler.start()
     await set_commands(bot)
+    await set_profile_texts(bot)
     log.info("Бот запущен")
     try:
         await dp.start_polling(bot)
