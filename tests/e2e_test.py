@@ -56,7 +56,19 @@ async def fake_reverse(lat, lon):
     return None  # карта «не отвечает» на обратный поиск: район и МКАД определяются по координатам
 
 
-geo.search, geo.reverse = fake_search, fake_reverse
+DIAG = {"троицк": geo.Diagnosis(where="Троицк, Челябинская область", town="Троицк"),
+        "минск": geo.Diagnosis(where="Минск, Беларусь", town=None),
+        "зеленоград": geo.Diagnosis(where=None, town="Зеленоград")}
+
+
+async def fake_diagnose(text):
+    for key, d in DIAG.items():
+        if key in text.lower():
+            return d
+    return geo.Diagnosis(None, None)
+
+
+geo.search, geo.reverse, geo.diagnose = fake_search, fake_reverse, fake_diagnose
 SENT: list[dict] = []  # всё, что бот «отправил»
 BLOCKED: set[int] = set()  # кто «заблокировал бота»
 ANSWERS: list[str] = []  # всплывающие ответы на кнопки (answerCallbackQuery)
@@ -225,6 +237,17 @@ async def main():
        "несуществующий адрес: просит переписать, «оставить как есть» ещё нет")
     r = await say(CLIENT, "абракадабра 9")
     ok("Оставить как написано" in str(_buttons(r[-1])), "после второй неудачи появляется «оставить как написано»")
+    r = await say(CLIENT, "троицк садовая 3")
+    ok("Челябинская область" in last_text(r) and "Москве и Московской области" in last_text(r),
+       "адрес из другого региона: бот называет, где он, и что это вне зоны работы")
+    r = await say(CLIENT, "троицк пушкина 3")
+    ok("Оставить как написано" not in str(_buttons(r[-1])), "адрес вне региона: «оставить как написано» не предлагается даже после двух неудач")
+    n_users_addr = (await db.fetch_one("SELECT address FROM users"))["address"]
+    await raw_callback(CLIENT, "ad:keep")
+    ok((await db.fetch_one("SELECT address FROM users"))["address"] == n_users_addr,
+       "устаревшая кнопка «оставить как написано» не сохраняет адрес из другого региона")
+    r = await say(CLIENT, "зеленоград новая 9")
+    ok("Зеленоград" in last_text(r) and "улиц" in last_text(r), "найден только город: бот просит уточнить улицу и дом")
     r = await say(CLIENT, "ул. Ленина, 1, кв. 5")
     ok(len(_buttons(r[-1])) >= 3 and "Ленина" in str(_buttons(r[-1])), "адрес найден: варианты кнопками")
     r = await click(CLIENT, "Ленина, 1, Москва")

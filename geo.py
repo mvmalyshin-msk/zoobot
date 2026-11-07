@@ -97,6 +97,55 @@ def query_variants(text: str, limit: int = 3) -> list[str]:
     return seen[:limit]
 
 
+_STREET_WORDS = {"ул", "улица", "пр", "проспект", "пер", "переулок", "шоссе", "ш", "бульвар", "бул", "наб", "набережная",
+                 "проезд", "площадь", "пл", "тупик", "аллея", "микрорайон", "мкр", "дом", "д", "квартал"}
+_TOWN_PREFIX = {"г", "город", "пос", "поселок", "посёлок", "п", "пгт", "с", "село", "деревня", "дер"}
+
+
+def town_guess(text: str) -> str | None:
+    """«троицк ленина 1» → «троицк»: первое слово, если за ним ещё есть слова (улица), а не только номер."""
+    tokens = [t.strip(".,") for t in re.split(r"[\s,]+", text.lower().replace("ё", "е")) if t.strip(".,")]
+    while tokens and tokens[0] in _TOWN_PREFIX:
+        tokens = tokens[1:]
+    if len(tokens) < 2:
+        return None
+    first = tokens[0]
+    if not re.fullmatch(r"[а-я\-]{3,}", first) or first in _STREET_WORDS:
+        return None
+    if not any(re.search(r"[а-я]", t) for t in tokens[1:]):
+        return None
+    return first
+
+
+@dataclass(frozen=True)
+class Diagnosis:
+    where: str | None   # адрес нашёлся вне Москвы и области: «Троицк, Челябинская область»
+    town: str | None    # такой населённый пункт есть в Москве/области, но улицы с домом не нашлось
+
+
+def parse_elsewhere(items: list) -> str | None:
+    """Первое найденное место вне Москвы и области → «город, регион/страна»; если все внутри — None."""
+    left, top, right, bottom = VIEWBOX
+    for it in items or []:
+        try:
+            addr = it.get("address") or {}
+            lat, lon = float(it["lat"]), float(it["lon"])
+        except (AttributeError, KeyError, ValueError, TypeError):
+            continue
+        cc = (addr.get("country_code") or "ru").lower()
+        state = (addr.get("state") or "").lower()
+        inside = cc == "ru" and (not state or state in OK_STATES) and bottom <= lat <= top and left <= lon <= right
+        if inside:
+            continue
+        town = addr.get("city") or addr.get("town") or addr.get("village") or addr.get("hamlet") \
+            or addr.get("municipality") or ""
+        area = addr.get("state") if cc == "ru" else addr.get("country")
+        label = ", ".join(x for x in (town, area) if x)
+        if label:
+            return label
+    return None
+
+
 def _km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     p = math.pi / 180
     a = (math.sin((lat2 - lat1) * p / 2) ** 2
@@ -216,6 +265,27 @@ async def search(text: str) -> list[Place] | None:
             _cache[key] = places
             return places
     return []
+
+
+async def diagnose(text: str) -> Diagnosis | None:
+    """Почему адрес не нашёлся: он в другом регионе/стране или есть только город. None — карта недоступна."""
+    base, _ = split_flat(text)
+    tokens = [t for t in base.replace(",", " ").split()]
+    wide = await _get_json("/search", {"q": " ".join(tokens), "format": "jsonv2", "addressdetails": 1,
+                                       "limit": 5, "accept-language": "ru"})
+    if wide is None:
+        return None
+    where = parse_elsewhere(wide if isinstance(wide, list) else [])
+    town = None
+    guess = town_guess(base)
+    if guess:
+        near = await _get_json("/search", {"q": guess, "format": "jsonv2", "addressdetails": 1, "limit": 3,
+                                           "countrycodes": "ru", "accept-language": "ru", "bounded": 1,
+                                           "viewbox": ",".join(str(x) for x in VIEWBOX)})
+        places = parse_nominatim(near if isinstance(near, list) else [], limit=1)
+        if places:
+            town = guess.capitalize()
+    return Diagnosis(where=where, town=town)
 
 
 async def reverse(lat: float, lon: float) -> Place | None:

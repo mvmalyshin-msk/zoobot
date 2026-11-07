@@ -271,15 +271,18 @@ async def _address_input(m: Message, state: FSMContext, text: str, target: str, 
     _, flat = geo.split_flat(text)
     opts = [{"label": p.label + (f", кв. {flat}" if flat else ""), "district": p.district,
              "outside": p.outside_mkad, "has_house": p.has_house} for p in places]
-    await state.update_data(addr_target=target, addr_back=back, addr_text=text, addr_options=opts,
+    await state.update_data(addr_target=target, addr_back=back, addr_text=text, addr_options=opts, addr_outside=False,
                             addr_fails=fails if opts else fails + 1)
     await state.set_state(Addr.pick)
     if opts:
         await m.answer(texts.ADDR_PICK, reply_markup=kb.address_options([o["label"] for o in opts], False))
     else:
         fails += 1
-        await m.answer(texts.ADDR_NOT_FOUND if fails < 2 else texts.ADDR_NOT_FOUND_KEEP,
-                       reply_markup=kb.address_options([], can_keep=fails >= 2))
+        diag = await geo.diagnose(text)
+        elsewhere = bool(diag and diag.where)  # адрес в другом регионе — «оставить как написано» не предлагаем
+        await state.update_data(addr_outside=elsewhere)
+        await m.answer(texts.addr_not_found(diag, fails),
+                       reply_markup=kb.address_options([], can_keep=fails >= 2 and not elsewhere))
 
 
 @router.message(Addr.pick, F.text)
@@ -299,7 +302,7 @@ async def cb_addr(cb: CallbackQuery, state: FSMContext) -> None:
         await cb.message.answer("Напишите адрес ещё раз.", reply_markup=kb.address_ask())
         return
     if arg == "keep":
-        if data.get("addr_fails", 0) < 2 or not data.get("addr_text"):
+        if data.get("addr_fails", 0) < 2 or not data.get("addr_text") or data.get("addr_outside"):
             await cb.message.answer(texts.ADDR_STALE)
             return
         await _address_done(cb.message, state, data["addr_target"], data["addr_text"][:200],
