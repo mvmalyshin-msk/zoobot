@@ -3,12 +3,14 @@ import logging
 from datetime import timedelta
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
+import breeds
 import db
+import geo
 import keyboards as kb
 import orders
 import pricing
@@ -26,7 +28,6 @@ router = Router()
 class Profile(StatesGroup):
     name = State()
     phone = State()
-    district = State()
     address = State()
     pet_name = State()
     pet_species = State()
@@ -42,6 +43,10 @@ class Order(StatesGroup):
     point_b = State()
     confirm = State()
     edit_address = State()
+
+
+class Addr(StatesGroup):
+    pick = State()  # клиент выбирает адрес из найденных на карте
 
 
 class Review(StatesGroup):
@@ -172,9 +177,9 @@ async def cb_profile_addpet(cb: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(Profile.name, F.text)
 async def p_name(m: Message, state: FSMContext) -> None:
-    name = m.text.strip()
-    if not 2 <= len(name) <= 50:
-        await m.answer("Имя — от 2 до 50 символов. Попробуйте ещё раз.")
+    name = breeds.check_person_name(m.text)
+    if not name:
+        await m.answer(texts.BAD_PERSON_NAME)
         return
     await state.update_data(name=name)
     await state.set_state(Profile.phone)
@@ -197,33 +202,145 @@ async def _save_phone(m: Message, state: FSMContext, raw: str) -> None:
         await m.answer(texts.BAD_PHONE)
         return
     await state.update_data(phone=phone)
-    await state.set_state(Profile.district)
-    await m.answer(texts.ASK_DISTRICT, reply_markup=ReplyKeyboardRemove())
-
-
-@router.message(Profile.district, F.text)
-async def p_district(m: Message, state: FSMContext) -> None:
-    await state.update_data(district=m.text.strip()[:80])
     await state.set_state(Profile.address)
-    await m.answer(texts.ASK_ADDRESS)
+    await m.answer(texts.ASK_ADDRESS, reply_markup=kb.address_ask())
+
+
+# =====================================================================
+# Проверка адреса по карте: клиент пишет адрес → бот показывает найденные варианты кнопками
+# =====================================================================
+
+ADDR_STATES = {Profile.address.state: "profile", Order.point_a.state: "a",
+               Order.point_b.state: "b", Order.edit_address.state: "edit"}
 
 
 @router.message(Profile.address, F.text)
 async def p_address(m: Message, state: FSMContext) -> None:
+    await _address_input(m, state, m.text, "profile", Profile.address.state, m.from_user)
+
+
+async def _address_input(m: Message, state: FSMContext, text: str, target: str, back: str, tg_user) -> None:
+    text = " ".join(text.split())
+    if not geo.looks_like_address(text):
+        await m.answer(texts.BAD_ADDRESS)
+        return
+    places = await geo.search(text)
+    if places is None:  # карта недоступна — клиента не блокируем, но помечаем адрес как непроверенный
+        await m.answer(texts.ADDR_MAP_DOWN)
+        await _address_done(m, state, target, text[:200], None, None, False, tg_user)
+        return
     data = await state.get_data()
-    user = await repo.get_or_create_user(m.from_user)
-    await repo.update_user(user["id"], name=data["name"], phone=data["phone"],
-                           district=data["district"], address=m.text.strip()[:200])
-    if await repo.list_pets(user["id"]):
-        await finish_profile(m, state)
+    fails = data.get("addr_fails", 0)
+    _, flat = geo.split_flat(text)
+    opts = [{"label": p.label + (f", кв. {flat}" if flat else ""), "district": p.district,
+             "outside": p.outside_mkad, "has_house": p.has_house} for p in places]
+    await state.update_data(addr_target=target, addr_back=back, addr_text=text, addr_options=opts,
+                            addr_fails=fails if opts else fails + 1)
+    await state.set_state(Addr.pick)
+    if opts:
+        await m.answer(texts.ADDR_PICK, reply_markup=kb.address_options([o["label"] for o in opts], False))
     else:
-        await state.set_state(Profile.pet_name)
-        await m.answer(texts.ASK_PET_NAME)
+        fails += 1
+        await m.answer(texts.ADDR_NOT_FOUND if fails < 2 else texts.ADDR_NOT_FOUND_KEEP,
+                       reply_markup=kb.address_options([], can_keep=fails >= 2))
+
+
+@router.message(Addr.pick, F.text)
+async def addr_pick_text(m: Message, state: FSMContext) -> None:
+    """В режиме выбора клиент написал адрес заново — ищем заново."""
+    data = await state.get_data()
+    await _address_input(m, state, m.text, data["addr_target"], data["addr_back"], m.from_user)
+
+
+@router.callback_query(Addr.pick, F.data.startswith("ad:"))
+async def cb_addr(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    data = await state.get_data()
+    arg = cb.data[3:]
+    if arg == "retry":
+        await state.set_state(data["addr_back"])
+        await cb.message.answer("Напишите адрес ещё раз.", reply_markup=kb.address_ask())
+        return
+    if arg == "keep":
+        if data.get("addr_fails", 0) < 2 or not data.get("addr_text"):
+            await cb.message.answer(texts.ADDR_STALE)
+            return
+        await _address_done(cb.message, state, data["addr_target"], data["addr_text"][:200],
+                            None, None, False, cb.from_user)
+        return
+    opts = data.get("addr_options") or []
+    if not arg.isdigit() or int(arg) >= len(opts):
+        await state.set_state(data.get("addr_back") or Profile.address.state)
+        await cb.message.answer(texts.ADDR_STALE)
+        return
+    o = opts[int(arg)]
+    if not o["has_house"]:
+        await state.set_state(data["addr_back"])
+        await cb.message.answer(texts.ADDR_NO_HOUSE, reply_markup=kb.address_ask())
+        return
+    await _address_done(cb.message, state, data["addr_target"], o["label"][:200], o["district"],
+                        o["outside"], True, cb.from_user)
+
+
+@router.message(StateFilter(Profile.address, Order.point_a, Order.point_b, Order.edit_address, Addr.pick),
+                F.location)
+async def addr_location(m: Message, state: FSMContext) -> None:
+    cur = await state.get_state()
+    data = await state.get_data()
+    target = ADDR_STATES.get(cur) or data.get("addr_target")
+    back = cur if cur in ADDR_STATES else data.get("addr_back")
+    place = await geo.reverse(m.location.latitude, m.location.longitude)
+    if not place:
+        await m.answer(texts.ADDR_LOC_FAIL)
+        return
+    if not place.has_house:
+        await m.answer(texts.ADDR_NO_HOUSE)
+        return
+    opts = [{"label": place.label, "district": place.district, "outside": place.outside_mkad, "has_house": True}]
+    await state.update_data(addr_target=target, addr_back=back, addr_text=place.label, addr_options=opts,
+                            addr_fails=0)
+    await state.set_state(Addr.pick)
+    await m.answer(texts.ADDR_PICK, reply_markup=kb.address_options([place.label], False))
+
+
+async def _address_done(msg: Message, state: FSMContext, target: str, label: str, district: str | None,
+                        outside: bool | None, verified: bool, tg_user) -> None:
+    """Адрес принят (проверен картой или оставлен как есть). Идём дальше по сценарию."""
+    await state.update_data(addr_fails=0, addr_options=[])
+    if target == "profile":
+        data = await state.get_data()
+        user = await repo.get_or_create_user(tg_user)
+        fields = {"name": data["name"], "phone": data["phone"], "address": label,
+                  "address_verified": int(verified), "outside_mkad": int(bool(outside))}
+        if district:
+            fields["district"] = district
+        await repo.update_user(user["id"], **fields)
+        if await repo.list_pets(user["id"]):
+            await finish_profile(msg, state, tg_user)
+        else:
+            await state.set_state(Profile.pet_name)
+            await msg.answer(texts.ASK_PET_NAME, reply_markup=ReplyKeyboardRemove())
+        return
+    if target in ("a", "edit"):
+        await state.update_data(address=label, out_a=bool(outside), unv_a=not verified)
+    else:
+        await state.update_data(address_to=label, out_b=bool(outside), unv_b=not verified)
+    data = await state.get_data()
+    await state.update_data(outside_mkad=bool(data.get("out_a")) or bool(data.get("out_b")))
+    if target == "a":
+        await state.set_state(Order.point_b)
+        await msg.answer(texts.ASK_POINT_B, reply_markup=kb.address_ask())
+    else:
+        await show_confirm(msg, state, tg_user)
 
 
 @router.message(Profile.pet_name, F.text)
 async def p_pet_name(m: Message, state: FSMContext) -> None:
-    await state.update_data(pet_name=m.text.strip()[:40])
+    name = breeds.check_pet_name(m.text)
+    if not name:
+        await m.answer(texts.BAD_PET_NAME)
+        return
+    await state.update_data(pet_name=name)
     await state.set_state(Profile.pet_species)
     await m.answer(texts.ASK_PET_SPECIES, reply_markup=kb.species())
 
@@ -231,25 +348,91 @@ async def p_pet_name(m: Message, state: FSMContext) -> None:
 @router.callback_query(Profile.pet_species, F.data.startswith("sp:"))
 async def p_pet_species(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
-    await state.update_data(pet_species=cb.data.split(":", 1)[1])
+    species = cb.data.split(":", 1)[1]
+    await state.update_data(pet_species=species, pet_breed=None, breed_unverified=False)
     await state.set_state(Profile.pet_breed)
-    await cb.message.answer(texts.ASK_PET_BREED)
+    await cb.message.answer(texts.ASK_PET_OTHER if species == "другое" else texts.ASK_PET_BREED)
+
+
+def _check_breed(species: str, text: str) -> breeds.Verdict:
+    return breeds.check_other_animal(text) if species == "другое" else breeds.check_breed(species, text)
 
 
 @router.message(Profile.pet_breed, F.text)
 async def p_pet_breed(m: Message, state: FSMContext) -> None:
-    breed = m.text.strip()
-    await state.update_data(pet_breed=None if breed in ("-", "—") else breed[:60])
+    data = await state.get_data()
+    species, text = data["pet_species"], " ".join(m.text.split())
+    v = _check_breed(species, text)
+    if v.kind in ("ok", "mixed"):
+        await _accept_breed(m, state, v.canonical, v.size)
+    elif v.kind == "suggest":
+        await state.update_data(pb_options=list(v.options), pb_text=text)
+        await m.answer(texts.BREED_SUGGEST, reply_markup=kb.breed_options(list(v.options), False))
+    elif v.kind == "unknown":
+        await state.update_data(pb_options=[], pb_text=v.canonical or text)
+        await m.answer(texts.OTHER_UNKNOWN if species == "другое" else texts.BREED_UNKNOWN,
+                       reply_markup=kb.breed_options([], True))
+    elif v.kind == "wrong_species":
+        await state.set_state(Profile.pet_species)
+        await m.answer(f"«{text}» — это {v.other_species}, а вы выбрали «{species}». "
+                       "Выберите вид питомца заново:", reply_markup=kb.species())
+    else:
+        await m.answer(texts.BAD_OTHER if species == "другое" else texts.BAD_BREED)
+
+
+async def _accept_breed(msg: Message, state: FSMContext, canonical: str, size_hint: str | None,
+                        unverified: bool = False) -> None:
+    data = await state.get_data()
+    if data["pet_species"] == "другое":  # вид сохраняем конкретный: «хомяк», а не «другое»
+        await state.update_data(pet_species=canonical.lower(), pet_breed=None)
+    else:
+        await state.update_data(pet_breed=canonical)
+    await state.update_data(breed_unverified=unverified)
     await state.set_state(Profile.pet_size)
-    await m.answer(texts.ASK_PET_SIZE, reply_markup=kb.pet_size())
+    hint = f"\nОбычно такие — {size_hint}." if size_hint else ""
+    await msg.answer(texts.ASK_PET_SIZE + hint, reply_markup=kb.pet_size())
+
+
+@router.callback_query(Profile.pet_breed, F.data.startswith("pb:"))
+async def cb_breed(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    data = await state.get_data()
+    arg = cb.data[3:]
+    species = data["pet_species"]
+    if arg == "retry":
+        await cb.message.answer(texts.ASK_PET_OTHER if species == "другое" else texts.ASK_PET_BREED)
+    elif arg == "keep":
+        text = data.get("pb_text")
+        if not text:
+            await cb.message.answer(texts.ASK_PET_OTHER if species == "другое" else texts.ASK_PET_BREED)
+            return
+        await _accept_breed(cb.message, state, text[:60], None, unverified=True)
+    elif arg.isdigit() and int(arg) < len(data.get("pb_options") or []):
+        name = data["pb_options"][int(arg)]
+        await _accept_breed(cb.message, state, name, _check_breed(species, name).size)
+    else:
+        await cb.message.answer(texts.ASK_PET_OTHER if species == "другое" else texts.ASK_PET_BREED)
+
+
+async def _set_size(msg: Message, state: FSMContext, size: str) -> None:
+    await state.update_data(pet_size=size)
+    await state.set_state(Profile.pet_notes)
+    await msg.answer(texts.ASK_PET_NOTES, reply_markup=kb.no_notes())
 
 
 @router.callback_query(Profile.pet_size, F.data.startswith("sz:"))
 async def p_pet_size(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
-    await state.update_data(pet_size=cb.data.split(":", 1)[1])
-    await state.set_state(Profile.pet_notes)
-    await cb.message.answer(texts.ASK_PET_NOTES, reply_markup=kb.no_notes())
+    await _set_size(cb.message, state, cb.data.split(":", 1)[1])
+
+
+@router.message(Profile.pet_size, F.text)
+async def p_pet_size_text(m: Message, state: FSMContext) -> None:
+    size = breeds.parse_size(m.text)
+    if not size:
+        await m.answer(texts.HINT_SIZE)
+        return
+    await _set_size(m, state, size)
 
 
 @router.callback_query(Profile.pet_notes, F.data == "pn:none")
@@ -266,8 +449,11 @@ async def p_pet_notes(m: Message, state: FSMContext) -> None:
 async def _save_pet(msg: Message, tg_user, state: FSMContext, notes: str | None) -> None:
     data = await state.get_data()
     user = await repo.get_or_create_user(tg_user)
+    if data.get("breed_unverified"):  # порода/вид не из справочника — администратор уточнит
+        what = data.get("pet_breed") or data["pet_species"]
+        notes = f"Не из справочника, уточнить: {what}. " + (notes or "")
     await repo.add_pet(user["id"], data["pet_name"], data["pet_species"], data.get("pet_breed"),
-                       data["pet_size"], notes)
+                       data["pet_size"], notes.strip() if notes else None)
     await finish_profile(msg, state, tg_user)
 
 
@@ -318,8 +504,9 @@ async def cb_service(cb: CallbackQuery, state: FSMContext) -> None:
         return
     await state.clear()
     await state.update_data(service_id=service["id"], pet_id=pets[0]["id"], quantity=1,
-                            address=user["address"], address_to=None, outside_mkad=False,
-                            prefilled=False)
+                            address=user["address"], address_to=None,
+                            outside_mkad=bool(user["outside_mkad"]), out_a=bool(user["outside_mkad"]),
+                            out_b=False, unv_a=not user["address_verified"], unv_b=False, prefilled=False)
     await state.set_state(Order.when)
     ask = texts.ASK_WHEN_START if service["unit"] == "сутки" else texts.ASK_WHEN
     await cb.message.answer(ask)
@@ -350,6 +537,7 @@ async def got_when(m: Message, state: FSMContext) -> None:
         user = await repo.get_or_create_user(m.from_user)
         await state.set_state(Order.point_a)
         await m.answer(texts.ASK_POINT_A, reply_markup=kb.use_profile_address(user["address"]))
+        await m.answer("Или напишите другой адрес, или отправьте геопозицию.", reply_markup=kb.address_ask())
     else:
         await show_confirm(m, state, m.from_user)
 
@@ -382,22 +570,22 @@ async def msg_qty(m: Message, state: FSMContext) -> None:
 async def cb_point_a_profile(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
     user = await repo.get_or_create_user(cb.from_user)
-    await state.update_data(address=user["address"])
+    await state.update_data(address=user["address"], out_a=bool(user["outside_mkad"]),
+                            unv_a=not user["address_verified"])
+    data = await state.get_data()
+    await state.update_data(outside_mkad=bool(data.get("out_a")) or bool(data.get("out_b")))
     await state.set_state(Order.point_b)
-    await cb.message.answer(texts.ASK_POINT_B)
+    await cb.message.answer(texts.ASK_POINT_B, reply_markup=kb.address_ask())
 
 
 @router.message(Order.point_a, F.text)
 async def msg_point_a(m: Message, state: FSMContext) -> None:
-    await state.update_data(address=m.text.strip()[:200])
-    await state.set_state(Order.point_b)
-    await m.answer(texts.ASK_POINT_B)
+    await _address_input(m, state, m.text, "a", Order.point_a.state, m.from_user)
 
 
 @router.message(Order.point_b, F.text)
 async def msg_point_b(m: Message, state: FSMContext) -> None:
-    await state.update_data(address_to=m.text.strip()[:200])
-    await show_confirm(m, state, m.from_user)
+    await _address_input(m, state, m.text, "b", Order.point_b.state, m.from_user)
 
 
 # ---- Экран подтверждения с расчётом цены ----
@@ -467,13 +655,13 @@ async def cb_mkad(cb: CallbackQuery, state: FSMContext) -> None:
 async def cb_edit_addr(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
     await state.set_state(Order.edit_address)
-    await cb.message.answer("Напишите новый адрес для этого заказа.")
+    await cb.message.answer("Напишите новый адрес для этого заказа или отправьте геопозицию.",
+                            reply_markup=kb.address_ask())
 
 
 @router.message(Order.edit_address, F.text)
 async def msg_edit_addr(m: Message, state: FSMContext) -> None:
-    await state.update_data(address=m.text.strip()[:200])
-    await show_confirm(m, state, m.from_user)
+    await _address_input(m, state, m.text, "edit", Order.edit_address.state, m.from_user)
 
 
 @router.callback_query(Order.confirm, F.data == "ord:pet")
@@ -518,7 +706,8 @@ async def cb_order_ok(cb: CallbackQuery, state: FSMContext) -> None:
          "start_at": start, "end_at": compute_end(service, start, data["quantity"]),
          "quantity": data["quantity"], "address": data["address"],
          "address_to": data.get("address_to"), "is_urgent": params["is_urgent"],
-         "outside_mkad": params["outside_mkad"]},
+         "outside_mkad": params["outside_mkad"],
+         "address_unverified": bool(data.get("unv_a") or data.get("unv_b"))},
         total, breakdown, actor=f"client:{cb.from_user.id}",
     )
     await state.clear()
@@ -547,7 +736,9 @@ async def cb_repeat(cb: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await state.update_data(service_id=service["id"], pet_id=pet["id"], quantity=int(last["quantity"]),
                             address=last["address"], address_to=last["address_to"],
-                            outside_mkad=bool(last["outside_mkad"]), prefilled=True)
+                            outside_mkad=bool(last["outside_mkad"]), out_a=bool(last["outside_mkad"]),
+                            out_b=False, unv_a=bool(last["address_unverified"]), unv_b=False,
+                            prefilled=True)
     await state.set_state(Order.when)
     await cb.message.answer(f"Повторяем: {service['name']}, {last['address']}.\n" + texts.ASK_WHEN)
 
@@ -655,11 +846,21 @@ async def cb_review_skip(cb: CallbackQuery, state: FSMContext) -> None:
 # Запасные обработчики (должны быть последними в роутере)
 # =====================================================================
 
-@router.message(F.text)
-async def fallback_text(m: Message, state: FSMContext) -> None:
-    if await state.get_state():
-        await m.answer(texts.FINISH_QUESTION)
-    else:
+STATE_HINTS = {
+    Profile.pet_species.state: texts.HINT_SPECIES,
+    Profile.pet_size.state: texts.HINT_SIZE,
+    Profile.phone.state: texts.HINT_PHONE,
+    Addr.pick.state: texts.HINT_ADDR_PICK,
+}
+
+
+@router.message()
+async def fallback_any(m: Message, state: FSMContext) -> None:
+    """Всё, что не подошло (текст не в тот момент, стикер, фото, голос): говорим, что ждём."""
+    cur = await state.get_state()
+    if cur:
+        await m.answer(STATE_HINTS.get(cur, texts.FINISH_QUESTION))
+    elif m.text:  # стикеры и файлы вне диалога молча игнорируем
         await show_menu(m, m.from_user)
 
 

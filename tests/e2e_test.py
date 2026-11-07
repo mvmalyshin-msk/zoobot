@@ -27,11 +27,32 @@ from aiogram.methods import SendMessage  # noqa: E402
 from aiogram.types import Chat, Message  # noqa: E402
 
 import db  # noqa: E402
+import geo  # noqa: E402
 from bot import ConsentMiddleware  # noqa: E402
 from handlers import admin, client, executor  # noqa: E402
 from scheduler import process_due_reminders  # noqa: E402
 
 CLIENT, ADMIN, EXEC = 1000, 111, 2000
+
+# --- Подмена карты: настоящую сеть в тестах не трогаем ---
+MAP_DOWN = False
+FAKE_PLACES = {
+    "ленина": [geo.Place("ул. Ленина, 1, Москва", "Москва", 55.75, 37.6, False, True),
+               geo.Place("ул. Ленина, 1, Химки", "Химки", 55.9, 37.4, True, True)],
+    "шереметьево": [geo.Place("Москва, Шереметьево, терминал B", "Химки", 55.97, 37.41, True, True)],
+}
+
+
+async def fake_search(text):
+    if MAP_DOWN:
+        return None
+    for key, places in FAKE_PLACES.items():
+        if key in text.lower():
+            return places
+    return []
+
+
+geo.search = fake_search
 SENT: list[dict] = []  # всё, что бот «отправил»
 
 
@@ -138,20 +159,79 @@ async def main():
 
     print("2. Профиль при первом заказе")
     await click(CLIENT, "Заказать")
+    r = await say(CLIENT, "ааа")
+    ok("не похоже на имя" in last_text(r).lower(), "мусорное имя отклоняется")
     await say(CLIENT, "Анна")
     r = await say(CLIENT, "abc")
     ok("не получилось" in last_text(r).lower(), "неверный телефон отклоняется")
     await contact(CLIENT, "79001234567")
-    await say(CLIENT, "Химки")
-    await say(CLIENT, "ул. Ленина, 1, кв. 5")
+    r = await say(CLIENT, "Химки")
+    ok("не похоже на адрес" in last_text(r).lower(), "адрес без улицы и дома отклоняется")
+    r = await say(CLIENT, "ывфвф 5")
+    ok("не похоже на адрес" in last_text(r).lower(), "клавиатурная каша вместо адреса отклоняется")
+    r = await say(CLIENT, "абракадабра 9")
+    ok("не нашла" in last_text(r).lower() and "Оставить как написано" not in str(_buttons(r[-1])),
+       "несуществующий адрес: просит переписать, «оставить как есть» ещё нет")
+    r = await say(CLIENT, "абракадабра 9")
+    ok("Оставить как написано" in str(_buttons(r[-1])), "после второй неудачи появляется «оставить как написано»")
+    r = await say(CLIENT, "ул. Ленина, 1, кв. 5")
+    ok(len(_buttons(r[-1])) >= 3 and "Ленина" in str(_buttons(r[-1])), "адрес найден: варианты кнопками")
+    r = await click(CLIENT, "Ленина, 1, Москва")
+    ok("Как его зовут" in last_text(r), "после выбора адреса — вопрос о питомце")
+    u = await db.fetch_one("SELECT * FROM users")
+    ok(u["address"] == "ул. Ленина, 1, Москва, кв. 5" and u["district"] == "Москва" and u["address_verified"] == 1
+       and u["outside_mkad"] == 0, "адрес, район и «в пределах МКАД» взяты с карты, квартира добавлена")
+    r = await say(CLIENT, "говно")
+    ok("не похоже на кличку" in last_text(r).lower(), "мат вместо клички отклоняется")
+    r = await say(CLIENT, "ывфвф")
+    ok("не похоже на кличку" in last_text(r).lower(), "набор букв вместо клички отклоняется")
     await say(CLIENT, "Рекс")
-    await click(CLIENT, "Собака")
-    await say(CLIENT, "Лабрадор")
-    await click(CLIENT, "L")
+    r = await click(CLIENT, "Собака")
+    r = await say(CLIENT, "ывфвф")
+    ok("не похоже на название породы" in last_text(r).lower(), "несуществующая порода отклоняется")
+    r = await say(CLIENT, "лабродор")
+    ok("Лабрадор" in str(_buttons(r[-1])), "опечатка в породе: бот предлагает «Лабрадор-ретривер»")
+    r = await click(CLIENT, "Лабрадор")
+    ok("Размер питомца" in last_text(r), "после породы — размер")
+    r = await say(CLIENT, "ыыыы")
+    ok("S, M, L" in last_text(r), "на мусор вместо размера бот подсказывает варианты")
+    r = await say(CLIENT, "большой")
+    ok("Особенности" in last_text(r), "слово «большой» понято как размер L")
     r = await click(CLIENT, "Ничего")
+    pet = await db.fetch_one("SELECT * FROM pets")
+    ok(pet["name"] == "Рекс" and pet["breed"] == "Лабрадор-ретривер" and pet["size"] == "L", "питомец сохранён с проверенной породой")
     ok("Выберите услугу" in last_text(r), "после профиля сразу выбор услуги")
     u = await db.fetch_one("SELECT * FROM users")
     ok(u["phone"] == "+79001234567" and u["address"].startswith("ул. Ленина"), "профиль сохранён")
+
+    print("2б. Ещё питомцы: другое животное, чужая порода, редкая порода")
+    await say(CLIENT, "/profile")
+    await click(CLIENT, "питомц")
+    await say(CLIENT, "Пуша")
+    await click(CLIENT, "Другое")
+    r = await say(CLIENT, "дракон")
+    ok("Оставить как написано" in str(_buttons(r[-1])), "«дракон»: не из списка домашних, можно оставить, админ проверит")
+    r = await say(CLIENT, "хомяг")
+    ok("Хомяк" in str(_buttons(r[-1])), "опечатка в названии животного: предлагает «Хомяк»")
+    await click(CLIENT, "Хомяк")
+    await click(CLIENT, "S")
+    await click(CLIENT, "Ничего")
+    pet = await db.fetch_one("SELECT * FROM pets WHERE name='Пуша'")
+    ok(pet["species"] == "хомяк" and pet["size"] == "S", "вид сохранён конкретный: «хомяк»")
+    await click(CLIENT, "питомц")
+    await say(CLIENT, "Мурка")
+    await click(CLIENT, "Кошка")
+    r = await say(CLIENT, "лабрадор")
+    ok("это собака" in last_text(r) and "Собака" in str(_buttons(r[-1])), "порода собаки у кошки: бот возвращает к выбору вида")
+    await click(CLIENT, "Кошка")
+    r = await say(CLIENT, "тосса-ину")
+    ok("Оставить как написано" in str(_buttons(r[-1])), "редкая настоящая порода: можно оставить")
+    await click(CLIENT, "Оставить как написано")
+    await click(CLIENT, "M")
+    await click(CLIENT, "Ничего")
+    pet = await db.fetch_one("SELECT * FROM pets WHERE name='Мурка'")
+    ok(pet["breed"] == "Тосса-ину" and "уточнить" in (pet["notes"] or ""), "непроверенная порода помечена для администратора")
+    await db.execute("UPDATE pets SET is_active=0 WHERE name IN ('Пуша','Мурка')")
 
     print("3. Выгул 60 мин ночью: расчёт цены")
     await click(CLIENT, "Выгул 60")
@@ -242,8 +322,11 @@ async def main():
     await say(CLIENT, future.replace(future[-5:], "12:00"))
     await click(CLIENT, "📍")
     r = await say(CLIENT, "Москва, Шереметьево, терминал B")
+    ok("Москва, Шереметьево, терминал B" in str(_buttons(r[-1])), "точка Б: тоже варианты с карты")
+    r = await click(CLIENT, "Шереметьево")
     t = last_text(r)
     ok("Откуда: ул. Ленина" in t and "Куда: Москва" in t, "такси: точки А и Б на экране подтверждения")
+    ok("За МКАД: да" in str(_buttons(r[-1])), "такси в аэропорт: «за МКАД» определено по карте само")
     await click(CLIENT, "Подтвердить")
     ok(await db.fetch_one("SELECT 1 FROM orders WHERE address_to IS NOT NULL") is not None, "заказ такси создан с точкой Б")
     r = await say(ADMIN, "/cancel 2 клиент передумал")
@@ -257,7 +340,15 @@ async def main():
     await click(CLIENT, "Заказать")
     await click(CLIENT, "Выгул 30")
     await say(CLIENT, future.replace(future[-5:], "15:00"))
-    await click(CLIENT, "Подтвердить")
+    global MAP_DOWN
+    MAP_DOWN = True
+    await click(CLIENT, "Изменить адрес")
+    r = await say(CLIENT, "ул. Новая, 7")
+    ok("Карта сейчас не отвечает" in str([m["text"] for m in r]), "карта недоступна: адрес принят, клиент предупреждён")
+    MAP_DOWN = False
+    r = await click(CLIENT, "Подтвердить")
+    ok(any(m["to"] == ADMIN and "Адрес не подтверждён" in m["text"] for m in r),
+       "админу в заявке видно «адрес не подтверждён»")
     await click(CLIENT, "Мои заказы")
     await click(CLIENT, "Отменить №3")
     r = await click(CLIENT, "Да, отменить")
