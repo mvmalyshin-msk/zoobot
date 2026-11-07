@@ -341,6 +341,10 @@ def _chat_html(admin: bool) -> str:
             .replace("__LOGOUT__", "/portal/logout" if admin else "/chat/logout"))
     if admin:  # админский и клиентский интерфейсы не смешиваем: «Кабинет» — клиентский
         html = html.replace('<a href="/cabinet">Кабинет</a>', "")
+        # на экране «Домой» — приложение администратора (открывает портал), а не клиентский чат
+        html = (html.replace('href="/manifest.webmanifest"', 'href="/manifest-admin.webmanifest"')
+                .replace('apple-mobile-web-app-title" content="Зооконсьерж"', 'apple-mobile-web-app-title" content="ЗК Админ"')
+                .replace('application-name" content="Зооконсьерж"', 'application-name" content="ЗК Админ"'))
     return html
 
 
@@ -373,7 +377,7 @@ async def page_login(request: web.Request) -> web.Response:
     title, text = (("Вход администратора", "Нажмите кнопку, чтобы войти под своим аккаунтом администратора.")
                    if n == "portal" else ("Ваш кабинет", "Нажмите кнопку, чтобы открыть кабинет Зооконсьерж на этом телефоне."))
     page = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-            f"<title>{brand.NAME} — вход</title>{brand.HEAD}<body>{ribbons.html(ribbons.ADMIN if n == 'portal' else ribbons.CLIENT)}"
+            f"<title>{brand.NAME} — вход</title>{brand.HEAD_ADMIN if n == 'portal' else brand.HEAD}<body>{ribbons.html(ribbons.ADMIN if n == 'portal' else ribbons.CLIENT)}"
             "<div style='max-width:420px;margin:10vh auto;padding:16px'>"
             f"<div style='text-align:center;font-size:26px'>{brand.LOGO}</div>"
             f"<h2 style='text-align:center'>{title}</h2><p>{text}</p>"

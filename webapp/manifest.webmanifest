@@ -3,6 +3,7 @@
   "short_name": "Зооконсьерж",
   "description": "Выгул, зооняня, передержка и зоотакси",
   "lang": "ru",
+  "id": "/chat",
   "start_url": "/chat",
   "scope": "/",
   "display": "standalone",

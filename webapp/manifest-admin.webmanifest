@@ -1,0 +1,30 @@
+{
+  "name": "Зооконсьерж — администратор",
+  "short_name": "ЗК Админ",
+  "description": "Портал администратора: заявки, клиенты, исполнители, чат с ботом",
+  "lang": "ru",
+  "id": "/portal",
+  "start_url": "/portal",
+  "scope": "/portal",
+  "display": "standalone",
+  "background_color": "#FDF6EC",
+  "theme_color": "#d62b2b",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
