@@ -37,6 +37,10 @@ header nav a.on{color:var(--coral);font-weight:700}
 form{display:flex;gap:8px;padding:8px;background:var(--cream);border-top:1.5px solid var(--line);padding-bottom:max(8px,env(safe-area-inset-bottom))}
 form input{flex:1;font-size:16px;border-radius:999px;min-width:0}
 form button{font:700 20px var(--font);border:0;border-radius:999px;width:48px;background:var(--coral);color:#fff}
+form button.cmd{background:var(--cream);color:var(--coral);border:1.5px solid var(--line);font-size:18px}
+#cmds{display:flex;flex-direction:column;gap:6px;padding:8px;background:var(--cream);border-top:1.5px solid var(--line)}
+#cmds[hidden]{display:none}
+#cmds button{font:600 15px var(--font);text-align:left;padding:10px 12px;border:1.5px solid var(--line);border-radius:12px;background:#fff;color:var(--ink)}
 #st{font-size:12px;color:var(--mute);text-align:center;padding:2px}
 #ios{display:none;margin:8px 10px 0;padding:10px 12px;border-radius:14px;background:var(--peach);font-size:14px}
 #ios b{color:var(--coral)}
@@ -48,7 +52,7 @@ form button{font:700 20px var(--font);border:0;border-radius:999px;width:48px;ba
 <div id="log" aria-live="polite"></div>
 <div id="st"></div>
 <div id="rk"></div>
-<form id="f" autocomplete="off"><input id="t" placeholder="Сообщение…" enterkeyhint="send" maxlength="1000"><button>➤</button></form>
+<div id="cmds" hidden><button type="button" data-cmd="/menu">Главное меню</button><button type="button" data-cmd="/profile">Профиль и питомцы</button><button type="button" data-cmd="/policy">Политика обработки данных</button><button type="button" data-cmd="/delete_me">Удалить мои данные</button></div><form id="f" autocomplete="off"><button type="button" id="cmd" class="cmd" aria-label="Меню команд" aria-expanded="false">☰</button><input id="t" placeholder="Сообщение…" enterkeyhint="send" maxlength="1000"><button>➤</button></form>
 <script>
 (function(){
 var log=document.getElementById('log'),rk=document.getElementById('rk'),st=document.getElementById('st'),inp=document.getElementById('t');
@@ -166,6 +170,9 @@ function kick(){
 }
 document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')kick()});
 window.addEventListener('pageshow',function(e){if(e.persisted)kick()});  // только возврат из кэша Safari, не обычная загрузка
+var cmds=document.getElementById('cmds'),cmdBtn=document.getElementById('cmd');
+cmdBtn.onclick=function(){cmds.hidden=!cmds.hidden;cmdBtn.setAttribute('aria-expanded',String(!cmds.hidden))};
+cmds.onclick=function(e){var b=e.target.closest('button[data-cmd]');if(!b)return;var c=b.getAttribute('data-cmd');cmds.hidden=true;cmdBtn.setAttribute('aria-expanded','false');send({text:c})};
 document.getElementById('f').onsubmit=function(e){
   e.preventDefault();var v=inp.value.trim();if(!v)return;inp.value='';send({text:v});
 };
