@@ -620,7 +620,7 @@ async def cb_approve(cb: CallbackQuery) -> None:
         o = await orders.get_order_full(order_id)
         if o:
             await orders.notify(cb.bot, o["client_tg_id"], texts.PAY_NOT_FOUND.format(id=order_id))
-        await cb.message.answer("Клиенту написала, что оплату пока не видно.")
+        await cb.message.answer("Клиенту написал, что оплату пока не видно.")
     elif action == "as":
         ok, text = await orders.assign_executor(cb.bot, order_id, nums[1], actor)
         await cb.message.answer(("✅ " if ok else "⚠️ ") + text)

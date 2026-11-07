@@ -360,7 +360,7 @@ async def cb_pet_delyes(cb: CallbackQuery) -> None:
     if not await repo.deactivate_pet(int(cb.data.split(":")[2]), user["id"]):
         await cb.message.answer(texts.STALE)
         return
-    await cb.message.answer("Убрала ✅")
+    await cb.message.answer("Убрал ✅")
     await show_pets(cb.message, cb.from_user)
 
 
@@ -431,7 +431,9 @@ async def p_name(m: Message, state: FSMContext) -> None:
         return
     await state.update_data(name=name)
     await state.set_state(Profile.phone)
-    await m.answer(texts.ASK_PHONE, reply_markup=kb.phone_request())
+    import webchat
+    ask = texts.ASK_PHONE_WEB if webchat.ORIGIN.get() is not None else texts.ASK_PHONE  # в браузере Telegram ни при чём
+    await m.answer(ask, reply_markup=kb.phone_request())
 
 
 @router.message(Profile.phone, F.contact)
@@ -902,10 +904,10 @@ async def finish_profile(msg: Message, state: FSMContext, tg_user=None, pet_id: 
         await _init_order(state, user, service, pet_id)
         await _taxi_warn(msg, state, await repo.get_pet(pet_id))
     elif data.get("back") == "pets":
-        await msg.answer("Сохранила ✅ Хотите сразу заказать услугу?", reply_markup=kb.offer_order())
+        await msg.answer("Сохранил ✅ Хотите сразу заказать услугу?", reply_markup=kb.offer_order())
         await show_pets(msg, tg_user)
     else:
-        await msg.answer("Сохранила ✅ Хотите сразу заказать услугу?", reply_markup=kb.offer_order())
+        await msg.answer("Сохранил ✅ Хотите сразу заказать услугу?", reply_markup=kb.offer_order())
         await show_profile(msg, tg_user)
 
 
@@ -1632,8 +1634,12 @@ async def fallback_any(m: Message, state: FSMContext) -> None:
         # вопрос вне сценария: админу (и в портал) или собеседнику в открытом чате по заказу
         if await talk.incoming(m.bot, m.from_user.id, m.text) == "admin":
             await m.answer(texts.SENT_TO_ADMIN, reply_markup=kb.offer_order())
-    elif m.text:  # стикеры и файлы вне диалога молча игнорируем
+    elif m.text:
         await show_menu(m, m.from_user)
+    elif m.web_app_data or m.location or m.contact:  # адрес, место или номер пришли вне шага — не молчим
+        await m.answer(texts.LOST_STEP)
+        await show_menu(m, m.from_user)
+    # стикеры и файлы вне диалога молча игнорируем
 
 
 @router.callback_query()

@@ -254,7 +254,7 @@ async def main():
     r = await say(CLIENT, "ывфвф 5")
     ok("не похоже на адрес" in last_text(r).lower(), "клавиатурная каша вместо адреса отклоняется")
     r = await say(CLIENT, "абракадабра 9")
-    ok("не нашла" in last_text(r).lower() and "Оставить как написано" not in str(_buttons(r[-1])),
+    ok("не нашёл" in last_text(r).lower() and "Оставить как написано" not in str(_buttons(r[-1])),
        "несуществующий адрес: просит переписать, «оставить как есть» ещё нет")
     r = await say(CLIENT, "абракадабра 9")
     ok("Оставить как написано" in str(_buttons(r[-1])), "после второй неудачи появляется «оставить как написано»")
@@ -1003,7 +1003,7 @@ async def main():
     r = await say(PAID, "удали меня")
     ok("администратора" in str(_buttons(r[-1])) and "Отменить заказ" not in str(_buttons(r[-1])), "оплаченный заказ: можно позвать администратора")
     r = await click(PAID, "администратора")
-    ok(any(m["to"] == ADMIN and "просит удалить" in m["text"] for m in r) and "Передала" in last_text(r, PAID), "администратор получил просьбу")
+    ok(any(m["to"] == ADMIN and "просит удалить" in m["text"] for m in r) and "Передал" in last_text(r, PAID), "администратор получил просьбу")
 
     # узнавание: тот же номер, другой Telegram-аккаунт
     REC = 4200
@@ -1017,7 +1017,7 @@ async def main():
     ok("Не совпало" in last_text(r), "неверный второй признак не открывает чужие данные")
     ok((await db.fetch_one("SELECT address FROM users WHERE tg_id=?", (REC,)))["address"] is None, "до совпадения адрес не подтянут")
     r = await say(REC, "Дымок")
-    ok("Узнала вас" in last_text(r, REC) or any("Узнала вас" in m["text"] for m in r), "кличка совпала — профиль узнан")
+    ok("Узнал вас" in last_text(r, REC) or any("Узнал вас" in m["text"] for m in r), "кличка совпала — профиль узнан")
     ru = await db.fetch_one("SELECT * FROM users WHERE tg_id=?", (REC,))
     ok(ru["address"] == "ул. Ленина, 1, Москва" and ru["name"] == "Анна", "адрес и имя перенесены")
     ok(len(await db.fetch_all("SELECT * FROM pets WHERE user_id=? AND is_active=1", (ru["id"],))) == 1, "питомец перенесён")
@@ -1030,7 +1030,7 @@ async def main():
     await say(REC2, "Анна")
     await contact(REC2, "79007778899")
     r = await say(REC2, "Ленина 1")
-    ok(any("Узнала вас" in m["text"] for m in r), "улица и дом тоже подходят вторым признаком")
+    ok(any("Узнал вас" in m["text"] for m in r), "улица и дом тоже подходят вторым признаком")
     # пропуск
     REC3 = 4220
     await say(REC3, "/start")
@@ -1107,7 +1107,7 @@ async def main():
     if "Тянет" in str(_buttons(r[-1])) or "tr:" in str([b.callback_data for b in _buttons(r[-1])]):
         r = await click(PET, "Готово")
     r = await click(PET, "Ничего")
-    ok(any("Заказать услугу" in b.text for b in _buttons(next(m for m in reversed(SENT) if m["to"] == PET and "Сохранила" in m["text"]))),
+    ok(any("Заказать услугу" in b.text for b in _buttons(next(m for m in reversed(SENT) if m["to"] == PET and "Сохранил" in m["text"]))),
        "после сохранения бот сам предлагает заказать услугу")
     pets = await db.fetch_all("SELECT name, size, is_active FROM pets WHERE user_id=? AND is_active=1 ORDER BY id", (pu["id"],))
     ok([p["name"] for p in pets] == ["Рексик", "Мурка"] and pets[0]["size"] == "L", "питомец обновлён на месте, второй не задет, дубля нет")
@@ -1205,7 +1205,7 @@ async def main():
     r = await say(TX, "А можно с двумя собаками?")
     ok(any(m["to"] == ADMIN and "А можно с двумя собаками?" in m["text"] for m in r), "вопрос клиента вне сценария пришёл админу")
     ok(any("wc:" in (b.callback_data or "") for m in r if m["to"] == ADMIN for b in _buttons(m)), "у админа кнопка «Ответить»")
-    ok("Передала администратору" in last_text(r, TX) and "Заказать услугу" in str(_buttons(r[-1])), "клиенту: передано + предложение заказать")
+    ok("Передал администратору" in last_text(r, TX) and "Заказать услугу" in str(_buttons(r[-1])), "клиенту: передано + предложение заказать")
     ok((await db.fetch_one("SELECT party_kind, direction FROM messages WHERE party_tg_id=? ORDER BY id DESC", (TX,)))["direction"] == "in",
        "вопрос сохранён для портала")
     await click(ADMIN, "Ответить")

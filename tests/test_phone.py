@@ -172,6 +172,17 @@ class PhoneRulesTest(unittest.TestCase):
         run(t)
 
 
+class PhonePromptTest(unittest.TestCase):
+    def test_telegram_client_is_asked_for_the_button(self):
+        async def t(bot):
+            from handlers.client import Profile
+            await new_client(bot, 6110, Profile.name)
+            TG.clear()
+            await feed(bot, 6110, text="Анна")
+            self.assertIn(texts.ASK_PHONE, sent_texts())
+        run(t)
+
+
 class SiteLoginTest(unittest.TestCase):
     def test_telegram_client_gets_one_time_site_button(self):
         async def t(bot):

@@ -80,10 +80,14 @@ def min_age(birth_year: int) -> int:
 
 
 def normalize_phone(raw: str) -> str | None:
-    """Российский номер → '+7XXXXXXXXXX' или None."""
+    """Российский номер → '+7XXXXXXXXXX' или None. Очевидно выдуманный (одна цифра подряд, 0123456789…) — None."""
     digits = re.sub(r"\D", "", raw)
     if len(digits) == 11 and digits[0] in "78":
-        return "+7" + digits[1:]
-    if len(digits) == 10:
-        return "+7" + digits
-    return None
+        national = digits[1:]
+    elif len(digits) == 10:
+        national = digits
+    else:
+        return None
+    if len(set(national)) == 1 or national in "01234567890123456789" or national in "98765432109876543210":
+        return None
+    return "+7" + national

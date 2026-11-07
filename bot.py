@@ -4,10 +4,11 @@ import logging
 import os
 
 from aiogram import BaseMiddleware, Bot, Dispatcher, F
-from aiogram.fsm.storage.memory import MemoryStorage, SimpleEventIsolation
+from aiogram.fsm.storage.memory import SimpleEventIsolation
 from aiogram.types import BotCommand, BotCommandScopeChat, CallbackQuery, ErrorEvent, Message
 
 import db
+import fsm_store
 import keyboards as kb
 import repo
 import texts
@@ -119,7 +120,8 @@ def build_dispatcher() -> Dispatcher:
 def _make_dispatcher() -> Dispatcher:
     # SimpleEventIsolation: события одного пользователя обрабатываются по очереди.
     # Иначе двойное нажатие «Подтвердить» создаёт два заказа (проверено тестом).
-    dp = Dispatcher(storage=MemoryStorage(), events_isolation=SimpleEventIsolation())
+    # шаги диалога — в базе: переживают перезапуск при выкладке (раньше MemoryStorage их терял)
+    dp = Dispatcher(storage=fsm_store.SQLiteStorage(), events_isolation=SimpleEventIsolation())
     dp.message.filter(F.chat.type == "private")
     dp.update.outer_middleware(webchat.tg_origin_middleware)  # что копировать в чат на сайте, см. WebRouterSession
     consent = ConsentMiddleware()

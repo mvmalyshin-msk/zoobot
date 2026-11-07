@@ -106,6 +106,36 @@ async def main():
         check("🗺 Адрес выбран на карте" in await events_text(uid), "адрес с карты вернулся в чат")
         check(not errors, "в консоли нет ошибок JS: " + "; ".join(errors))
 
+        # геопозиция на компьютере: точный запрос не успевает (у Mac нет GPS) — чат повторяет с обычной точностью
+        async def geo_page(script):
+            gctx = await br.new_context(viewport={"width": 390, "height": 780})
+            await _fake_tg(gctx, TG_OUTSIDE)
+            await gctx.add_init_script(script)
+            gp = await gctx.new_page()
+            gp.on("pageerror", lambda e: errors.append(str(e)))
+            await gp.goto(base + "/chat")
+            await gp.wait_for_timeout(1200)
+            guid = (await db.fetch_one("SELECT uid FROM web_sessions ORDER BY id DESC LIMIT 1"))["uid"]
+            await webchat.push(guid, "send", who="bot", text="Адрес?",
+                               reply=[[{"t": "🗺 Найти на карте", "map": base + "/"}, {"t": "📍 Отправить геопозицию", "loc": True}]])
+            await gp.wait_for_selector("text=📍 Отправить геопозицию", timeout=5000)
+            await gp.click("text=📍 Отправить геопозицию")
+            await gp.wait_for_timeout(1500)
+            return gp, guid
+
+        gp, guid = await geo_page("""navigator.geolocation.getCurrentPosition = function (ok, fail, o) {
+            if (o && o.enableHighAccuracy) { setTimeout(function () { fail({code: 3, message: 'timeout'}); }, 50); return; }
+            ok({coords: {latitude: 55.9516, longitude: 37.3036, accuracy: 900}}); };""")
+        check("📍 Геопозиция отправлена" in await events_text(guid), "без GPS: повтор с обычной точностью дошёл до бота")
+        gp, _ = await geo_page("""navigator.geolocation.getCurrentPosition = function (ok, fail) {
+            setTimeout(function () { fail({code: 1, message: 'denied'}); }, 50); };""")
+        st = await gp.inner_text("#st")
+        check("разрешите" in st.lower() and "Найти на карте" in st, f"доступ запрещён: подсказка, как разрешить, и карта: {st}")
+        gp, _ = await geo_page("""navigator.geolocation.getCurrentPosition = function (ok, fail) {
+            setTimeout(function () { fail({code: 2, message: 'unavailable'}); }, 50); };""")
+        st = await gp.inner_text("#st")
+        check("Найти на карте" in st and "разрешите" not in st.lower(), f"место не определилось: предлагаем карту: {st}")
+
         # внутри Telegram (мини-приложение с кнопки) адрес по-прежнему уходит через sendData, а не на сайт
         ctx2 = await br.new_context(viewport={"width": 390, "height": 780})
         await _fake_tg(ctx2, TG_INSIDE)

@@ -361,6 +361,35 @@ class UrlTest(unittest.TestCase):
 class WebPhoneTest(unittest.TestCase):
     """Регистрация по номеру в вебе: сессия, вошедшая по ссылке из Telegram, тоже вводит номер в чате."""
 
+    def test_web_guest_is_asked_to_type_phone_not_to_use_telegram(self):
+        async def t(c, bot):
+            import texts
+            await c.get("/chat")
+            await c.post("/chat/api/send", json={"text": "/start"}, headers=H)
+            await c.post("/chat/api/send", json={"cb": "pdn:agree", "mid": 1}, headers=H)
+            await c.post("/chat/api/send", json={"cb": "menu:order", "mid": 1}, headers=H)
+            await c.post("/chat/api/send", json={"text": "Фунтик"}, headers=H)
+            bot_texts = [m.get("text", "") for m in (await history(c))["messages"] if m.get("who") == "bot"]
+            self.assertEqual(bot_texts[-1], texts.ASK_PHONE_WEB)
+            self.assertNotIn("Telegram подтвердит", bot_texts[-1])
+        run(t)
+
+    def test_map_pick_without_a_step_gets_an_answer_not_silence(self):
+        """После перезапуска шаг мог потеряться: адрес с карты всё равно получает ответ и меню."""
+        async def t(c, bot):
+            import json as _json
+            import texts
+            await c.get("/chat")
+            await c.post("/chat/api/send", json={"text": "/start"}, headers=H)
+            await c.post("/chat/api/send", json={"cb": "pdn:agree", "mid": 1}, headers=H)
+            before = len([m for m in (await history(c))["messages"] if m.get("who") == "bot"])
+            pick = _json.dumps({"lat": 55.95, "lon": 37.3, "label": "Химки, Железнодорожная 33", "flat": ""})
+            await c.post("/chat/api/send", json={"pick": pick}, headers=H)
+            bots = [m.get("text", "") for m in (await history(c))["messages"] if m.get("who") == "bot"]
+            self.assertGreater(len(bots), before)
+            self.assertTrue(any(texts.LOST_STEP in x for x in bots[before:]), bots[before:])
+        run(t)
+
     def test_telegram_linked_session_can_type_phone_and_registration_moves_on(self):
         async def t(c, bot):
             from aiogram.fsm.storage.base import StorageKey

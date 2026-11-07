@@ -114,10 +114,21 @@ function setReply(rows){
 function locate(){
   if(!navigator.geolocation){st.textContent='Геопозиция в этом браузере недоступна. Впишите адрес текстом.';return}
   st.textContent='Определяю геопозицию…';
-  navigator.geolocation.getCurrentPosition(function(p){
-    send({loc:{lat:p.coords.latitude,lon:p.coords.longitude}});
-  },function(){st.textContent='Не получилось определить геопозицию. Разрешите доступ к геопозиции в настройках браузера или впишите адрес.'},
-  {enableHighAccuracy:true,timeout:15000,maximumAge:60000});
+  function ok(p){st.textContent='';send({loc:{lat:p.coords.latitude,lon:p.coords.longitude}})}
+  function fail(e){
+    if(e&&e.code===1){
+      var mac=/Macintosh/.test(navigator.userAgent),ios=/iPhone|iPad/.test(navigator.userAgent);
+      st.textContent='Браузер не дал доступ к геопозиции. Разрешите его: значок 📍 в адресной строке → «Разрешить»'+
+        (ios?' (или Настройки → Конфиденциальность → Службы геолокации → браузер).':
+         mac?' (на Mac ещё: Системные настройки → Конфиденциальность → Службы геолокации → включите браузер).':'.')+
+        ' Или нажмите «🗺 Найти на карте».';
+    }else st.textContent='Устройство не смогло определить место (на компьютере так бывает). Нажмите «🗺 Найти на карте» или впишите адрес.';
+  }
+  // сначала точно (GPS телефона); если не успели или не вышло — ещё раз с обычной точностью (Wi-Fi, как на компьютере)
+  navigator.geolocation.getCurrentPosition(ok,function(e){
+    if(e&&e.code===1)return fail(e);
+    navigator.geolocation.getCurrentPosition(ok,fail,{enableHighAccuracy:false,timeout:20000,maximumAge:300000});
+  },{enableHighAccuracy:true,timeout:10000,maximumAge:60000});
 }
 function bottom(){log.scrollTop=log.scrollHeight}
 // «прилипание» к низу: пока человек внизу, новые сообщения и появление клавиатуры не уводят ленту
