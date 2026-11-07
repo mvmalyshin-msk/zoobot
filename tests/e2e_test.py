@@ -24,7 +24,7 @@ for suffix in ("", "-wal", "-shm"):
 from aiogram import Bot  # noqa: E402
 from aiogram.client.session.base import BaseSession  # noqa: E402
 from aiogram.exceptions import TelegramForbiddenError  # noqa: E402
-from aiogram.methods import AnswerCallbackQuery, EditMessageText, SendMessage, SendPhoto  # noqa: E402
+from aiogram.methods import AnswerCallbackQuery, EditMessageText, SendDocument, SendMessage, SendPhoto  # noqa: E402
 from aiogram.types import Chat, Message  # noqa: E402
 
 import db  # noqa: E402
@@ -88,6 +88,11 @@ class FakeSession(BaseSession):
                            text=method.text)
         if isinstance(method, SendPhoto):
             SENT.append({"to": method.chat_id, "text": method.caption or "", "markup": method.reply_markup, "photo": True})
+            return Message(message_id=len(SENT), date=datetime.now(), chat=Chat(id=method.chat_id, type="private"))
+        if isinstance(method, SendDocument):
+            f = method.document
+            SENT.append({"to": method.chat_id, "text": method.caption or "", "markup": None, "document": f.filename,
+                         "data": f.data})
             return Message(message_id=len(SENT), date=datetime.now(), chat=Chat(id=method.chat_id, type="private"))
         if isinstance(method, EditMessageText):  # окно календаря меняется на месте
             SENT.append({"to": method.chat_id, "text": method.text, "markup": method.reply_markup, "edited": True})
@@ -754,6 +759,26 @@ async def main():
         await raw_callback(CLIENT, "del:yes")
         ok((await db.fetch_one("SELECT name FROM users WHERE tg_id=?", (CLIENT,)))["name"] is not None,
            "устаревшая кнопка подтверждения не стирает данные клиента с активным заказом")
+
+    print("20. Ежедневный отчёт в Excel")
+    import io as _io
+
+    import openpyxl as _xl
+    r = await say(ADMIN, "/report")
+    docs = [m for m in r if m.get("document")]
+    ok(len(docs) == 1 and docs[0]["document"].endswith(".xlsx") and "новых клиентов" in docs[0]["text"],
+       "админ по /report получает файл .xlsx с подписью")
+    wb = _xl.load_workbook(_io.BytesIO(docs[0]["data"]))
+    ok(wb.sheetnames == ["Новые клиенты", "Заказы"] and wb["Новые клиенты"].max_row >= 2,
+       "в файле два листа, сегодняшние клиенты внесены")
+    flat = " ".join(str(c.value) for ws in wb for row in ws.iter_rows() for c in row)
+    ok("Глеб" not in flat and "79005556677" not in flat, "клиент, удалённый по просьбе, в отчёт не попадает")
+    r = await say(ADMIN, "/report вчера")
+    ok("ГГГГ-ММ-ДД" in last_text(r), "кривая дата — подсказка формата")
+    r = await say(CLIENT, "/report")
+    ok(not any(m.get("document") for m in r), "клиенту отчёт не отправляется")
+    from bot import setup_scheduler
+    ok(setup_scheduler(bot).get_job("daily_report") is not None, "отчёт стоит в расписании на конец дня")
 
     print("\nВСЕ ПРОВЕРКИ ПРОЙДЕНЫ")
 
