@@ -209,6 +209,12 @@ async def link_phone_contact(m: Message, state: FSMContext) -> None:
     await orders.notify(m.bot, data["web_uid"], texts.PHONE_VERIFIED_WEB.format(phone=phone))
 
 
+@router.message(LinkPhone.wait, F.text)
+async def link_phone_text(m: Message, state: FSMContext) -> None:
+    """Номер по ссылке принимаем только кнопкой: объясняем её, а не отвечаем общей фразой."""
+    await m.answer(texts.PHONE_ONLY_BUTTON, reply_markup=kb.phone_request())
+
+
 @router.message(CommandStart())
 async def cmd_start(m: Message, state: FSMContext) -> None:
     await state.clear()
@@ -429,17 +435,20 @@ async def p_name(m: Message, state: FSMContext) -> None:
 
 @router.message(Profile.phone, F.contact)
 async def p_phone_contact(m: Message, state: FSMContext) -> None:
+    import webchat
+    web = webchat.ORIGIN.get() is not None  # сообщение пришло из браузера, а не из Telegram
     own = m.contact.user_id == m.from_user.id
-    if m.from_user.id > 0 and not own:  # в Telegram принимаем только свой контакт: чужая карточка — не номер клиента
+    if not web and m.from_user.id > 0 and not own:  # в Telegram принимаем только свой контакт: чужая карточка — не номер клиента
         await m.answer(texts.PHONE_NOT_OWN, reply_markup=kb.phone_request())
         return
-    # гость с сайта присылает номер без user_id: Telegram его не подтверждал
-    await _save_phone(m, state, m.contact.phone_number, verified="telegram" if own else None)
+    # из браузера номер приходит без user_id: Telegram его не подтверждал, но сессия уже вошла через Telegram или гость введёт сам
+    await _save_phone(m, state, m.contact.phone_number, verified="telegram" if (own and not web) else None)
 
 
 @router.message(Profile.phone, F.text)
 async def p_phone_text(m: Message, state: FSMContext) -> None:
-    if m.from_user.id > 0:  # в Telegram номер набирают только кнопкой, иначе его не подтвердить
+    import webchat
+    if m.from_user.id > 0 and webchat.ORIGIN.get() is None:  # в Telegram номер набирают только кнопкой, иначе его не подтвердить
         if not normalize_phone(m.text):
             await m.answer(texts.BAD_PHONE)
         else:

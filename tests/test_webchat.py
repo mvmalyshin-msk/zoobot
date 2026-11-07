@@ -355,5 +355,32 @@ class UrlTest(unittest.TestCase):
         self.assertIsNone(b.url)
 
 
+
+class WebPhoneTest(unittest.TestCase):
+    """Регистрация по номеру в вебе: сессия, вошедшая по ссылке из Telegram, тоже вводит номер в чате."""
+
+    def test_telegram_linked_session_can_type_phone_and_registration_moves_on(self):
+        async def t(c, bot):
+            from aiogram.fsm.storage.base import StorageKey
+            from aiogram.types import User
+            import repo
+            import texts
+            from handlers.client import Profile
+            tg = 7755
+            await db.execute("DELETE FROM users WHERE tg_id=?", (tg,))
+            user = await repo.get_or_create_user(User(id=tg, is_bot=False, first_name="Максим"))
+            await repo.save_consent(user, "pdn", True, texts.PDN_VERSION)
+            token = await webchat.new_session(tg)
+            headers = dict(H, Cookie=f"{webchat.COOKIE}={token}")
+            key = StorageKey(bot_id=bot.id, chat_id=tg, user_id=tg)
+            await DP.storage.set_state(key, Profile.phone.state)
+            await DP.storage.update_data(key, {"name": "Максим"})
+            r = await c.post("/chat/api/send", json={"text": "+7 900 123-45-67"}, headers=headers)
+            self.assertEqual(r.status, 200)
+            self.assertNotEqual(await DP.storage.get_state(key), Profile.phone.state)
+            self.assertEqual((await DP.storage.get_data(key)).get("phone"), "+79001234567")
+        run(t)
+
+
 if __name__ == "__main__":
     unittest.main()
