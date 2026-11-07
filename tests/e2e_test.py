@@ -202,6 +202,13 @@ async def svc(uid: int, label: str) -> list[dict]:
     return await click(uid, rest[:1].upper() + rest[1:])
 
 
+async def taxi_pre(uid: int, pet: str, rider: str = "Для меня") -> list[dict]:
+    """Шаги перед выбором времени у зоотакси: какой питомец едет, предупреждение, для кого заказ."""
+    await click(uid, pet)
+    await click(uid, "Понял")
+    return await click(uid, rider)
+
+
 async def edit_click(uid: int, label: str) -> list[dict]:
     """Правка заказа: сначала «Внести правки», потом нужная кнопка."""
     await click(uid, "Внести правки")
@@ -299,7 +306,8 @@ async def main():
 
     print("2б. Ещё питомцы: другое животное, чужая порода, редкая порода")
     await say(CLIENT, "/profile")
-    await click(CLIENT, "питомц")
+    await click(CLIENT, "Питомцы")
+    await click(CLIENT, "Добавить")
     await say(CLIENT, "Пуша")
     await click(CLIENT, "Другое")
     r = await say(CLIENT, "дракон")
@@ -311,7 +319,7 @@ async def main():
     await click(CLIENT, "Ничего")
     pet = await db.fetch_one("SELECT * FROM pets WHERE name='Пуша'")
     ok(pet["species"] == "хомяк" and pet["size"] == "S", "вид сохранён конкретный: «хомяк»")
-    await click(CLIENT, "питомц")
+    await click(CLIENT, "Добавить")
     await say(CLIENT, "Мурка")
     await click(CLIENT, "Кошка")
     r = await say(CLIENT, "лабрадор")
@@ -431,6 +439,7 @@ async def main():
     await say(CLIENT, "/menu")
     await click(CLIENT, "Заказать")
     await svc(CLIENT, "Зоотакси")
+    await taxi_pre(CLIENT, "Рекс")
     await say(CLIENT, future.replace(future[-5:], "12:00"))
     await click(CLIENT, "📍")
     r = await say(CLIENT, "Москва, Шереметьево, терминал B")
@@ -485,6 +494,7 @@ async def main():
     r = await say(ADMIN, "/broadcast Скидка 10% на выгул")
     ok("получателей с согласием: 0" in last_text(r), "рассылка без согласий уходит 0 получателям")
     await say(CLIENT, "/profile")
+    await click(CLIENT, "Настройки")
     await click(CLIENT, "Получать акции")
     r = await say(ADMIN, "/broadcast Скидка 10% на выгул")
     ok("доставлено 1" in last_text(r), "после согласия рассылка доходит")
@@ -610,6 +620,7 @@ async def main():
     await say(CLIENT, "/menu")
     await click(CLIENT, "Заказать")
     r = await svc(CLIENT, "Зоотакси")
+    r = await taxi_pre(CLIENT, "Рекс")
     ok("за сутки" not in last_text(r) and "машину" in last_text(r), "у такси про сутки не говорится")
     if _now.hour < 23:
         ok(today_btn in str(_buttons(r[-1])), "в календаре такси сегодня доступно")
@@ -671,7 +682,8 @@ async def main():
 
     print("16. Анкета повадок собаки")
     await say(CLIENT, "/profile")
-    await click(CLIENT, "питомц")
+    await click(CLIENT, "Питомцы")
+    await click(CLIENT, "Добавить")
     await say(CLIENT, "Бим")
     await click(CLIENT, "Собака")
     await say(CLIENT, "лабродор")
@@ -693,7 +705,8 @@ async def main():
     ok(bim["traits"] == "pick,aggr_dog", "повадки сохранены кодами в порядке списка: " + str(bim["traits"]))
     ok(bim["notes"] == "Хромает на левую лапу", "здоровье сохранено отдельно в заметках")
     await say(CLIENT, "/profile")
-    await click(CLIENT, "питомц")
+    await click(CLIENT, "Питомцы")
+    await click(CLIENT, "Добавить")
     await say(CLIENT, "Тишка")
     await click(CLIENT, "Кошка")
     r = await say(CLIENT, "сиамская")
@@ -705,7 +718,7 @@ async def main():
     await db.execute("UPDATE pets SET is_active=0 WHERE name IN ('Бим','Тишка')")
 
 
-    print("17. Лид: админ узнаёт сразу, как клиент оставил телефон")
+    print("17. Админу не шлём заявку по частям: ни после телефона, ни после адреса")
     LEAD = 3000
     n0 = len(SENT)
     await say(LEAD, "/start")
@@ -713,10 +726,7 @@ async def main():
     await click(LEAD, "Заказать")
     await say(LEAD, "Ольга Петрова")
     r = await contact(LEAD, "79161112233")
-    ok(any(m["to"] == ADMIN and "Новый лид" in m["text"] and "+79161112233" in m["text"] and "Ольга Петрова" in m["text"] for m in r),
-       "админ получил лид сразу после телефона: имя и номер")
-    ok(any(m["to"] == ADMIN and "Новый лид" in m["text"] and "tg://user?id=3000" in m["text"] for m in r), "в лиде есть ссылка на Telegram клиента")
-    n_leads = sum(1 for m in SENT[n0:] if m["to"] == ADMIN and "Новый лид" in m["text"])
+    ok(not any(m["to"] == ADMIN for m in r), "после телефона админу ничего не приходит")
     r = await say(LEAD, "квартира 46")
     ok("номер квартиры" in last_text(r).lower() and not any(m["to"] == ADMIN for m in r), "«квартира 46» вместо адреса: просит улицу и дом, поиск не запускается")
     r = await say(LEAD, "ул. Ленина, 1")
@@ -724,14 +734,14 @@ async def main():
     r = await say(LEAD, "кв 46")
     ok("кв. 46" in str(_buttons(r[-1])) and "46" in last_text(r), "номер квартиры после вариантов добавлен к вариантам")
     r = await click(LEAD, "Ленина, 1, Москва")
-    ok(any(m["to"] == ADMIN and "Адрес" in m["text"] and "кв. 46" in m["text"] for m in r), "админ получил адрес лида сразу")
+    ok(not any(m["to"] == ADMIN for m in r), "после адреса админу ничего не приходит")
     await click(LEAD, "Telegram")
     ok((await db.fetch_one("SELECT contact_pref FROM users WHERE tg_id=?", (LEAD,)))["contact_pref"] == "telegram",
        "способ связи «Telegram» сохранён")
     r = await say(LEAD, "Бублик")
     r = await say(LEAD, "кошка")
     ok("Порода" in last_text(r), "вид питомца словом «кошка» понятен без кнопки")
-    ok(sum(1 for m in SENT[n0:] if m["to"] == ADMIN and "Новый лид" in m["text"]) == n_leads, "лид по одному клиенту приходит один раз")
+    ok(not any(m["to"] == ADMIN for m in SENT[n0:]), "пока заявка не готова, админу не пришло ни одного сообщения")
 
     print("18. Политика обработки ПДн")
     POL = 3100
@@ -1049,13 +1059,181 @@ async def main():
     await say(REC5, "Анна")
     r = await say(REC5, "+7 900 777-88-99")
     ok("уже есть у нас" not in last_text(r) and "адрес" in last_text(r).lower(), "напечатанный номер (не контакт) профиль не раскрывает")
-    # способ связи из профиля
+    # профиль: только главное, остальное в подменю
     r = await say(NEW, "/profile")
-    ok("Связь:" in last_text(r) and "Уведомления о заказах: включены" in last_text(r), "в профиле видны способ связи и уведомления")
+    btns = [b.text for b in _buttons(r[-1])]
+    ok("Связь:" in last_text(r), "в профиле виден способ связи")
+    ok(len(btns) == 4 and any("Питомцы" in b for b in btns) and any("Настройки" in b for b in btns),
+       "в профиле 4 кнопки: данные, питомцы, настройки, меню: " + str(btns))
+    ok(not any("Удалить" in b or "акции" in b.lower() or "Способ связи" in b for b in btns), "удаление, рассылки и способ связи убраны из профиля")
+    r = await click(NEW, "Настройки")
+    ok("Уведомления о заказах: включены" in last_text(r), "в настройках видны уведомления")
+    sb = [b.text for b in _buttons(r[-1])]
+    ok(any("Способ связи" in b for b in sb) and any("Удалить" in b for b in sb) and any("акции" in b.lower() for b in sb),
+       "в настройках: способ связи, рассылки, удаление данных")
     r = await click(NEW, "Способ связи")
     r = await click(NEW, "СМС")
     ok((await db.fetch_one("SELECT contact_pref FROM users WHERE tg_id=?", (NEW,)))["contact_pref"] == "sms"
-       and "СМС" in last_text(r), "способ связи меняется из профиля")
+       and "СМС" in last_text(r), "способ связи меняется из настроек")
+    r = await say(NEW, "/profile")
+    r = await click(NEW, "Настройки")
+    r = await click(NEW, "Удалить")
+    ok("Да, удалить" in str(_buttons(r[-1])) or "заказ" in last_text(r).lower() or "администратора" in str(_buttons(r[-1])),
+       "удаление данных работает из настроек")
+    await click(NEW, "Нет") if "Нет" in str(_buttons(r[-1])) else None
+
+    print("26. Питомцы в профиле: список, изменить, убрать, добавить")
+    PET = 4300
+    await say(PET, "/start")
+    await click(PET, "Согласен")
+    pu = await db.fetch_one("SELECT * FROM users WHERE tg_id=?", (PET,))
+    await _repo2.update_user(pu["id"], name="Петя", phone=_np("79003330000"), address="Мира 5")
+    await _repo2.add_pet(pu["id"], "Рекс", "собака", None, "M", None)
+    await _repo2.add_pet(pu["id"], "Мурка", "кошка", None, "S", None)
+    r = await say(PET, "/profile")
+    r = await click(PET, "Питомцы")
+    ok("Рекс" in str(_buttons(r[-1])) and "Мурка" in str(_buttons(r[-1])) and "Добавить" in str(_buttons(r[-1])),
+       "список питомцев: каждый кнопкой + добавить")
+    r = await click(PET, "Рекс")
+    ok("Рекс" in last_text(r) and "Изменить" in str(_buttons(r[-1])) and "Убрать" in str(_buttons(r[-1])), "карточка питомца: изменить и убрать")
+    r = await click(PET, "Изменить")
+    ok("кличка" in last_text(r).lower() or "зовут" in last_text(r).lower(), "изменение начинается с клички")
+    await say(PET, "Рексик")
+    await click(PET, "Собака")
+    r = await say(PET, "лабрадор")
+    ok("размер" in last_text(r).lower() or "Размер" in str(_buttons(r[-1])) or "S" in str(_buttons(r[-1])), "дальше размер")
+    r = await click(PET, "L")
+    if "Тянет" in str(_buttons(r[-1])) or "tr:" in str([b.callback_data for b in _buttons(r[-1])]):
+        r = await click(PET, "Готово")
+    r = await click(PET, "Ничего")
+    ok(any("Заказать услугу" in b.text for b in _buttons(next(m for m in reversed(SENT) if m["to"] == PET and "Сохранила" in m["text"]))),
+       "после сохранения бот сам предлагает заказать услугу")
+    pets = await db.fetch_all("SELECT name, size, is_active FROM pets WHERE user_id=? AND is_active=1 ORDER BY id", (pu["id"],))
+    ok([p["name"] for p in pets] == ["Рексик", "Мурка"] and pets[0]["size"] == "L", "питомец обновлён на месте, второй не задет, дубля нет")
+    r = await say(PET, "/profile")
+    r = await click(PET, "Питомцы")
+    r = await click(PET, "Мурка")
+    r = await click(PET, "Убрать")
+    ok("Да" in str(_buttons(r[-1])), "убрать питомца — с подтверждением")
+    r = await click(PET, "Да")
+    ok([p["name"] for p in await db.fetch_all("SELECT name FROM pets WHERE user_id=? AND is_active=1", (pu["id"],))] == ["Рексик"],
+       "питомец убран из списка (в заказах остаётся)")
+    # чужого питомца изменить/убрать нельзя
+    other = await db.fetch_one("SELECT p.id FROM pets p JOIN users u ON u.id=p.user_id WHERE u.tg_id<>? AND p.is_active=1 LIMIT 1", (PET,))
+    if other:
+        await raw_callback(PET, f"pet:delyes:{other['id']}")
+        ok((await db.fetch_one("SELECT is_active FROM pets WHERE id=?", (other["id"],)))["is_active"] == 1, "чужого питомца убрать нельзя")
+
+
+    print("27. Зоотакси: какой питомец, обязательное предупреждение, для кого заказ")
+    TX = 4400
+    await say(TX, "/start")
+    await click(TX, "Согласен")
+    tu = await db.fetch_one("SELECT * FROM users WHERE tg_id=?", (TX,))
+    await _repo2.update_user(tu["id"], name="Таня", phone=_np("79004440000"), address="ул. Ленина, 1, Москва", address_verified=1)
+    await _repo2.add_pet(tu["id"], "Рекс", "собака", None, "M", None)
+    await _repo2.add_pet(tu["id"], "Пеперони", "кошка", None, "S", None)
+    await say(TX, "/menu")
+    await click(TX, "Заказать")
+    r = await svc(TX, "Зоотакси")
+    bt = str(_buttons(r[-1]))
+    ok("поедет" in last_text(r).lower() and "Рекс" in bt and "Пеперони" in bt and "Другой питомец" in bt,
+       "такси: бот спрашивает, кто поедет — питомцы из базы и «Другой питомец»")
+    r = await click(TX, "Рекс")
+    ok("намордник" in last_text(r).lower() and "подстилк" in last_text(r).lower() and "Понял" in str(_buttons(r[-1])),
+       "собака: обязательное предупреждение про намордник и подстилку")
+    r = await say(TX, "завтра в 10")
+    ok("Понял" in last_text(r), "пока не нажато «Понял», дальше не пускает")
+    r = await click(TX, "Понял")
+    ok("Для кого" in last_text(r) and "Для меня" in str(_buttons(r[-1])) and "другого" in str(_buttons(r[-1])), "дальше: для кого заказ")
+    r = await click(TX, "другого")
+    ok("зовут" in last_text(r).lower(), "для другого человека: просит имя")
+    r = await say(TX, "Борис")
+    r = await say(TX, "123")
+    ok("номер" in last_text(r).lower(), "неверный телефон пассажира не принимается")
+    r = await say(TX, "8 916 555-44-33")
+    ok(_texts.ASK_WHEN_TAXI[:20] in last_text(r) or "машину" in last_text(r), "после имени и телефона — выбор времени")
+    await say(TX, future.replace(future[-5:], "13:00"))
+    await click(TX, "📍")
+    await say(TX, "Москва, Шереметьево, терминал B")
+    await click(TX, "Шереметьево")
+    r = await click(TX, "Подтвердить")
+    ro = await db.fetch_one("SELECT rider_name, rider_phone FROM orders WHERE user_id=? ORDER BY id DESC", (tu["id"],))
+    ok(ro["rider_name"] == "Борис" and ro["rider_phone"] == "+79165554433", "имя и телефон пассажира сохранены в заказе")
+    ok(any(m["to"] == ADMIN and "Борис" in m["text"] and "+79165554433" in m["text"] for m in r), "админу в заявке видно, кто поедет")
+    # для себя и кошка: в переноске
+    await say(TX, "/menu")
+    await click(TX, "Заказать")
+    await svc(TX, "Зоотакси")
+    r = await click(TX, "Пеперони")
+    ok("переноск" in last_text(r).lower() and "намордник" not in last_text(r).lower(), "кошка: предупреждение про переноску, без намордника")
+    await click(TX, "Понял")
+    await click(TX, "Для меня")
+    await say(TX, future.replace(future[-5:], "14:00"))
+    await click(TX, "📍")
+    await say(TX, "Москва, Шереметьево, терминал B")
+    await click(TX, "Шереметьево")
+    await click(TX, "Подтвердить")
+    ro = await db.fetch_one("SELECT rider_name, pet_id FROM orders WHERE user_id=? ORDER BY id DESC", (tu["id"],))
+    ok(ro["rider_name"] is None, "для себя: пассажир не указывается")
+    cat = await db.fetch_one("SELECT id FROM pets WHERE name='Пеперони'")
+    ok(ro["pet_id"] == cat["id"], "в заказ попал выбранный питомец, а не первый в списке")
+    # другой питомец: сначала вносим
+    await say(TX, "/menu")
+    await click(TX, "Заказать")
+    await svc(TX, "Зоотакси")
+    r = await click(TX, "Другой питомец")
+    ok("зовут" in last_text(r).lower() or "кличка" in last_text(r).lower(), "«Другой питомец»: сначала вносим его в базу")
+    await say(TX, "Кеша")
+    await click(TX, "Другое")
+    await say(TX, "попугай")
+    await click(TX, "S")
+    await click(TX, "Ничего")
+    ok(await db.fetch_one("SELECT 1 FROM pets WHERE user_id=? AND name='Кеша' AND is_active=1", (tu["id"],)) is not None, "новый питомец добавлен в профиль")
+    ok("переноск" in last_text(SENT[-3:], TX).lower() or any("переноск" in m["text"] for m in SENT[-3:] if m["to"] == TX),
+       "после добавления питомца сразу предупреждение, без возврата в меню")
+
+    await say(TX, "/menu")
+    r = await raw_callback(TX, "tw:ok")
+    ok("Для кого" not in last_text(r), "старая кнопка «Понял» вне заказа такси ничего не запускает")
+    r = await raw_callback(TX, "tf:other")
+    ok("зовут" not in last_text(r).lower(), "старая кнопка «Для другого» вне заказа ничего не запускает")
+
+    print("28. Переписка и портал: вопрос клиента — админу, регистрация подтверждается, вход в портал из бота")
+    await say(TX, "/menu")
+    r = await say(TX, "А можно с двумя собаками?")
+    ok(any(m["to"] == ADMIN and "А можно с двумя собаками?" in m["text"] for m in r), "вопрос клиента вне сценария пришёл админу")
+    ok(any("wc:" in (b.callback_data or "") for m in r if m["to"] == ADMIN for b in _buttons(m)), "у админа кнопка «Ответить»")
+    ok("Передала администратору" in last_text(r, TX) and "Заказать услугу" in str(_buttons(r[-1])), "клиенту: передано + предложение заказать")
+    ok((await db.fetch_one("SELECT party_kind, direction FROM messages WHERE party_tg_id=? ORDER BY id DESC", (TX,)))["direction"] == "in",
+       "вопрос сохранён для портала")
+    await click(ADMIN, "Ответить")
+    r = await say(ADMIN, "Да, можно")
+    ok(any(m["to"] == TX and "Да, можно" in m["text"] for m in r), "ответ админа дошёл клиенту")
+    await click(ADMIN, "Закончить чат")
+    r = await say(ADMIN, "просто текст админа")
+    ok(not any(m["to"] == ADMIN and "✉️" in m["text"] for m in r), "свой текст админа самому себе не пересылается")
+    r = await say(ADMIN, "/start webadmin")
+    ok(any("/chat/login?t=" in m["text"] and "n=portal" in m["text"] for m in r), "«Войти через Telegram» на сайте: бот присылает ссылку в портал")
+    r = await say(ADMIN, "/portal")
+    ok("Портал администратора" in last_text(r), "/portal — ссылка на портал")
+    REG = 4500
+    await say(REG, "/start")
+    await click(REG, "Согласен")
+    await click(REG, "Заказать")
+    await say(REG, "Рита")
+    await contact(REG, "79005550000")
+    await say(REG, "ул. Ленина, 1")
+    await click(REG, "Ленина, 1, Москва")
+    await click(REG, "Telegram")
+    await say(REG, "Барон")
+    await click(REG, "Собака")
+    await say(REG, "лабрадор")
+    await click(REG, "M")
+    await click(REG, "Готово")
+    r = await click(REG, "Ничего")
+    ok(any(m["to"] == REG and "Регистрация подтверждена через Telegram" in m["text"] for m in r),
+       "после регистрации клиент получает подтверждение в Telegram")
 
     print("\nВСЕ ПРОВЕРКИ ПРОЙДЕНЫ")
 

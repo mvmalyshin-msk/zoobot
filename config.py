@@ -23,6 +23,8 @@ class Config:
     webapp_url: str = os.getenv("WEBAPP_URL") or (
         f"https://{os.environ['RAILWAY_PUBLIC_DOMAIN']}" if os.getenv("RAILWAY_PUBLIC_DOMAIN") else "")
     tz: ZoneInfo = ZoneInfo(os.getenv("TIMEZONE", "Europe/Moscow"))
+    # имя бота для ссылок t.me/<имя>?start=… (вход админа, подтверждение веб-клиента через Telegram)
+    bot_username: str = os.getenv("BOT_USERNAME", "zooconcierge_bot")
 
 
 config = Config()

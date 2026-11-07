@@ -4,7 +4,7 @@ import os
 from datetime import timedelta
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart, StateFilter
+from aiogram.filters import Command, CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.state import State, StatesGroup
@@ -20,6 +20,7 @@ import payinfo
 import policy
 import pricing
 import repo
+import talk
 import texts
 import traits
 from config import config
@@ -53,6 +54,11 @@ class Order(StatesGroup):
     confirm = State()
     edit_address = State()
     comment = State()
+    taxi_pet = State()
+    taxi_warn = State()
+    taxi_for = State()
+    rider_name = State()
+    rider_phone = State()
 
 
 class Addr(StatesGroup):
@@ -163,6 +169,18 @@ async def show_menu(msg: Message, tg_user, text: str | None = None) -> None:
                      reply_markup=kb.main_menu(last is not None, last["name"] if last else None))
 
 
+@router.message(CommandStart(deep_link=True, magic=F.args.startswith("wl_")))
+async def cmd_start_web_link(m: Message, command: CommandObject, state: FSMContext) -> None:
+    """П.4: клиент с сайта подтверждает себя через Telegram."""
+    import webchat
+    web_uid = await webchat.claim_tg_link(command.args[3:], m.from_user.id)
+    if not web_uid:
+        await m.answer(texts.TG_LINK_BAD)
+        return
+    await m.answer(texts.TG_LINK_OK_TG)
+    await orders.notify(m.bot, web_uid, texts.TG_LINK_OK_WEB)
+
+
 @router.message(CommandStart())
 async def cmd_start(m: Message, state: FSMContext) -> None:
     await state.clear()
@@ -220,10 +238,103 @@ async def show_profile(msg: Message, tg_user) -> None:
         lines.append(f"• {p['name']} ({p['species']}{size}{breed}){notes}")
     if not pets:
         lines.append("— пока нет")
-    lines.append("")
-    lines.append("Уведомления о заказах: включены ✅")
-    lines.append("Акции и новости: " + ("включены ✅" if user["marketing_consent"] else "выключены"))
-    await msg.answer("\n".join(lines), reply_markup=kb.profile(bool(user["marketing_consent"])))
+    await msg.answer("\n".join(lines), reply_markup=kb.profile())
+
+
+async def show_settings(msg: Message, tg_user) -> None:
+    user = await repo.get_or_create_user(tg_user)
+    text = ("⚙️ Настройки\n"
+            "Связь: " + texts.CONTACT_LABELS.get(user["contact_pref"] or "telegram", "Telegram") + "\n"
+            "Уведомления о заказах: включены ✅\n"
+            "Акции и новости: " + ("включены ✅" if user["marketing_consent"] else "выключены"))
+    tg_url = None
+    if tg_user.id < 0:  # клиент с сайта
+        if user.get("verified_tg_id"):
+            text += "\nПодтверждение: через Telegram ✅"
+        else:
+            import webchat
+            text += "\nПодтверждение: ещё нет — нажмите кнопку, откроется Telegram"
+            tg_url = await webchat.make_tg_link(tg_user.id)
+    await msg.answer(text, reply_markup=kb.settings(bool(user["marketing_consent"]), tg_url))
+
+
+async def show_pets(msg: Message, tg_user) -> None:
+    user = await repo.get_or_create_user(tg_user)
+    pets = await repo.list_pets(user["id"])
+    text = "🐾 Ваши питомцы. Нажмите на питомца, чтобы изменить или убрать." if pets else "Питомцев пока нет."
+    await msg.answer(text, reply_markup=kb.pets_list(pets))
+
+
+def _pet_text(p: dict) -> str:
+    size = f", {p['size']}" if p["size"] else ""
+    breed = f", {p['breed']}" if p["breed"] else ""
+    notes = f"\nОсобенности: {p['notes']}" if p["notes"] else ""
+    return f"🐾 {p['name']} ({p['species']}{size}{breed}){notes}"
+
+
+@router.callback_query(F.data == "settings")
+async def cb_settings(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    await state.clear()
+    await show_settings(cb.message, cb.from_user)
+
+
+@router.callback_query(F.data == "pets:list")
+async def cb_pets(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    await state.clear()
+    await show_pets(cb.message, cb.from_user)
+
+
+async def _own_pet(tg_user, pet_id: str) -> dict | None:
+    user = await repo.get_or_create_user(tg_user)
+    if not pet_id.isdigit():
+        return None
+    pet = await repo.get_pet(int(pet_id))
+    return pet if pet and pet["user_id"] == user["id"] and pet["is_active"] else None
+
+
+@router.callback_query(F.data.regexp(r"^pet:\d+$"))
+async def cb_pet_card(cb: CallbackQuery) -> None:
+    await cb.answer()
+    pet = await _own_pet(cb.from_user, cb.data[4:])
+    if not pet:
+        await cb.message.answer(texts.STALE)
+        return
+    await cb.message.answer(_pet_text(pet), reply_markup=kb.pet_card(pet["id"]))
+
+
+@router.callback_query(F.data.regexp(r"^pet:del:\d+$"))
+async def cb_pet_del(cb: CallbackQuery) -> None:
+    await cb.answer()
+    pet = await _own_pet(cb.from_user, cb.data.split(":")[2])
+    if not pet:
+        await cb.message.answer(texts.STALE)
+        return
+    await cb.message.answer(f"Убрать питомца {pet['name']} из профиля? В старых заказах он останется.",
+                            reply_markup=kb.pet_del_confirm(pet["id"]))
+
+
+@router.callback_query(F.data.regexp(r"^pet:delyes:\d+$"))
+async def cb_pet_delyes(cb: CallbackQuery) -> None:
+    await cb.answer()
+    user = await repo.get_or_create_user(cb.from_user)
+    if not await repo.deactivate_pet(int(cb.data.split(":")[2]), user["id"]):
+        await cb.message.answer(texts.STALE)
+        return
+    await cb.message.answer("Убрала ✅")
+    await show_pets(cb.message, cb.from_user)
+
+
+@router.callback_query(F.data.regexp(r"^pet:edit:\d+$"))
+async def cb_pet_edit(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    pet = await _own_pet(cb.from_user, cb.data.split(":")[2])
+    if not pet:
+        await cb.message.answer(texts.STALE)
+        return
+    await start_profile(cb.message, state, after=None, add_pet_only=True)
+    await state.update_data(pet_edit_id=pet["id"], back="pets")
 
 
 @router.message(Command("profile"))
@@ -246,7 +357,7 @@ async def cb_marketing(cb: CallbackQuery) -> None:
     on = cb.data == "mk:on"
     await repo.save_consent(user, "marketing", on, texts.MKT_VERSION)
     await cb.answer("Рассылки включены" if on else "Рассылки отключены")
-    await show_profile(cb.message, cb.from_user)
+    await show_settings(cb.message, cb.from_user)
 
 
 async def start_profile(msg: Message, state: FSMContext, after: str | None, add_pet_only: bool = False) -> None:
@@ -271,6 +382,7 @@ async def cb_profile_edit(cb: CallbackQuery, state: FSMContext) -> None:
 async def cb_profile_addpet(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
     await start_profile(cb.message, state, after=None, add_pet_only=True)
+    await state.update_data(back="pets")
 
 
 @router.message(Profile.name, F.text)
@@ -301,8 +413,6 @@ async def _save_phone(m: Message, state: FSMContext, raw: str, verified: bool = 
         await m.answer(texts.BAD_PHONE)
         return
     await state.update_data(phone=phone)
-    name = (await state.get_data()).get("name") or m.from_user.full_name
-    await orders.notify_lead(m.bot, m.from_user, 1, name=name, phone=phone)  # лид — сразу, не ждём заказа
     if verified:
         me = await repo.get_or_create_user(m.from_user)
         known = await repo.find_profile_by_phone(phone, me["id"])
@@ -498,7 +608,6 @@ async def _address_done(msg: Message, state: FSMContext, target: str, label: str
         if district:
             fields["district"] = district
         await repo.update_user(user["id"], **fields)
-        await orders.notify_lead(msg.bot, tg_user, 2, name=data["name"], phone=data["phone"], address=label)
         await state.set_state(Profile.contact)
         await msg.answer(texts.ASK_CONTACT, reply_markup=kb.contact_pref())
         return
@@ -542,7 +651,7 @@ async def cb_contact(cb: CallbackQuery, state: FSMContext) -> None:
     if await state.get_state() == Profile.contact.state:
         await _after_address_block(cb.message, state, cb.from_user)
     else:
-        await show_profile(cb.message, cb.from_user)
+        await show_settings(cb.message, cb.from_user)
 
 
 @router.message(Profile.pet_name, F.text)
@@ -696,20 +805,45 @@ async def _save_pet(msg: Message, tg_user, state: FSMContext, notes: str | None)
     if data.get("breed_unverified"):  # порода/вид не из справочника — администратор уточнит
         what = data.get("pet_breed") or data["pet_species"]
         notes = f"Не из справочника, уточнить: {what}. " + (notes or "")
-    await repo.add_pet(user["id"], data["pet_name"], data["pet_species"], data.get("pet_breed"),
-                       data["pet_size"], notes.strip() if notes else None,
-                       traits.pack(data.get("pet_traits") or []))
-    await finish_profile(msg, state, tg_user)
+    args = (data["pet_name"], data["pet_species"], data.get("pet_breed"),
+            data["pet_size"], notes.strip() if notes else None, traits.pack(data.get("pet_traits") or []))
+    if data.get("pet_edit_id"):
+        pet_id = data["pet_edit_id"]
+        await repo.update_pet(pet_id, user["id"], *args)
+    else:
+        pet_id = await repo.add_pet(user["id"], *args)
+    await finish_profile(msg, state, tg_user, pet_id)
 
 
-async def finish_profile(msg: Message, state: FSMContext, tg_user=None) -> None:
+async def _registration_confirm(msg: Message, tg_user, data: dict) -> None:
+    name, phone = data.get("name") or "—", data.get("phone")
+    if tg_user.id > 0:  # Telegram уже проверил, что это реальный аккаунт
+        await msg.answer(texts.REG_DONE_TG.format(name=name, phone=phone))
+        return
+    import webchat
+    await msg.answer(texts.REG_DONE_WEB.format(name=name, phone=phone),
+                     reply_markup=kb.confirm_via_tg(await webchat.make_tg_link(tg_user.id)))
+
+
+async def finish_profile(msg: Message, state: FSMContext, tg_user=None, pet_id: int | None = None) -> None:
     tg_user = tg_user or msg.from_user
-    after = (await state.get_data()).get("after")
+    data = await state.get_data()
+    after = data.get("after")
     await state.clear()
+    if data.get("phone"):  # закончена регистрация (а не только питомец): подтверждение клиенту
+        await _registration_confirm(msg, tg_user, data)
     if after == "order":
         await show_services(msg)
+    elif isinstance(after, str) and after.startswith("taxi:") and pet_id:
+        user = await repo.get_or_create_user(tg_user)
+        service = await db.fetch_one("SELECT * FROM services WHERE id=?", (int(after[5:]),))
+        await _init_order(state, user, service, pet_id)
+        await _taxi_warn(msg, state, await repo.get_pet(pet_id))
+    elif data.get("back") == "pets":
+        await msg.answer("Сохранила ✅ Хотите сразу заказать услугу?", reply_markup=kb.offer_order())
+        await show_pets(msg, tg_user)
     else:
-        await msg.answer("Сохранила ✅")
+        await msg.answer("Сохранила ✅ Хотите сразу заказать услугу?", reply_markup=kb.offer_order())
         await show_profile(msg, tg_user)
 
 
@@ -766,13 +900,94 @@ async def cb_service(cb: CallbackQuery, state: FSMContext) -> None:
     if not pets or not repo.profile_complete(user):
         await start_profile(cb.message, state, after="order")
         return
+    await _init_order(state, user, service, pets[0]["id"])
+    if service["category"] == "taxi":  # сначала: кто поедет, предупреждение, для кого заказ
+        await state.set_state(Order.taxi_pet)
+        await cb.message.answer(texts.TAXI_WHO, reply_markup=kb.taxi_pets(pets))
+        return
+    await state.set_state(Order.when)
+    await ask_when(cb.message, service)
+
+
+async def _init_order(state: FSMContext, user: dict, service: dict, pet_id: int) -> None:
     await state.clear()
-    await state.update_data(service_id=service["id"], pet_id=pets[0]["id"], quantity=1,
+    await state.update_data(service_id=service["id"], pet_id=pet_id, quantity=1,
                             address=user["address"], address_to=None,
                             outside_mkad=bool(user["outside_mkad"]), out_a=bool(user["outside_mkad"]),
                             out_b=False, unv_a=not user["address_verified"], unv_b=False, prefilled=False)
+
+
+# ---- Зоотакси: питомец, предупреждение, для кого ----
+
+async def _taxi_warn(msg: Message, state: FSMContext, pet: dict) -> None:
+    await state.update_data(pet_id=pet["id"])
+    await state.set_state(Order.taxi_warn)
+    dog = pet["species"] == "собака"
+    await msg.answer(texts.TAXI_WARN_DOG if dog else texts.TAXI_WARN_CARRIER, reply_markup=kb.taxi_warn())
+
+
+@router.callback_query(Order.taxi_pet, F.data == "tp:new")
+async def cb_taxi_new_pet(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    sid = (await state.get_data())["service_id"]
+    await start_profile(cb.message, state, after=f"taxi:{sid}", add_pet_only=True)
+
+
+@router.callback_query(Order.taxi_pet, F.data.regexp(r"^tp:\d+$"))
+async def cb_taxi_pet(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    pet = await _own_pet(cb.from_user, cb.data[3:])
+    if not pet:
+        await cb.message.answer(texts.STALE)
+        return
+    await _taxi_warn(cb.message, state, pet)
+
+
+@router.callback_query(Order.taxi_warn, F.data == "tw:ok")
+async def cb_taxi_warn_ok(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    await state.set_state(Order.taxi_for)
+    await cb.message.answer(texts.TAXI_FOR, reply_markup=kb.taxi_for())
+
+
+async def _taxi_to_when(msg: Message, state: FSMContext) -> None:
     await state.set_state(Order.when)
-    await ask_when(cb.message, service)
+    await ask_when(msg, await _service_of(state))
+
+
+@router.callback_query(Order.taxi_for, F.data == "tf:me")
+async def cb_taxi_for_me(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    await state.update_data(rider_name=None, rider_phone=None)
+    await _taxi_to_when(cb.message, state)
+
+
+@router.callback_query(Order.taxi_for, F.data == "tf:other")
+async def cb_taxi_for_other(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    await state.set_state(Order.rider_name)
+    await cb.message.answer(texts.TAXI_RIDER_NAME)
+
+
+@router.message(Order.rider_name, F.text)
+async def msg_rider_name(m: Message, state: FSMContext) -> None:
+    name = breeds.check_person_name(m.text)
+    if not name:
+        await m.answer(texts.BAD_PERSON_NAME)
+        return
+    await state.update_data(rider_name=name)
+    await state.set_state(Order.rider_phone)
+    await m.answer(texts.TAXI_RIDER_PHONE)
+
+
+@router.message(Order.rider_phone, F.text)
+async def msg_rider_phone(m: Message, state: FSMContext) -> None:
+    phone = normalize_phone(m.text)
+    if not phone:
+        await m.answer(texts.BAD_PHONE)
+        return
+    await state.update_data(rider_phone=phone)
+    await _taxi_to_when(m, state)
 
 
 def min_ahead(service) -> timedelta:
@@ -995,6 +1210,11 @@ async def show_confirm(msg: Message, state: FSMContext, tg_user) -> None:
     if pet:
         size = f", {pet['size']}" if pet["size"] else ""
         lines.append(f"Питомец: {pet['name']} ({pet['species']}{size})")
+    if data.get("rider_name"):
+        lines.append(f"Поедет: {data['rider_name']}, {data['rider_phone']}")
+    if service["category"] == "taxi":
+        lines.append("⚠️ Возьмите намордник (для собак) или переноску и подстилку." if pet and pet["species"] == "собака"
+                     else "⚠️ Возьмите переноску или клетку и подстилку.")
     if data.get("comment"):
         lines.append(f"Комментарий: {data['comment']}")
     lines += ["", "💰 " + pricing.format_range(total), "Что учтено:", pricing.format_breakdown_lines(breakdown),
@@ -1108,11 +1328,12 @@ async def cb_order_ok(cb: CallbackQuery, state: FSMContext) -> None:
          "address_to": data.get("address_to"), "is_urgent": params["is_urgent"],
          "outside_mkad": params["outside_mkad"],
          "address_unverified": bool(data.get("unv_a") or data.get("unv_b")),
-         "comment": data.get("comment")},
+         "comment": data.get("comment"),
+         "rider_name": data.get("rider_name"), "rider_phone": data.get("rider_phone")},
         total, breakdown, actor=f"client:{cb.from_user.id}",
     )
     await state.clear()
-    await cb.message.answer(texts.ORDER_ACCEPTED.format(id=order_id), reply_markup=kb.back_to_menu())
+    await cb.message.answer(texts.ORDER_ACCEPTED.format(id=order_id) + "\n\nНужна ещё одна услуга?", reply_markup=kb.offer_order())
     o = await orders.get_order_full(order_id)
     await orders.notify_admins(
         cb.bot, f"🆕 Новая заявка\n\n{orders.order_card(o, for_staff=True)}",
@@ -1295,6 +1516,9 @@ STATE_HINTS = {
     Profile.phone.state: texts.HINT_PHONE,
     Addr.pick.state: texts.HINT_ADDR_PICK,
     Profile.recognize.state: texts.HINT_RECOGNIZE,
+    Order.taxi_pet.state: "Выберите питомца кнопкой ниже.",
+    Order.taxi_warn.state: "Это обязательное условие. Прочитайте и нажмите «Понял(а), возьму».",
+    Order.taxi_for.state: "Выберите кнопкой: для вас или для другого человека.",
 }
 
 
@@ -1304,11 +1528,10 @@ async def fallback_any(m: Message, state: FSMContext) -> None:
     cur = await state.get_state()
     if cur:
         await m.answer(STATE_HINTS.get(cur, texts.FINISH_QUESTION))
-    elif m.text and m.from_user.id < 0:  # клиент из браузера: Telegram-чата нет, пишем админу через бота
-        await orders.notify_admins(m.bot, f"✉️ Сообщение от клиента из браузера:\n{m.text}",
-                                   kb.chat_button(orders.chat_url(None, m.from_user.id)))
-        await m.answer("✉️ Передали администратору, ответ придёт сюда.")
-        await show_menu(m, m.from_user)
+    elif m.text and not m.text.startswith("/") and not is_admin(m.from_user):
+        # вопрос вне сценария: админу (и в портал) или собеседнику в открытом чате по заказу
+        if await talk.incoming(m.bot, m.from_user.id, m.text) == "admin":
+            await m.answer(texts.SENT_TO_ADMIN, reply_markup=kb.offer_order())
     elif m.text:  # стикеры и файлы вне диалога молча игнорируем
         await show_menu(m, m.from_user)
 

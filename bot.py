@@ -50,6 +50,9 @@ class ConsentMiddleware(BaseMiddleware):
                 return await handler(event, data)
             answer_to = event.message
 
+        if isinstance(event, Message) and not (event.text or "").startswith("/") and await db.fetch_one(
+                "SELECT 1 AS x FROM executors WHERE tg_id=? AND active=1", (user.id,)):
+            return await handler(event, data)  # исполнитель переписывается с админом и клиентом без согласия клиента
         u = await repo.get_or_create_user(user)
         if u["pdn_consent"]:
             return await handler(event, data)

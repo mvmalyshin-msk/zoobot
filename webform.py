@@ -11,6 +11,7 @@ from aiohttp import web
 
 import db
 import orders
+import brand
 import texts
 from utils import normalize_phone, rub
 
@@ -51,16 +52,11 @@ def _e(v) -> str:
 
 
 CSS = """
-:root{color-scheme:light dark;--bg:#fafaf7;--fg:#1d1d1b;--card:#fff;--line:#d9d6cc;--acc:#2f7d4f;--err:#b3261e}
-@media (prefers-color-scheme:dark){:root{--bg:#161715;--fg:#ecece6;--card:#20211f;--line:#3a3b37;--acc:#6cc08b;--err:#ff8a80}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.45 system-ui,sans-serif}
-main{max-width:560px;margin:0 auto;padding:20px 16px 48px}h1{font-size:1.5rem;margin:.2em 0 .3em}
-label{display:block;margin:14px 0 4px;font-weight:600}input,select,textarea{width:100%;padding:12px;font:inherit;
-color:inherit;background:var(--card);border:1px solid var(--line);border-radius:10px}textarea{min-height:84px}
-.err{color:var(--err);font-size:.92rem;margin-top:4px}.hint{opacity:.7;font-size:.92rem}
+main{max-width:560px;margin:0 auto;padding:18px 16px 48px}h1{font-size:1.5rem;margin:.5em 0 .3em}
+label{display:block;margin:14px 0 4px;font-weight:700}input,select,textarea{width:100%}textarea{min-height:84px}
+.err{color:var(--err);font-size:.92rem;margin-top:4px}.hint{color:var(--mute);font-size:.95rem}
 .check{display:flex;gap:10px;align-items:flex-start;font-weight:400}.check input{width:auto;margin-top:5px}
-button{margin-top:22px;width:100%;padding:14px;font:inherit;font-weight:700;color:#fff;background:var(--acc);
-border:0;border-radius:12px}.hp{position:absolute;left:-9999px}a{color:var(--acc)}
+button{margin-top:22px;width:100%}.hp{position:absolute;left:-9999px}.top{display:flex;justify-content:center;font-size:1.6rem;margin:8px 0 6px}
 """
 
 
@@ -80,9 +76,11 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
                        for k, t in CONTACTS.items())
     checked = " checked" if values.get("consent") else ""
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Заявка — Зооконсьерж</title>
-<style>{CSS}</style></head><body><main>
-<h1>🐾 Заявка на услугу</h1>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — заявка</title>
+{brand.HEAD}<style>{CSS}</style></head><body><main>
+<div class="top">{brand.LOGO}</div>
+<div class="chips" style="justify-content:center"><span class="chip walk">Выгул</span><span class="chip nanny">Зооняня</span><span class="chip boarding">Передержка</span><span class="chip taxi">ЗооТакси</span></div>
+<h1>Заявка на услугу</h1>
 <p class="hint">Работает без Telegram и без VPN. Мы позвоним или напишем СМС, уточним детали и сообщим точную цену.</p>
 <form method="post" action="/request">
 <label for="service_id">Услуга</label><select id="service_id" name="service_id"><option value="">Выберите…</option>{"".join(groups)}</select>{err("service_id")}
@@ -95,13 +93,13 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
 <label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500">{v("comment")}</textarea>
 <div class="hp"><label>Не заполняйте <input name="site" tabindex="-1" autocomplete="off"></label></div>
 <label class="check"><input type="checkbox" name="consent"{checked}><span>Согласен(на) на обработку персональных данных, <a href="/policy">политика</a></span></label>{err("consent")}
-<button type="submit">Отправить заявку</button></form></main></body></html>"""
+<button class="btn" type="submit">Отправить заявку</button></form></main></body></html>"""
 
 
 def render_done(request_id: int) -> str:
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Заявка принята</title>
-<style>{CSS}</style></head><body><main><h1>✅ Заявка принята</h1>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — заявка принята</title>
+{brand.HEAD}<style>{CSS}</style></head><body><main><div class="top">{brand.LOGO}</div><h1>✅ Заявка принята</h1>
 <p>Номер заявки: <b>№{request_id}</b>. Мы свяжемся с вами по указанному телефону, уточним детали и сообщим цену.</p>
 <p class="hint">Данные используются только для выполнения заявки. Удалить их можно, написав нам.</p>
 <p><a href="/request">Отправить ещё одну заявку</a></p></main></body></html>"""

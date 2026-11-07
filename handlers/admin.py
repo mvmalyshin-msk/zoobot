@@ -6,7 +6,7 @@ from datetime import datetime
 
 from aiogram import BaseMiddleware, F, Router
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
-from aiogram.filters import Command, CommandObject
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import CallbackQuery, Message
 
 import db
@@ -58,6 +58,7 @@ HELP = """Команды админа
    ставка: 70% (доля от цены) или 500 (фикс за заказ); необязательные поля можно оставить пустыми
 
 Прочее:
+/portal — портал администратора: все заявки, клиенты, исполнители, переписка (вход по ссылке или коду)
 /webadmin — одноразовая ссылка, чтобы открыть бота в браузере под своим аккаунтом (без Telegram и VPN)
 /stats — статистика за месяц
 /report [ГГГГ-ММ-ДД] — Excel: новые клиенты и заказы за день (сам приходит в 23:55)
@@ -521,14 +522,28 @@ async def cmd_webadmin(m: Message) -> None:
                    "\nКлиентам даётся обычная ссылка без входа: " + f"{config.webapp_url}/chat")
 
 
+@router.message(Command("portal"))
+@router.message(CommandStart(deep_link=True, magic=F.args == "webadmin"))
+async def cmd_portal(m: Message) -> None:
+    """Портал администратора: одноразовая ссылка входа (кнопка «Войти через Telegram» на сайте ведёт сюда)."""
+    import webchat
+    link = await webchat.make_login_link(m.from_user.id, "portal")
+    await m.answer("🖥 Портал администратора: все заявки, клиенты, исполнители и переписка.\n"
+                   "Ссылка для входа одноразовая, действует 10 минут:\n" + link +
+                   "\n\nБез VPN: откройте " + f"{config.webapp_url}/portal" + " и войдите по коду на почту "
+                   "(почту добавьте в портале, раздел «Вход и почта»).")
+
+
 @router.callback_query(F.data.startswith("wc:"))
 async def cb_web_client(cb: CallbackQuery) -> None:
     await cb.answer()
     cid = int(cb.data[3:])
     _relay[cb.from_user.id] = cid
-    row = await db.fetch_one("SELECT name FROM users WHERE tg_id=?", (cid,))
-    await cb.message.answer(f"💬 Чат с клиентом {row['name'] if row else cid}. Всё, что вы напишете сейчас, "
-                            "уйдёт ему в браузер. Команды и ссылки на оплату работают как обычно.",
+    import talk
+    kind, name = await talk.party(cid)
+    who = "исполнителем" if kind == "executor" else "клиентом"
+    await cb.message.answer(f"💬 Чат с {who} {name}. Всё, что вы напишете сейчас, уйдёт ему от имени бота. "
+                            "Команды и ссылки на оплату работают как обычно.",
                             reply_markup=kb.relay_end())
 
 
@@ -536,7 +551,7 @@ async def cb_web_client(cb: CallbackQuery) -> None:
 async def cb_web_client_end(cb: CallbackQuery) -> None:
     await cb.answer()
     _relay.pop(cb.from_user.id, None)
-    await cb.message.answer("Чат с клиентом закрыт. Сообщения клиента снова придут с кнопкой «Ответить».")
+    await cb.message.answer("Чат закрыт. Новые сообщения снова придут с кнопкой «Ответить».")
 
 
 def _relaying(m: Message) -> bool:
@@ -545,8 +560,9 @@ def _relaying(m: Message) -> bool:
 
 @router.message(_relaying)
 async def msg_relay(m: Message) -> None:
+    import talk
     cid = _relay[m.from_user.id]
-    ok = await orders.notify(m.bot, cid, "👤 Администратор:\n" + m.text)
+    ok = await talk.admin_say(m.bot, cid, m.text, author=f"admin:{m.from_user.id}")
     await m.answer("✅ Отправлено клиенту" if ok else "⚠️ Не доставлено")
 
 
