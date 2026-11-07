@@ -5,10 +5,12 @@ from datetime import timedelta
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 import breeds
+import datepicker
 import db
 import geo
 import keyboards as kb
@@ -525,8 +527,67 @@ async def cb_service(cb: CallbackQuery, state: FSMContext) -> None:
                             outside_mkad=bool(user["outside_mkad"]), out_a=bool(user["outside_mkad"]),
                             out_b=False, unv_a=not user["address_verified"], unv_b=False, prefilled=False)
     await state.set_state(Order.when)
-    ask = texts.ASK_WHEN_START if service["unit"] == "сутки" else texts.ASK_WHEN
-    await cb.message.answer(ask)
+    await ask_when(cb.message, service)
+
+
+def min_ahead(service) -> timedelta:
+    """Запас до начала: такси можно заказать почти сразу, для остальных услуг нужно время найти исполнителя."""
+    return timedelta(minutes=30) if service["category"] == "taxi" else timedelta(days=1)
+
+
+async def _service_of(state: FSMContext) -> dict:
+    return await db.fetch_one("SELECT * FROM services WHERE id=?", ((await state.get_data())["service_id"],))
+
+
+def too_soon_text(service) -> str:
+    if service["category"] == "taxi":
+        return texts.PAST_WHEN
+    earliest = to_local(now_utc()) + min_ahead(service)
+    return texts.TOO_SOON.format(earliest=earliest.strftime("%d.%m.%Y %H:%M"))
+
+
+async def ask_when(msg: Message, service, prefix: str = "") -> None:
+    """Спрашивает дату и время: окно с календарём, а текстом тоже можно."""
+    if service["category"] == "taxi":
+        text = texts.ASK_WHEN_TAXI
+    elif service["unit"] == "сутки":
+        text = texts.ASK_WHEN_START
+    else:
+        text = texts.ASK_WHEN
+    text = prefix + text
+    now = to_local(now_utc())
+    await msg.answer(text, reply_markup=datepicker.month_markup(now.year, now.month, now, min_ahead(service)))
+
+
+async def _accept_when(msg: Message, state: FSMContext, tg_user, dt) -> bool:
+    """Проверяет выбранное время и идёт дальше по сценарию. False — время не подошло."""
+    now = to_local(now_utc())
+    data = await state.get_data()
+    service = await db.fetch_one("SELECT * FROM services WHERE id=?", (data["service_id"],))
+    if dt < now + min_ahead(service):
+        await msg.answer(too_soon_text(service))
+        return False
+    if dt > now + timedelta(days=366):
+        await msg.answer(texts.FAR_WHEN)
+        return False
+    await state.update_data(start_at=to_db(dt))
+
+    if data.get("prefilled"):  # «повторить заказ»: остальное уже известно
+        await show_confirm(msg, state, tg_user)
+    elif service["unit"] == "час":
+        await state.set_state(Order.qty)
+        await msg.answer(texts.ASK_HOURS, reply_markup=kb.quantity([1, 2, 3, 4, 6, 8]))
+    elif service["unit"] == "сутки":
+        await state.set_state(Order.qty)
+        await msg.answer(texts.ASK_NIGHTS, reply_markup=kb.quantity([1, 2, 3, 5, 7, 10, 14]))
+    elif service["category"] == "taxi":
+        user = await repo.get_or_create_user(tg_user)
+        await state.set_state(Order.point_a)
+        await msg.answer(texts.ASK_POINT_A, reply_markup=kb.use_profile_address(user["address"]))
+        await msg.answer("Или напишите другой адрес, или отправьте геопозицию.", reply_markup=kb.address_ask())
+    else:
+        await show_confirm(msg, state, tg_user)
+    return True
 
 
 @router.message(Order.when, F.text)
@@ -535,31 +596,55 @@ async def got_when(m: Message, state: FSMContext) -> None:
     if dt is None:
         await m.answer(texts.BAD_WHEN)
         return
-    if dt < to_local(now_utc()) + timedelta(minutes=30):
-        await m.answer(texts.PAST_WHEN)
-        return
-    if dt > to_local(now_utc()) + timedelta(days=366):
-        await m.answer(texts.FAR_WHEN)
-        return
-    data = await state.get_data()
-    service = await db.fetch_one("SELECT * FROM services WHERE id=?", (data["service_id"],))
-    await state.update_data(start_at=to_db(dt))
+    await _accept_when(m, state, m.from_user, dt)
 
-    if data.get("prefilled"):  # «повторить заказ»: остальное уже известно
-        await show_confirm(m, state, m.from_user)
-    elif service["unit"] == "час":
-        await state.set_state(Order.qty)
-        await m.answer(texts.ASK_HOURS, reply_markup=kb.quantity([1, 2, 3, 4, 6, 8]))
-    elif service["unit"] == "сутки":
-        await state.set_state(Order.qty)
-        await m.answer(texts.ASK_NIGHTS, reply_markup=kb.quantity([1, 2, 3, 5, 7, 10, 14]))
-    elif service["category"] == "taxi":
-        user = await repo.get_or_create_user(m.from_user)
-        await state.set_state(Order.point_a)
-        await m.answer(texts.ASK_POINT_A, reply_markup=kb.use_profile_address(user["address"]))
-        await m.answer("Или напишите другой адрес, или отправьте геопозицию.", reply_markup=kb.address_ask())
-    else:
-        await show_confirm(m, state, m.from_user)
+
+async def _edit(msg: Message, text: str, markup=None) -> None:
+    """Меняет окно выбора на месте; если Telegram не дал (сообщение старое), пишет новое."""
+    try:
+        await msg.edit_text(text, reply_markup=markup)
+    except TelegramBadRequest as e:
+        if "not modified" not in str(e):
+            await msg.answer(text, reply_markup=markup)
+
+
+@router.callback_query(Order.when, F.data.startswith("cal:"))
+async def cb_calendar(cb: CallbackQuery, state: FSMContext) -> None:
+    parsed = datepicker.parse(cb.data)
+    if parsed is None:
+        await cb.answer("Не получилось, выберите ещё раз")
+        return
+    kind, value, hour = parsed
+    now = to_local(now_utc())
+    service = await _service_of(state)
+    ahead = min_ahead(service)
+    if kind == "x":
+        await cb.answer()
+    elif kind == "m":
+        await cb.answer()
+        await _edit(cb.message, texts.PICK_DATE, datepicker.month_markup(value.year, value.month, now, ahead))
+    elif kind == "d":
+        await cb.answer()
+        await _edit(cb.message, texts.PICK_HOUR.format(day=value.strftime("%d.%m.%Y")),
+                    datepicker.hours_markup(value, now, ahead))
+    elif kind == "h":
+        await cb.answer()
+        await _edit(cb.message, texts.PICK_MINUTES.format(day=value.strftime("%d.%m.%Y")),
+                    datepicker.minutes_markup(value, hour, now, ahead))
+    else:  # "t": время выбрано целиком
+        if not (now + ahead <= value <= now + timedelta(days=366)):
+            await cb.answer(too_soon_text(service), show_alert=True)  # пока выбирали, время ушло
+            await _edit(cb.message, texts.PICK_DATE, datepicker.month_markup(now.year, now.month, now, ahead))
+            return
+        await cb.answer()
+        await _edit(cb.message, f"🗓 Когда: {fmt_local(value)}")
+        await _accept_when(cb.message, state, cb.from_user, value)
+
+
+@router.callback_query(F.data.startswith("cal:"))
+async def cb_calendar_stale(cb: CallbackQuery) -> None:
+    """Нажали кнопку из старого окна календаря, когда заказ уже дальше или отменён."""
+    await cb.answer("Это окно уже не нужно. Начните заказ заново: /menu", show_alert=True)
 
 
 async def _set_qty(msg: Message, tg_user, state: FSMContext, raw: str) -> None:
@@ -715,10 +800,12 @@ async def cb_order_ok(cb: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     user = await repo.get_or_create_user(cb.from_user)
     start = from_db(data["start_at"])
-    if start < to_local(now_utc()) + timedelta(minutes=15):  # пока клиент думал, время ушло
+    svc = await _service_of(state)
+    grace = timedelta(minutes=15) if svc["category"] == "taxi" else timedelta(hours=23)  # час запаса на раздумья
+    if start < to_local(now_utc()) + grace:  # пока клиент думал, время ушло
         await state.set_state(Order.when)
         await state.update_data(prefilled=True)
-        await cb.message.answer("Это время уже подходит к концу. " + texts.ASK_WHEN)
+        await ask_when(cb.message, svc, "Это время уже не подходит. ")
         return
     total, breakdown, service, pet, params = await _price_for(data)
     order_id = await orders.create_order(
@@ -760,7 +847,7 @@ async def cb_repeat(cb: CallbackQuery, state: FSMContext) -> None:
                             out_b=False, unv_a=bool(last["address_unverified"]), unv_b=False,
                             prefilled=True)
     await state.set_state(Order.when)
-    await cb.message.answer(f"Повторяем: {service['name']}, {last['address']}.\n" + texts.ASK_WHEN)
+    await ask_when(cb.message, service, f"Повторяем: {service['name']}, {last['address']}.\n")
 
 
 # =====================================================================

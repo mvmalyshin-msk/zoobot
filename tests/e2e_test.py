@@ -24,7 +24,7 @@ for suffix in ("", "-wal", "-shm"):
 from aiogram import Bot  # noqa: E402
 from aiogram.client.session.base import BaseSession  # noqa: E402
 from aiogram.exceptions import TelegramForbiddenError  # noqa: E402
-from aiogram.methods import AnswerCallbackQuery, SendMessage  # noqa: E402
+from aiogram.methods import AnswerCallbackQuery, EditMessageText, SendMessage  # noqa: E402
 from aiogram.types import Chat, Message  # noqa: E402
 
 import db  # noqa: E402
@@ -74,6 +74,9 @@ class FakeSession(BaseSession):
             SENT.append({"to": method.chat_id, "text": method.text, "markup": markup})
             return Message(message_id=len(SENT), date=datetime.now(), chat=Chat(id=method.chat_id, type="private"),
                            text=method.text)
+        if isinstance(method, EditMessageText):  # окно календаря меняется на месте
+            SENT.append({"to": method.chat_id, "text": method.text, "markup": method.reply_markup, "edited": True})
+            return True
         if isinstance(method, AnswerCallbackQuery) and method.text:
             ANSWERS.append(method.text)
         return True
@@ -262,7 +265,7 @@ async def main():
 
     print("3. Выгул 60 мин ночью: расчёт цены")
     await click(CLIENT, "Выгул 60")
-    r = await say(CLIENT, "завтра 22:30")
+    r = await say(CLIENT, "послезавтра 22:30")
     txt = last_text(r)
     # (700 + 100 за крупную собаку) × 1.3 ночью = 1040
     ok("1 040 ₽" in txt and "Крупная собака" in txt and "Ночное" in txt, "разбивка: база + L + ночь = 1 040 ₽")
@@ -336,7 +339,7 @@ async def main():
     r = await click(CLIENT, "Повторить") if any("Повторить" in str(_buttons(m)) for m in SENT if m["to"] == CLIENT) else await say(CLIENT, "/menu")
     if "Повторяем" not in last_text(r):
         await click(CLIENT, "Повторить")
-    r = await say(CLIENT, "завтра 10:00")
+    r = await say(CLIENT, "послезавтра 10:00")
     ok("Проверьте заказ" in last_text(r) and "Рекс" in last_text(r), "повтор: спросил только время, остальное из профиля")
     await click(CLIENT, "Отмена")
     await say(CLIENT, "/menu")
@@ -344,7 +347,7 @@ async def main():
     await click(CLIENT, "Зооняня приходящая")
     await say(CLIENT, "через неделю")
     r = await say(CLIENT, "01.01.2020 10:00")
-    ok("будущем" in last_text(r), "дата в прошлом отклоняется")
+    ok("Самое раннее" in last_text(r), "дата в прошлом отклоняется с подсказкой самого раннего времени")
     r = await say(CLIENT, "01.01.2099 10:00")
     ok("далеко" in last_text(r), "дата через десятилетия (опечатка в годе) отклоняется")
     future = (datetime.now() + timedelta(days=3)).strftime("%d.%m %H:%M")
@@ -472,6 +475,74 @@ async def main():
     ok(o["address_unverified"] == 0 and o["outside_mkad"] == 1, "заказ: адрес подтверждён картой, за МКАД")
     r = await web_app_pick(CLIENT, {"lat": 55.97, "lon": 37.2, "label": "Зеленоград 1", "flat": ""})
     ok(not any("Проверьте заказ" in m["text"] for m in r), "картой вне диалога адреса ничего не меняется")
+
+
+    print("13. Выбор даты и времени кнопками")
+    from config import config as _cfg
+    day = (datetime.now(_cfg.tz) + timedelta(days=3)).date().isoformat()
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    r = await click(CLIENT, "Выгул 30")
+    ok("календар" in last_text(r) and any(b.callback_data.startswith("cal:d:") for b in _buttons(r[-1])),
+       "после выбора услуги показан календарь")
+    n_orders = (await db.fetch_one("SELECT COUNT(*) c FROM orders"))["c"]
+    r = await raw_callback(CLIENT, "cal:d:2026-13-40")
+    ok(ANSWERS[-1].startswith("Не получилось"), "битая кнопка календаря не ломает бота")
+    r = await raw_callback(CLIENT, "cal:t:2020-01-01:10:00")
+    ok(ANSWERS[-1].startswith("Записываем не раньше"), "время в прошлом из календаря отклоняется")
+    r = await raw_callback(CLIENT, f"cal:d:{day}")
+    ok(f"cal:h:{day}:09" in str(_buttons(r[-1])) and r[-1].get("edited"), "день выбран → окно сменилось на часы")
+    r = await raw_callback(CLIENT, f"cal:h:{day}:11")
+    ok(f"cal:t:{day}:11:30" in str(_buttons(r[-1])), "час выбран → минуты")
+    r = await raw_callback(CLIENT, f"cal:t:{day}:11:30")
+    ok("Проверьте заказ" in last_text(r) and "11:30" in last_text(r), "время выбрано → экран подтверждения с этим временем")
+    ok("Когда:" in r[0]["text"] and "11:30" in r[0]["text"], "окно календаря заменено на выбранное время")
+    r = await raw_callback(CLIENT, f"cal:d:{day}")
+    ok("уже не нужно" in ANSWERS[-1], "кнопка из старого окна ничего не ломает")
+    await click(CLIENT, "Отмена")
+    ok((await db.fetch_one("SELECT COUNT(*) c FROM orders"))["c"] == n_orders, "заказов от календаря не создано")
+
+
+    print("14. Запись не раньше чем за сутки (кроме такси)")
+    import texts as _texts
+    _now = datetime.now(_cfg.tz)
+
+    def _fmt(dt):
+        return dt.strftime("%d.%m.%Y %H:%M")
+
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    r = await click(CLIENT, "Выгул 30")
+    ok("за сутки" in last_text(r), "в вопросе про время сказано про сутки")
+    today_btn = f"cal:d:{_now.date().isoformat()}"
+    ok(today_btn not in str(_buttons(r[-1])), "в календаре выгула сегодня недоступно")
+    r = await say(CLIENT, _fmt(_now + timedelta(hours=2)))
+    ok("не раньше чем за сутки" in last_text(r) and "Проверьте заказ" not in last_text(r), "выгул через 2 часа не принимается")
+    r = await say(CLIENT, _fmt(_now + timedelta(hours=23)))
+    ok("не раньше чем за сутки" in last_text(r), "выгул через 23 часа не принимается")
+    r = await say(CLIENT, _fmt(_now + timedelta(hours=25)))
+    ok("Проверьте заказ" in last_text(r), "выгул через 25 часов принимается")
+    await click(CLIENT, "Отмена")
+    for name in ("Зооняня приходящая", "Передержка"):  # другие услуги — то же правило
+        await say(CLIENT, "/menu")
+        await click(CLIENT, "Заказать")
+        try:
+            r = await click(CLIENT, name)
+        except AssertionError:
+            continue
+        r = await say(CLIENT, _fmt(_now + timedelta(hours=5)))
+        ok("не раньше чем за сутки" in last_text(r), f"{name}: через 5 часов не принимается")
+        await click(CLIENT, "Отмена")
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    r = await click(CLIENT, "Зоотакси")
+    ok("за сутки" not in last_text(r) and "машину" in last_text(r), "у такси про сутки не говорится")
+    if _now.hour < 23:
+        ok(today_btn in str(_buttons(r[-1])), "в календаре такси сегодня доступно")
+    r = await say(CLIENT, _fmt(_now + timedelta(hours=1)))
+    ok(any(_texts.ASK_POINT_A in m["text"] for m in r), "такси через час принимается")
+    r = await say(CLIENT, "01.01.2020 10:00")
+    await click(CLIENT, "Отмена")
 
     print("\nВСЕ ПРОВЕРКИ ПРОЙДЕНЫ")
 
