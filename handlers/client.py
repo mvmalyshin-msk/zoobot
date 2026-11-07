@@ -521,6 +521,11 @@ ADDR_STATES = {Profile.address.state: "profile", Order.point_a.state: "a",
                Order.point_b.state: "b", Order.edit_address.state: "edit"}
 
 
+def _pick_prefix(target: str | None) -> str:
+    """В такси два адреса: подсказываем, какой из них сейчас выбирают."""
+    return {"a": texts.ADDR_PICK_A, "b": texts.ADDR_PICK_B}.get(target, "")
+
+
 @router.message(Profile.address, F.text)
 async def p_address(m: Message, state: FSMContext) -> None:
     await _address_input(m, state, m.text, "profile", Profile.address.state, m.from_user)
@@ -558,7 +563,8 @@ async def _address_input(m: Message, state: FSMContext, text: str, target: str, 
                             addr_fails=fails if opts else fails + 1)
     await state.set_state(Addr.pick)
     if opts:
-        await m.answer(texts.ADDR_PICK, reply_markup=kb.address_options([o["label"] for o in opts], False))
+        await m.answer(_pick_prefix(target) + texts.ADDR_PICK,
+                       reply_markup=kb.address_options([o["label"] for o in opts], False))
     else:
         fails += 1
         diag = await geo.diagnose(text)
@@ -623,7 +629,7 @@ async def addr_location(m: Message, state: FSMContext) -> None:
     await state.update_data(addr_target=target, addr_back=back, addr_text=place.label, addr_options=opts,
                             addr_fails=0)
     await state.set_state(Addr.pick)
-    await m.answer(texts.ADDR_PICK, reply_markup=kb.address_options([place.label], False))
+    await m.answer(_pick_prefix(target) + texts.ADDR_PICK, reply_markup=kb.address_options([place.label], False))
 
 
 @router.message(StateFilter(Profile.address, Order.point_a, Order.point_b, Order.edit_address, Addr.pick),
@@ -646,7 +652,8 @@ async def addr_webapp(m: Message, state: FSMContext) -> None:
     await state.update_data(addr_target=target, addr_back=back, addr_text=label, addr_options=opts,
                             addr_fails=0, addr_outside=False)
     await state.set_state(Addr.pick)
-    await m.answer(texts.ADDR_CHECK.format(label=label), reply_markup=kb.address_options([label], False))
+    check = {"a": texts.ADDR_CHECK_A, "b": texts.ADDR_CHECK_B}.get(target, texts.ADDR_CHECK)  # какой это адрес
+    await m.answer(check.format(label=label), reply_markup=kb.address_options([label], False))
 
 
 async def _address_done(msg: Message, state: FSMContext, target: str, label: str, district: str | None,
@@ -1110,8 +1117,11 @@ async def _accept_when(msg: Message, state: FSMContext, tg_user, dt) -> bool:
     elif service["category"] == "taxi":
         user = await repo.get_or_create_user(tg_user)
         await state.set_state(Order.point_a)
-        await msg.answer(texts.ASK_POINT_A, reply_markup=kb.use_profile_address(user["address"]))
-        await msg.answer("Или напишите другой адрес, или отправьте геопозицию.", reply_markup=kb.address_ask())
+        if user["address"]:  # сохранённый адрес — одной кнопкой; другой — текстом, картой или геопозицией
+            await msg.answer(texts.ASK_POINT_A, reply_markup=kb.use_profile_address(user["address"]))
+            await msg.answer(texts.ASK_POINT_A_OTHER, reply_markup=kb.address_ask())
+        else:
+            await msg.answer(texts.ASK_POINT_A_NO_SAVED, reply_markup=kb.address_ask())
     else:
         await show_confirm(msg, state, tg_user)
     return True
@@ -1272,7 +1282,7 @@ async def show_confirm(msg: Message, state: FSMContext, tg_user) -> None:
     when = fmt_local(start) + (f" → {fmt_local(end)}" if end and service["unit"] in ("час", "сутки") else "")
     lines = ["Проверьте заказ:", "", f"Услуга: {service['name']}", f"Когда: {when}"]
     if data.get("address_to"):
-        lines += [f"Откуда: {data['address']}", f"Куда: {data['address_to']}"]
+        lines += [f"Подача: {data['address']}", f"Куда: {data['address_to']}"]
     else:
         lines.append(f"Адрес: {data['address']}")
     if pet:

@@ -79,7 +79,7 @@ def order_card(o: dict, *, for_staff: bool = False) -> str:
         when += f" → {fmt_local(o['end_at'])}"
     lines.append(f"Когда: {when}")
     if o["address_to"]:
-        lines.append(f"Откуда: {o['address']}\nКуда: {o['address_to']}")
+        lines.append(f"Подача: {o['address']}\nКуда: {o['address_to']}")
     else:
         lines.append(f"Адрес: {o['address']}")
     if o["outside_mkad"]:
