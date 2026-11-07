@@ -143,6 +143,8 @@ MIGRATIONS: dict[int, str] = {
     """,
     # 12: чем подтверждён телефон клиента: 'telegram' (номер со своей кнопки), 'yandex' (Яндекс ID), пусто — не подтверждён
     12: "ALTER TABLE users ADD COLUMN phone_verified TEXT;",
+    # 13: журнал заказа хранит формулу цены на момент создания (см. orders.price_note)
+    13: "ALTER TABLE order_statuses_log ADD COLUMN note TEXT;",
     # 4: повадки питомца (анкета для выгульщика): коды через запятую, см. traits.py
     4: "ALTER TABLE pets ADD COLUMN traits TEXT;",
     3: """

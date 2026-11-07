@@ -275,15 +275,18 @@ async def show_settings(msg: Message, tg_user) -> None:
             "Связь: " + texts.CONTACT_LABELS.get(user["contact_pref"] or "telegram", "Telegram") + "\n"
             "Уведомления о заказах: включены ✅\n"
             "Акции и новости: " + ("включены ✅" if user["marketing_consent"] else "выключены"))
-    tg_url = None
-    if tg_user.id < 0:  # клиент с сайта
+    import webchat
+    tg_url = site_url = open_tg_url = None
+    if tg_user.id < 0:  # клиент с сайта: ссылка в Telegram — всегда, подтверждение — пока не сделано
+        open_tg_url = f"https://t.me/{config.bot_username}"
         if user.get("verified_tg_id"):
             text += "\nПодтверждение: через Telegram ✅"
         else:
-            import webchat
             text += "\nПодтверждение: ещё нет — нажмите кнопку, откроется Telegram"
             tg_url = await webchat.make_tg_link(tg_user.id)
-    await msg.answer(text, reply_markup=kb.settings(bool(user["marketing_consent"]), tg_url))
+    else:  # клиент из Telegram: кабинет на сайте, тот же самый
+        site_url = await webchat.site_link_for(tg_user.id)
+    await msg.answer(text, reply_markup=kb.settings(bool(user["marketing_consent"]), tg_url, site_url, open_tg_url))
 
 
 async def show_pets(msg: Message, tg_user) -> None:

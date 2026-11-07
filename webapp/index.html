@@ -168,8 +168,16 @@
   ok.addEventListener("click", function () {
     if (!sel) return;
     var payload = JSON.stringify({ lat: sel.lat, lon: sel.lon, label: label.value.trim(), flat: flat.value.trim() });
-    if (tg) tg.sendData(payload);
-    else window.__picked = payload;  // открыто не из Telegram — для проверки
+    if (tg) { tg.sendData(payload); return; }
+    // открыто в браузере с сайта: адрес уходит в чат того же гостя (cookie) и страница возвращает в чат
+    window.__picked = payload;
+    hint.textContent = "Передаю адрес в чат…";
+    fetch("/chat/api/send", { method: "POST", credentials: "same-origin",
+      headers: { "X-Zc": "1", "Content-Type": "application/json" }, body: JSON.stringify({ pick: payload }) })
+      .then(function (r) {
+        if (r.ok) { location.href = "/chat"; return; }
+        hint.innerHTML = "Не получилось передать адрес. Откройте <a href=\"/chat\">чат</a> и попробуйте снова.";
+      }).catch(function () { hint.textContent = "Нет связи. Попробуйте ещё раз."; });
   });
   window.__test = { setPoint: setPoint };
 })();

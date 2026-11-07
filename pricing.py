@@ -122,6 +122,8 @@ async def calculate_price(service_id: int, params: dict) -> tuple[int, list[tupl
             total += add
             breakdown.append((name, add))
 
+    log.info("Расчёт цены: услуга=%s кол-во=%s итог=%s разбивка=%s",
+             service_id, qty, int(total), "; ".join(f"{n} = {a}" for n, a in breakdown))
     return int(total), breakdown
 
 

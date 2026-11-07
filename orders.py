@@ -58,6 +58,19 @@ async def get_order_full(order_id: int) -> dict | None:
     )
 
 
+def price_explanation(breakdown: list, total: int) -> str:
+    """Разбивка цены заказа для администратора: из чего сложилась сумма."""
+    from pricing import format_breakdown
+    return "Расчёт цены:\n" + format_breakdown(breakdown or [], total)
+
+
+def price_note(breakdown: list, total: int) -> str:
+    """Одна строка для журнала заказа: формула и итог на момент создания."""
+    from utils import rub
+    parts = "; ".join(f"{name} {rub(amount)}" for name, amount in breakdown or [])
+    return f"Расчёт при создании: {parts} = {rub(total)}"
+
+
 def order_card(o: dict, *, for_staff: bool = False) -> str:
     """Текстовая карточка заказа. for_staff=True добавляет контакты клиента и заметки о питомце."""
     lines = [f"Заказ №{o['id']} · {texts.STATUS_LABELS[o['status']]}", f"Услуга: {o['service_name']}"]
@@ -94,6 +107,12 @@ def order_card(o: dict, *, for_staff: bool = False) -> str:
         lines.append(f"Клиент: {o['client_name']}, {o['client_phone']}")
         lines.append(f"Связь: {texts.CONTACT_LABELS.get(o.get('client_contact_pref'), 'Telegram')}")
     lines.append(f"Сумма: {rub(o['price_total'])}")
+    if for_staff:
+        breakdown = o.get("price_breakdown")
+        if isinstance(breakdown, str):
+            breakdown = json.loads(breakdown) if breakdown else []
+        if breakdown:
+            lines.append(price_explanation(breakdown, o["price_total"]))
     return "\n".join(lines)
 
 
@@ -172,8 +191,8 @@ async def create_order(data: dict, total: int, breakdown: list, actor: str) -> i
         )
         order_id = cur.lastrowid
         await conn.execute(
-            "INSERT INTO order_statuses_log (order_id, from_status, to_status, actor) VALUES (?,NULL,'created',?)",
-            (order_id, actor),
+            "INSERT INTO order_statuses_log (order_id, from_status, to_status, actor, note) VALUES (?,NULL,'created',?,?)",
+            (order_id, actor, price_note(breakdown, total)),
         )
         await conn.execute("INSERT INTO payments (order_id, amount) VALUES (?,?)", (order_id, total))
     return order_id
@@ -212,6 +231,8 @@ async def change_status(bot: Bot, order_id: int, new: str, actor: str,
     if o is None:
         return False, f"Заказ №{order_id} не найден."
     old = o["status"]
+    if new == old:
+        return False, f"Заказ №{order_id} уже в статусе «{texts.STATUS_LABELS[old]}»."
     if new not in TRANSITIONS.get(old, set()):
         return False, (f"Нельзя перевести заказ №{order_id} из «{texts.STATUS_LABELS[old]}» "
                        f"в «{texts.STATUS_LABELS[new]}».")
