@@ -448,7 +448,7 @@ async def main():
     ok("Москва, Шереметьево, терминал B" in str(_buttons(r[-1])), "точка Б: тоже варианты с карты")
     r = await click(CLIENT, "Шереметьево")
     t = last_text(r)
-    ok("Откуда: ул. Ленина" in t and "Куда: Москва" in t, "такси: точки А и Б на экране подтверждения")
+    ok("Подача: ул. Ленина" in t and "Куда: Москва" in t, "такси: точки А и Б на экране подтверждения")
     ok("за мкад" in last_text(r).lower() and "Ориентировочная" in last_text(r), "такси в аэропорт: «за МКАД» определено по карте само")
     await click(CLIENT, "Подтвердить")
     ok(await db.fetch_one("SELECT 1 FROM orders WHERE address_to IS NOT NULL") is not None, "заказ такси создан с точкой Б")
