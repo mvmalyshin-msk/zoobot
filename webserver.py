@@ -9,6 +9,7 @@ from pathlib import Path
 
 from aiohttp import web
 
+import cabinet
 import policy
 import portal
 import webchat
@@ -53,6 +54,7 @@ def make_app() -> web.Application:
     app.router.add_get("/request", webform.get_form)
     app.router.add_post("/request", webform.post_form)
     webchat.setup(app)
+    cabinet.setup(app)
     portal.setup(app)
     import phoneverify
     phoneverify.setup(app)
