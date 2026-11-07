@@ -164,7 +164,7 @@ def page(title: str, body: str, active: str = "", flash: str | None = None) -> s
     fl = f'<div class="flash">{_e(flash)}</div>' if flash else ""
     return (f'<!doctype html><html lang="ru"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
-            f'<title>{brand.NAME} — {_e(title)}</title>{brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.ADMIN)}'
+            f'<title>{brand.NAME} — {_e(title)}</title>{brand.HEAD_ADMIN}<style>{CSS}</style></head><body>{ribbons.html(ribbons.ADMIN)}'
             f'<div class="top"><a href="/portal" class="brand" style="text-decoration:none"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</a>'
             f'<nav>{nav}<a href="#" id="perm" hidden>🔔</a><a href="/portal/logout">Выйти</a></nav></div>'
             f'<main>{fl}{body}</main><a id="newbar" class="btn" href="">.</a>{NOTIFY_JS}</body></html>')
@@ -213,14 +213,16 @@ def login_page(msg: str | None = None, code_form: bool = False) -> str:
             '<button class="btn" style="width:100%;margin-top:10px">Войти</button></form>') if code_form else ""
     return (f'<!doctype html><html lang="ru"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{brand.NAME} — вход</title>'
-            f'{brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.ADMIN)}<main style="max-width:460px">'
+            f'{brand.HEAD_ADMIN}<style>{CSS}</style></head><body>{ribbons.html(ribbons.ADMIN)}<main style="max-width:460px">'
             f'<div style="text-align:center;font-size:26px;margin:18px 0 6px">{brand.LOGO}</div>'
             f'<h1 style="text-align:center">Вход в портал</h1>{fl}{code}'
             f'<div class="card" style="padding:16px;margin-bottom:12px"><b>Через Telegram</b>'
             f'<p class="muted">Откроется бот и пришлёт ссылку для входа. Или получите код:</p>'
             f'<a class="btn" style="width:100%" href="{_e(tg)}">Войти через Telegram</a>'
             f'<form method="post" action="/portal/code" style="margin-top:8px"><input type="hidden" name="via" value="tg">'
-            f'<button class="btn ghost" style="width:100%">Прислать код в Telegram</button></form></div>'
+            f'<button class="btn ghost" style="width:100%">Прислать код в Telegram</button></form>'
+            f'<p class="muted" style="font-size:14px">Открыли портал с экрана «Домой» на iPhone? Нажмите «Прислать код '
+            f'в Telegram» и введите код здесь: ссылка из Telegram откроется в Safari, а не в этом приложении.</p></div>'
             f'<div class="card" style="padding:16px"><b>Без Telegram и VPN — код на почту</b>'
             f'<form method="post" action="/portal/code"><input type="hidden" name="via" value="email">'
             f'<label for="email">Ваша почта</label><input id="email" name="email" type="email" autocomplete="email" required style="width:100%">'

@@ -43,6 +43,12 @@ async def _sw(request: web.Request) -> web.Response:
                                                           "Content-Type": "application/javascript; charset=utf-8"})
 
 
+async def _manifest_admin(request: web.Request) -> web.Response:
+    """Приложение администратора на экране «Домой»: открывает портал."""
+    return web.FileResponse(WEBAPP_DIR / "manifest-admin.webmanifest",
+                            headers={"Cache-Control": "no-cache", "Content-Type": "application/manifest+json"})
+
+
 async def _manifest(request: web.Request) -> web.Response:
     return web.FileResponse(WEBAPP_DIR / "manifest.webmanifest",
                             headers={"Cache-Control": "no-cache", "Content-Type": "application/manifest+json"})
@@ -70,6 +76,7 @@ def make_app() -> web.Application:
     app.router.add_get("/brand.css", _brand_css)
     app.router.add_get("/manifest.webmanifest", _manifest)
     app.router.add_get("/sw.js", _sw)
+    app.router.add_get("/manifest-admin.webmanifest", _manifest_admin)
     app.router.add_get("/apple-touch-icon.png", _touch_icon)  # iOS ищет иконку и по этому адресу  # add_static не выходит из папки
     return app
 

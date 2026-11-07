@@ -13,4 +13,11 @@ HEAD = (f'<meta name="theme-color" content="#FC6751">'
         f'<link rel="manifest" href="/manifest.webmanifest">'
         f'<link rel="stylesheet" href="/brand.css">')
 
+# Админ на экране «Домой» — отдельное приложение: открывает портал (не клиентский чат) и называется иначе.
+ADMIN_TITLE = "ЗК Админ"
+HEAD_ADMIN = (HEAD.replace('href="/manifest.webmanifest"', 'href="/manifest-admin.webmanifest"')
+              .replace(f'apple-mobile-web-app-title" content="{NAME}"', f'apple-mobile-web-app-title" content="{ADMIN_TITLE}"')
+              .replace(f'application-name" content="{NAME}"', f'application-name" content="{ADMIN_TITLE}"')
+              .replace('theme-color" content="#FC6751"', 'theme-color" content="#d62b2b"'))
+
 LOGO = '<span class="brand"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</span>'
