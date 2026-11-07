@@ -28,7 +28,8 @@ from config import config
 
 log = logging.getLogger(__name__)
 
-COOKIE = "zcw"
+COOKIE = "zcw"        # клиент (и гость) на сайте
+ADMIN_COOKIE = "zca"  # администратор: отдельная cookie, чтобы вход в портал не подменял клиента в соседней вкладке
 ORIGIN: contextvars.ContextVar[int | None] = contextvars.ContextVar("web_origin", default=None)
 # Чьё действие в Telegram сейчас обрабатывается. Ответы бота этому человеку — часть его разговора в Telegram,
 # их на сайт не копируем; копируем то, что пришло ему со стороны (ответ админа, статус заказа, напоминание).
@@ -283,17 +284,22 @@ async def new_session(uid: int | None = None) -> str:
     return token
 
 
-async def session_uid(request: web.Request) -> int | None:
-    token = request.cookies.get(COOKIE)
+async def session_uid(request: web.Request, admin: bool = False) -> int | None:
+    """Чья это сессия. Клиент и админ живут на разных cookie и никогда не смешиваются:
+    клиентская сессия не бывает админской (даже старая), админская — только у администратора."""
+    token = request.cookies.get(ADMIN_COOKIE if admin else COOKIE)
     if not token:
         return None
     row = await db.fetch_one("SELECT uid FROM web_sessions WHERE token_hash=?", (_hash(token),))
-    return row["uid"] if row else None
+    if not row:
+        return None
+    is_admin = row["uid"] in config.admin_ids
+    return row["uid"] if is_admin == admin else None
 
 
-def _set_cookie(request: web.Request, resp: web.StreamResponse, token: str) -> None:
+def _set_cookie(request: web.Request, resp: web.StreamResponse, token: str, admin: bool = False) -> None:
     secure = request.headers.get("X-Forwarded-Proto", request.scheme) == "https"
-    resp.set_cookie(COOKIE, token, max_age=60 * 60 * 24 * 90, httponly=True, secure=secure, samesite="Lax", path="/")
+    resp.set_cookie(ADMIN_COOKIE if admin else COOKIE, token, max_age=60 * 60 * 24 * 90, httponly=True, secure=secure, samesite="Lax", path="/")
 
 
 async def make_login_link(tg_id: int, nxt: str = "chat") -> str:
@@ -316,21 +322,35 @@ def _ui(name: str) -> str:
     return (Path(__file__).parent / "webapp" / name).read_text(encoding="utf-8")
 
 
-async def page_chat(request: web.Request) -> web.Response:
-    uid = await session_uid(request)
-    token = None
-    if uid is None:
-        token = await new_session()
-    role = ribbons.ADMIN if uid in config.admin_ids else ribbons.CLIENT
+def _chat_html(admin: bool) -> str:
     html = (_ui("chat.html").replace("__TG_URL__", f"https://t.me/{config.bot_username}")
-            .replace("__RIBBON__", ribbons.html(role)))
-    if role == ribbons.ADMIN:  # админский и клиентский интерфейсы не смешиваем: «Кабинет» — клиентский
+            .replace("__RIBBON__", ribbons.html(ribbons.ADMIN if admin else ribbons.CLIENT))
+            .replace("__API__", "/portal/bot" if admin else "/chat")
+            .replace("__LOGOUT__", "/portal/logout" if admin else "/chat/logout"))
+    if admin:  # админский и клиентский интерфейсы не смешиваем: «Кабинет» — клиентский
         html = html.replace('<a href="/cabinet">Кабинет</a>', "")
-    resp = web.Response(text=html, content_type="text/html",
+    return html
+
+
+def _html_page(html: str) -> web.Response:
+    return web.Response(text=html, content_type="text/html",
                         headers={"Cache-Control": "no-cache", "Referrer-Policy": "no-referrer"})
-    if token:
-        _set_cookie(request, resp, token)
+
+
+async def page_chat(request: web.Request) -> web.Response:
+    """Чат на сайте — только клиентский. Админ пишет боту из портала: /portal/bot."""
+    uid = await session_uid(request)
+    resp = _html_page(_chat_html(admin=False))
+    if uid is None:  # нет клиентской сессии (или в ней старый админ) — новый гость
+        _set_cookie(request, resp, await new_session())
     return resp
+
+
+async def page_admin_chat(request: web.Request) -> web.Response:
+    """Чат администратора с ботом на сайте: внутри портала, на админской cookie, с красной лентой."""
+    if await session_uid(request, admin=True) is None:
+        return web.Response(status=303, headers={"Location": "/portal"})
+    return _html_page(_chat_html(admin=True))
 
 
 async def page_login(request: web.Request) -> web.Response:
@@ -362,8 +382,10 @@ async def post_login(request: web.Request) -> web.Response:
         return web.Response(status=403, text="Ссылка не действует. Нажмите кнопку в Telegram ещё раз.")
     await db.execute(f"UPDATE web_login SET used=1, {db.touch()} WHERE token_hash=?", (h,))
     token = await new_session(row["tg_id"])
-    resp = web.Response(status=302, headers={"Location": "/portal" if form.get("n") == "portal" else "/chat"})
-    _set_cookie(request, resp, token)
+    admin = tg in config.admin_ids  # админ всегда входит на админскую cookie, клиент — на клиентскую
+    where = "/portal" if form.get("n") == "portal" else ("/portal/bot" if admin else "/chat")
+    resp = web.Response(status=302, headers={"Location": where})
+    _set_cookie(request, resp, token, admin=admin)
     return resp
 
 
@@ -380,14 +402,16 @@ async def logout(request: web.Request) -> web.Response:
 
 # ---------- API страницы ----------
 
-def _need_uid(handler):
+def _need_uid(handler, admin: bool = False):
+    """API чата: клиентское (/chat/api) читает клиентскую cookie, админское (/portal/bot/api) — админскую."""
     async def wrapper(request: web.Request):
-        uid = await session_uid(request)
+        uid = await session_uid(request, admin=admin)
         if uid is None:
             return web.json_response({"error": "session"}, status=401)
         if request.method == "POST" and request.headers.get("X-Zc") != "1":
             return web.json_response({"error": "csrf"}, status=403)
         return await handler(request, uid)
+    wrapper.raw = handler
     return wrapper
 
 
@@ -534,3 +558,9 @@ def setup(app: web.Application) -> None:
     app.router.add_get("/chat/api/poll", api_poll)
     app.router.add_post("/chat/api/send", api_send)
     app.router.add_get("/chat/file/{fid}", api_file)
+    # чат администратора с ботом — в портале, на админской cookie
+    app.router.add_get("/portal/bot", page_admin_chat)
+    app.router.add_get("/portal/bot/api/history", _need_uid(api_history.raw, admin=True))
+    app.router.add_get("/portal/bot/api/poll", _need_uid(api_poll.raw, admin=True))
+    app.router.add_post("/portal/bot/api/send", _need_uid(api_send.raw, admin=True))
+    app.router.add_get("/portal/bot/file/{fid}", _need_uid(api_file.raw, admin=True))

@@ -83,7 +83,7 @@ def run(fn, admin=True):
         async with TestClient(TestServer(app)) as c:
             if admin:
                 tok = await webchat.new_session(111)
-                c.session.cookie_jar.update_cookies({webchat.COOKIE: tok})
+                c.session.cookie_jar.update_cookies({webchat.ADMIN_COOKIE: tok})
             return await fn(c, f)
     return LOOP.run_until_complete(go())
 

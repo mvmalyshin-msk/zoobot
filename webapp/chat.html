@@ -47,7 +47,7 @@ form button.cmd{background:var(--cream);color:var(--coral);border:1.5px solid va
 </style>
 </head>
 <body>
-__RIBBON__<header><span class="brand"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</span><nav><a id="nt" href="#" hidden>🔔 Уведомления</a><a href="/cabinet">Кабинет</a><a href="__TG_URL__" target="_blank" rel="noopener">В Telegram</a><a id="ad" class="on" href="/portal" hidden>Портал</a><a href="/chat/logout">Выйти</a></nav></header>
+__RIBBON__<header><span class="brand"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</span><nav><a id="nt" href="#" hidden>🔔 Уведомления</a><a href="/cabinet">Кабинет</a><a href="__TG_URL__" target="_blank" rel="noopener">В Telegram</a><a id="ad" class="on" href="/portal" hidden>Портал</a><a href="__LOGOUT__">Выйти</a></nav></header>
 <div id="ios">Чтобы открывать как приложение: нажмите <b>«Поделиться»</b> → <b>«На экран „Домой“»</b>. Иконка и название будут «Зооконсьерж».</div>
 <div id="log" aria-live="polite"></div>
 <div id="st"></div>
@@ -90,7 +90,7 @@ function render(msg){
   if(!body){body=document.createElement('span');body.className='tx';div.insertBefore(body,div.firstChild)}
   body.textContent='';linkify(body,d.text||'');
   var old=div.querySelector('.fl');if(old)old.remove();
-  if(d.file){var a=document.createElement('a');a.className='fl';a.href='/chat/file/'+d.file.id;a.textContent='\n📎 '+d.file.name;a.style.display='block';div.appendChild(a)}
+  if(d.file){var a=document.createElement('a');a.className='fl';a.href='__API__/file/'+d.file.id;a.textContent='\n📎 '+d.file.name;a.style.display='block';div.appendChild(a)}
   keyboard(d,div);
   if(d.reply!==undefined)setReply(d.reply);
 }
@@ -139,7 +139,7 @@ function alert_(text){
 }
 document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'){unread=0;document.title=baseTitle}});
 function send(body){
-  return fetch('/chat/api/send',{method:'POST',headers:H(),body:JSON.stringify(body),credentials:'same-origin'}).then(function(r){
+  return fetch('__API__/api/send',{method:'POST',headers:H(),body:JSON.stringify(body),credentials:'same-origin'}).then(function(r){
     if(r.status===429)st.textContent='Слишком часто, подождите минуту';
     else if(r.status===401)location.reload();
     else st.textContent='';
@@ -151,7 +151,7 @@ function poll(){
   if(polling)return;polling=true;
   var ctl=new AbortController();pollCtl=ctl;
   var tm=setTimeout(function(){ctl.abort()},30000);
-  fetch('/chat/api/poll?after='+last,{credentials:'same-origin',signal:ctl.signal}).then(function(r){
+  fetch('__API__/api/poll?after='+last,{credentials:'same-origin',signal:ctl.signal}).then(function(r){
     if(r.status===401){location.reload();return null}
     return r.json()}).then(function(j){
     clearTimeout(tm);if(pollCtl!==ctl)return;
@@ -180,7 +180,7 @@ try{var standalone=window.navigator.standalone||matchMedia('(display-mode: stand
   if(/iPhone|iPad/.test(navigator.userAgent)&&!standalone&&!localStorage.getItem('zc_ios')){var ios=document.getElementById('ios');ios.style.display='block';ios.onclick=function(){ios.style.display='none';localStorage.setItem('zc_ios','1')}}}catch(e){}
 var nt=document.getElementById('nt');
 if(window.Notification&&Notification.permission==='default'){nt.hidden=false;nt.onclick=function(e){e.preventDefault();Notification.requestPermission().then(function(){nt.hidden=true})}}
-fetch('/chat/api/history',{credentials:'same-origin'}).then(function(r){return r.json()}).then(function(j){
+fetch('__API__/api/history',{credentials:'same-origin'}).then(function(r){return r.json()}).then(function(j){
   (j.messages||[]).forEach(function(m){render(m)});bottom();last=j.last;initial=false;
   if(j.admin)document.getElementById('ad').hidden=false;
   if(!j.messages.length)send({text:'/start'});
