@@ -189,3 +189,8 @@ def breed_options(options: list[str], can_keep: bool) -> InlineKeyboardMarkup:
     if can_keep:
         rows.append([Btn(text="Оставить как написано", callback_data="pb:keep")])
     return _kb(rows)
+
+
+def erase_confirm() -> InlineKeyboardMarkup:
+    return _kb([[Btn(text="🗑 Да, удалить мои данные", callback_data="del:yes")],
+                [Btn(text="Отмена", callback_data="del:no")]])

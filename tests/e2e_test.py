@@ -723,6 +723,38 @@ async def main():
     ok("Политика обработки персональных данных" in "".join(m["text"] for m in r), "кнопка политики без сайта показывает текст в чате")
     ok(all(len(m["text"]) <= 4096 for m in r), "куски политики помещаются в сообщение Telegram")
 
+    print("19. Удаление данных: «удали меня» и /delete_me")
+    import repo as _repo
+    GONE = 3000
+    await say(GONE, "/start")
+    await click(GONE, "Согласен")
+    gu = await db.fetch_one("SELECT * FROM users WHERE tg_id=?", (GONE,))
+    await _repo.update_user(gu["id"], name="Глеб", phone="79005556677", address="Мира 3")
+    await _repo.add_pet(gu["id"], "Барсик", "кошка", None, None, "боится шума")
+    r = await say(GONE, "удали меня")
+    ok("Удалить ваши данные" in last_text(r) and "Да, удалить" in str(_buttons(r[-1])), "«удали меня» просит подтверждение, а не удаляет сразу")
+    gu = await db.fetch_one("SELECT * FROM users WHERE tg_id=?", (GONE,))
+    ok(gu["name"] == "Глеб", "до подтверждения данные на месте")
+    r = await click(GONE, "Отмена")
+    ok("ничего не удаляю" in last_text(r) and (await db.fetch_one("SELECT name FROM users WHERE tg_id=?", (GONE,)))["name"] == "Глеб",
+       "отмена ничего не стирает")
+    await say(GONE, "/delete_me")
+    r = await click(GONE, "Да, удалить")
+    ok("удалены" in last_text(r), "после подтверждения бот сообщает об удалении")
+    gu = await db.fetch_one("SELECT * FROM users WHERE tg_id=?", (GONE,))
+    gp = await db.fetch_one("SELECT * FROM pets WHERE user_id=?", (gu["id"],))
+    ok(gu["name"] is None and gu["phone"] is None and gu["address"] is None and gu["pdn_consent"] == 0
+       and gp["notes"] is None and gp["name"] != "Барсик", "имя, телефон, адрес, питомец и согласие стёрты")
+    r = await say(GONE, "привет")
+    ok("Согласен" in str(_buttons(r[-1])), "после удаления бот снова просит согласие")
+    n_active = await _repo.active_order_count((await db.fetch_one("SELECT id FROM users WHERE tg_id=?", (CLIENT,)))["id"])
+    if n_active:
+        r = await say(CLIENT, "удали меня")
+        ok("незавершённые заказы" in last_text(r), "с активным заказом данные не удаляются")
+        await raw_callback(CLIENT, "del:yes")
+        ok((await db.fetch_one("SELECT name FROM users WHERE tg_id=?", (CLIENT,)))["name"] is not None,
+           "устаревшая кнопка подтверждения не стирает данные клиента с активным заказом")
+
     print("\nВСЕ ПРОВЕРКИ ПРОЙДЕНЫ")
 
 
