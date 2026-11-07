@@ -382,5 +382,87 @@ class WebPhoneTest(unittest.TestCase):
         run(t)
 
 
+
+class ClientWebCopyTest(unittest.TestCase):
+    """Сообщение клиенту (ответ админа, статус заказа) приходит и в Telegram, и в чат на сайте, если клиент им пользуется."""
+
+    async def _web_texts(self, uid):
+        rows = await db.fetch_all("SELECT payload FROM web_events WHERE uid=? AND op='send'", (uid,))
+        return " ".join(r["payload"] for r in rows)
+
+    def test_admin_reply_reaches_telegram_client_in_site_chat_too(self):
+        async def t(c, bot):
+            tg = 7801
+            await webchat.new_session(tg)  # клиент открыл «Открыть на сайте»: сессия сайта с его Telegram ID
+            await bot.send_message(tg, "👤 Администратор: Добрый день")
+            self.assertIn("Добрый день", await self._web_texts(tg))
+            await asyncio.sleep(0.05)
+            self.assertTrue(any(isinstance(m, SendMessage) and m.chat_id == tg and "Добрый день" in m.text for m in TG))
+        run(t)
+
+    def test_admin_reply_reaches_linked_guest_chat(self):
+        async def t(c, bot):
+            tg = 7802
+            await c.get("/chat")
+            guest = (await db.fetch_one("SELECT uid FROM web_sessions ORDER BY id DESC LIMIT 1"))["uid"]
+            await db.execute("INSERT INTO users (tg_id, verified_tg_id) VALUES (?, ?)", (guest, tg))
+            webchat._tg_cache.clear()
+            await bot.send_message(tg, "👤 Администратор: Что с кошкой")
+            self.assertIn("Что с кошкой", await self._web_texts(guest))
+            await asyncio.sleep(0.05)
+            self.assertTrue(any(isinstance(m, SendMessage) and m.chat_id == tg for m in TG))
+        run(t)
+
+    def test_client_without_site_chat_gets_telegram_only(self):
+        async def t(c, bot):
+            tg = 7803
+            await bot.send_message(tg, "только Telegram")
+            self.assertEqual(await self._web_texts(tg), "")
+            self.assertTrue(any(isinstance(m, SendMessage) and m.chat_id == tg for m in TG))
+        run(t)
+
+    def test_linking_sends_each_channel_its_own_message_once(self):
+        """Привязка сайта к Telegram: в Telegram — «аккаунт с сайта подтверждён», на сайте — «подтверждено через Telegram».
+        Копирование не должно удваивать их в обоих каналах."""
+        async def t(c, bot):
+            import texts
+            await c.get("/chat")
+            await c.post("/chat/api/send", json={"text": "/start"}, headers=H)
+            guest = (await db.fetch_one("SELECT uid FROM web_sessions ORDER BY id DESC LIMIT 1"))["uid"]
+            url = await webchat.make_tg_link(guest)
+            TG.clear()
+            await DP.feed_raw_update(bot, _tg_update(7805, "/start " + url.split("start=", 1)[1]))
+            await asyncio.sleep(0.05)
+            web = await self._web_texts(guest)
+            tg_texts = [m.text for m in TG if isinstance(m, SendMessage) and m.chat_id == 7805]
+            self.assertEqual(web.count("Подтверждено через Telegram"), 1, web)
+            self.assertNotIn("Ваш аккаунт с сайта подтверждён", web)
+            self.assertEqual(sum(texts.TG_LINK_OK_TG in x for x in tg_texts), 1, tg_texts)
+            self.assertFalse(any(texts.TG_LINK_OK_WEB in x for x in tg_texts), tg_texts)
+        run(t)
+
+    def test_clients_own_telegram_dialogue_is_not_mirrored_to_site(self):
+        async def t(c, bot):
+            tg = 7806
+            await webchat.new_session(tg)
+            await DP.feed_raw_update(bot, _tg_update(tg, "/start"))  # клиент сам пишет боту в Telegram
+            await asyncio.sleep(0.05)
+            self.assertEqual(await self._web_texts(tg), "")
+            self.assertTrue(any(isinstance(m, SendMessage) and m.chat_id == tg for m in TG))
+            await bot.send_message(tg, "👤 Администратор: а это копируем")  # пришло со стороны — копируем
+            self.assertIn("а это копируем", await self._web_texts(tg))
+        run(t)
+
+    def test_telegram_failure_still_leaves_message_on_site(self):
+        async def t(c, bot):
+            tg = 7804
+            await webchat.new_session(tg)
+            from unittest import mock
+            with mock.patch.object(Inner, "make_request", mock.AsyncMock(side_effect=RuntimeError("telegram down"))):
+                await bot.send_message(tg, "👤 Администратор: важное")
+            self.assertIn("важное", await self._web_texts(tg))
+        run(t)
+
+
 if __name__ == "__main__":
     unittest.main()

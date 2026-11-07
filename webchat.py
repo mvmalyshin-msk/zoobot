@@ -30,6 +30,21 @@ log = logging.getLogger(__name__)
 
 COOKIE = "zcw"
 ORIGIN: contextvars.ContextVar[int | None] = contextvars.ContextVar("web_origin", default=None)
+# Чьё действие в Telegram сейчас обрабатывается. Ответы бота этому человеку — часть его разговора в Telegram,
+# их на сайт не копируем; копируем то, что пришло ему со стороны (ответ админа, статус заказа, напоминание).
+TG_ORIGIN: contextvars.ContextVar[int | None] = contextvars.ContextVar("tg_origin", default=None)
+
+
+async def tg_origin_middleware(handler, event, data):
+    """Внешний middleware диспетчера: помечает обновления из Telegram (из браузера помечает feed через ORIGIN)."""
+    user = data.get("event_from_user")
+    if ORIGIN.get() is not None or user is None:
+        return await handler(event, data)
+    token = TG_ORIGIN.set(user.id)
+    try:
+        return await handler(event, data)
+    finally:
+        TG_ORIGIN.reset(token)
 KEEP_EVENTS = 1500
 POLL_SECONDS = 20
 SEND_LIMIT = 60          # действий в минуту с одной сессии
@@ -37,6 +52,7 @@ _hits: dict[int, list[float]] = {}
 _locks: dict[int, asyncio.Lock] = {}
 _linked_cache: dict[int, tuple[float, bool]] = {}
 _tg_cache: dict[int, tuple[float, int | None]] = {}
+_targets_cache: dict[int, tuple[float, list[int]]] = {}
 
 
 def _hash(token: str) -> str:
@@ -115,6 +131,21 @@ async def _verified_tg(uid: int) -> int | None:
     return tg
 
 
+async def _web_targets(tg: int) -> list[int]:
+    """Чаты на сайте, куда копируем сообщение Telegram-клиенту: его сессия сайта (вход по ссылке из бота)
+    и гостевые сессии, подтвердившие этот Telegram. Пусто — клиент сайтом не пользуется."""
+    cached = _targets_cache.get(tg)
+    if cached and time.time() - cached[0] < 30:
+        return cached[1]
+    rows = await db.fetch_all(
+        "SELECT DISTINCT uid FROM web_sessions WHERE uid=? "
+        "UNION SELECT DISTINCT s.uid FROM web_sessions s JOIN users u ON u.tg_id = s.uid WHERE u.verified_tg_id=?",
+        (tg, tg))
+    targets = [r["uid"] for r in rows]
+    _targets_cache[tg] = (time.time(), targets)
+    return targets
+
+
 async def make_tg_link(web_uid: int) -> str:
     """Одноразовая ссылка (сутки): клиент с сайта открывает её в Telegram — и мы знаем, что он настоящий."""
     token = secrets.token_urlsafe(24)
@@ -136,6 +167,7 @@ async def claim_tg_link(token: str, tg_id: int) -> int | None:
         web_uid = (await cur.fetchone())[0]
         await conn.execute(f"UPDATE users SET verified_tg_id=?, {db.touch()} WHERE tg_id=?", (tg_id, web_uid))
     _tg_cache.pop(web_uid, None)
+    _targets_cache.clear()
     return web_uid
 
 
@@ -169,7 +201,7 @@ class WebRouterSession(BaseSession):
             result = await self._web(cid, method)
             if cid < 0 and origin != cid and sending:  # уведомление клиенту с сайта, подтвердившему Telegram
                 tg = await _verified_tg(cid)
-                if tg:
+                if tg and tg != TG_ORIGIN.get():  # тот, кто сейчас действует в Telegram, уже видит ответ там
                     copy = SendMessage(chat_id=tg, text=getattr(method, "text", None) or getattr(method, "caption", None)
                                        or "Новое сообщение в чате на сайте")
                     asyncio.create_task(self._telegram_quietly(bot, copy, timeout))
@@ -178,6 +210,22 @@ class WebRouterSession(BaseSession):
             result = await self._web(cid, method)
             asyncio.create_task(self._telegram_quietly(bot, method, timeout))
             return result
+        if sending and cid > 0 and TG_ORIGIN.get() != cid:
+            targets = await _web_targets(cid)
+            if targets:  # клиент пользуется чатом на сайте: ответ админа и статусы — и туда, и в Telegram
+                copy = None
+                for uid in targets:
+                    try:
+                        copy = await self._web(uid, method)
+                    except Exception:
+                        log.exception("Не удалось положить копию сообщения в чат на сайте")
+                try:
+                    return await self.inner.make_request(bot, method, timeout)
+                except Exception as e:
+                    if copy is None:
+                        raise
+                    log.info("Telegram не принял сообщение для %s (%s): оно есть в чате на сайте", cid, type(e).__name__)
+                    return copy
         return await self.inner.make_request(bot, method, timeout)
 
     async def _telegram_quietly(self, bot, method, timeout):
@@ -231,6 +279,7 @@ async def new_session(uid: int | None = None) -> str:
         if uid is None:
             await conn.execute("UPDATE web_sessions SET uid=? WHERE id=?", (-cur.lastrowid, cur.lastrowid))
     _linked_cache.clear()
+    _targets_cache.clear()
     return token
 
 
@@ -323,6 +372,7 @@ async def logout(request: web.Request) -> web.Response:
     if token:
         await db.execute("DELETE FROM web_sessions WHERE token_hash=?", (_hash(token),))
         _linked_cache.clear()
+        _targets_cache.clear()
     resp = web.Response(status=302, headers={"Location": "/chat"})
     resp.del_cookie(COOKIE, path="/")
     return resp
