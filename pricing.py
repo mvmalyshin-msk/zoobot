@@ -103,12 +103,32 @@ async def calculate_price(service_id: int, params: dict) -> tuple[int, list[tupl
     return int(total), breakdown
 
 
+def format_breakdown_lines(breakdown: list[tuple[str, int]]) -> str:
+    """Построчная разбивка без итога (на экране заказа итог показываем диапазоном)."""
+    from utils import rub
+
+    return "\n".join(f"• {name}: {rub(amount) if i == 0 else '+' + rub(amount)}"
+                     for i, (name, amount) in enumerate(breakdown))
+
+
 def format_breakdown(breakdown: list[tuple[str, int]], total: int) -> str:
     """Построчная разбивка для клиента."""
     from utils import rub
 
-    lines = []
-    for i, (name, amount) in enumerate(breakdown):
-        lines.append(f"• {name}: {rub(amount) if i == 0 else '+' + rub(amount)}")
-    lines.append(f"\nИтого: {rub(total)}")
-    return "\n".join(lines)
+    return format_breakdown_lines(breakdown) + f"\n\nИтого: {rub(total)}"
+
+
+RANGE_PERCENT = 15  # верхняя граница диапазона: возможные надбавки до подбора специалиста
+
+
+def price_range(total: int) -> tuple[int, int]:
+    """(от, до): от — расчёт по правилам, до — +15 %, округлено вверх до 10 ₽ (целые числа, без float)."""
+    high = -(-total * (100 + RANGE_PERCENT) // 1000) * 10
+    return total, high
+
+
+def format_range(total: int) -> str:
+    from utils import rub
+
+    low, high = price_range(total)
+    return f"Ориентировочная стоимость: от {rub(low)} до {rub(high)}"

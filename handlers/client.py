@@ -741,11 +741,34 @@ async def show_confirm(msg: Message, state: FSMContext, tg_user) -> None:
     if pet:
         size = f", {pet['size']}" if pet["size"] else ""
         lines.append(f"Питомец: {pet['name']} ({pet['species']}{size})")
-    lines += ["", "💰 Расчёт:", pricing.format_breakdown(breakdown, total)]
+    lines += ["", "💰 " + pricing.format_range(total), "Что учтено:", pricing.format_breakdown_lines(breakdown),
+              "", texts.CONFIRM_QUESTION]
 
     await state.set_state(Order.confirm)
-    await msg.answer("\n".join(lines),
-                     reply_markup=kb.order_confirm(bool(data.get("outside_mkad")), len(pets) > 1))
+    await msg.answer("\n".join(lines), reply_markup=kb.order_confirm())
+
+
+@router.callback_query(Order.confirm, F.data == "ord:edit")
+async def cb_edit_menu(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    data = await state.get_data()
+    user = await repo.get_or_create_user(cb.from_user)
+    many_pets = len(await repo.list_pets(user["id"])) > 1
+    await cb.message.answer("Что поправить?", reply_markup=kb.order_edit(bool(data.get("outside_mkad")), many_pets))
+
+
+@router.callback_query(Order.confirm, F.data == "ord:back")
+async def cb_edit_back(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    await show_confirm(cb.message, state, cb.from_user)
+
+
+@router.callback_query(Order.confirm, F.data == "ord:when")
+async def cb_edit_when(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    await state.set_state(Order.when)
+    await state.update_data(prefilled=True)  # после нового времени сразу возвращаемся на экран заказа
+    await ask_when(cb.message, await _service_of(state))
 
 
 @router.callback_query(Order.confirm, F.data == "ord:mkad")

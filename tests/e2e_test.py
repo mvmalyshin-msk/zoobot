@@ -161,6 +161,12 @@ async def web_app_pick(uid: int, payload: dict) -> list[dict]:
     return SENT[start:]
 
 
+async def edit_click(uid: int, label: str) -> list[dict]:
+    """Правка заказа: сначала «Внести правки», потом нужная кнопка."""
+    await click(uid, "Внести правки")
+    return await click(uid, label)
+
+
 def last_text(msgs, to=None):
     msgs = [m for m in msgs if to is None or m["to"] == to]
     return msgs[-1]["text"] if msgs else ""
@@ -269,10 +275,10 @@ async def main():
     txt = last_text(r)
     # (700 + 100 за крупную собаку) × 1.3 ночью = 1040
     ok("1 040 ₽" in txt and "Крупная собака" in txt and "Ночное" in txt, "разбивка: база + L + ночь = 1 040 ₽")
-    r = await click(CLIENT, "За МКАД")
+    r = await edit_click(CLIENT, "За МКАД")
     ok("(700 + 100 + 150) × 1.3" or "1 235 ₽" in last_text(r), "за МКАД пересчитывает")
     ok("1 235 ₽" in last_text(r), "итог за МКАД = 1 235 ₽")
-    await click(CLIENT, "За МКАД")
+    await edit_click(CLIENT, "За МКАД")
     r = await click(CLIENT, "Подтвердить")
     ok("принята" in last_text(r, CLIENT), "клиент получил подтверждение заявки")
     ok(any(m["to"] == ADMIN and "Новая заявка" in m["text"] for m in r), "админ получил уведомление")
@@ -365,7 +371,7 @@ async def main():
     r = await click(CLIENT, "Шереметьево")
     t = last_text(r)
     ok("Откуда: ул. Ленина" in t and "Куда: Москва" in t, "такси: точки А и Б на экране подтверждения")
-    ok("За МКАД: да" in str(_buttons(r[-1])), "такси в аэропорт: «за МКАД» определено по карте само")
+    ok("за мкад" in last_text(r).lower() and "Ориентировочная" in last_text(r), "такси в аэропорт: «за МКАД» определено по карте само")
     await click(CLIENT, "Подтвердить")
     ok(await db.fetch_one("SELECT 1 FROM orders WHERE address_to IS NOT NULL") is not None, "заказ такси создан с точкой Б")
     r = await say(ADMIN, "/cancel 2 клиент передумал")
@@ -381,7 +387,7 @@ async def main():
     await say(CLIENT, future.replace(future[-5:], "15:00"))
     global MAP_DOWN
     MAP_DOWN = True
-    await click(CLIENT, "Изменить адрес")
+    await edit_click(CLIENT, "Изменить адрес")
     r = await say(CLIENT, "ул. Новая, 7")
     ok("Карта сейчас не отвечает" in str([m["text"] for m in r]), "карта недоступна: адрес принят, клиент предупреждён")
     MAP_DOWN = False
@@ -461,7 +467,7 @@ async def main():
     await click(CLIENT, "Заказать")
     await click(CLIENT, "Выгул 30")
     r = await say(CLIENT, future.replace(future[-5:], "18:00"))
-    await click(CLIENT, "Изменить адрес")
+    await edit_click(CLIENT, "Изменить адрес")
     r = await web_app_pick(CLIENT, {"lat": 59.9, "lon": 30.3, "label": "Невский проспект, 1", "flat": ""})
     ok("не получилось" in last_text(r).lower(), "точка вне Москвы и области отклоняется")
     r = await web_app_pick(CLIENT, {"lat": 55.97, "lon": 37.2, "label": "ывфвф 5", "flat": ""})
@@ -469,7 +475,7 @@ async def main():
     r = await web_app_pick(CLIENT, {"lat": 55.97, "lon": 37.2, "label": "Зеленоград, корпус 1105", "flat": "12"})
     t = last_text(r)
     ok("Адрес: Зеленоград, корпус 1105, кв. 12" in t, "адрес с карты и квартира попали на экран заказа")
-    ok("За МКАД: да" in str(_buttons(r[-1])), "«за МКАД» определено по координатам точки")
+    ok("за мкад" in last_text(r).lower() and "Ориентировочная" in last_text(r), "«за МКАД» определено по координатам точки")
     r = await click(CLIENT, "Подтвердить")
     o = await db.fetch_one("SELECT * FROM orders ORDER BY id DESC LIMIT 1")
     ok(o["address_unverified"] == 0 and o["outside_mkad"] == 1, "заказ: адрес подтверждён картой, за МКАД")
@@ -542,6 +548,56 @@ async def main():
     r = await say(CLIENT, _fmt(_now + timedelta(hours=1)))
     ok(any(_texts.ASK_POINT_A in m["text"] for m in r), "такси через час принимается")
     r = await say(CLIENT, "01.01.2020 10:00")
+    await click(CLIENT, "Отмена")
+
+
+    print("15. Экран заказа: диапазон цены и вопрос «подбирать специалиста или внести правки»")
+    day = (datetime.now(_cfg.tz) + timedelta(days=4)).strftime("%d.%m.%Y")
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    await click(CLIENT, "Выгул 60")
+    r = await say(CLIENT, f"{day} 22:30")
+    t = last_text(r)
+    ok("Ориентировочная стоимость: от 1 170 ₽ до 1 350 ₽" in t, "цена показана диапазоном: от расчёта до +15 %")
+    ok("Итого" not in t, "точный «Итого» на экране заказа не показывается")
+    ok("Крупная собака" in t and "Ночное" in t, "что учтено в расчёте — видно")
+    ok("подобрать специалиста" in t.lower() and "правки" in t, "вопрос: подбирать специалиста или внести правки")
+    labels = " | ".join(b.text for b in _buttons(r[-1]))
+    ok("Подтвердить" in labels and "Внести правки" in labels and "За МКАД" not in labels,
+       "на первом экране две кнопки: подбирать / внести правки (правки спрятаны)")
+    r = await click(CLIENT, "Внести правки")
+    labels = " | ".join(b.text for b in _buttons(r[-1]))
+    ok(all(x in labels for x in ("За МКАД", "Изменить адрес", "Изменить время", "Назад")), "в правках: МКАД, адрес, время, назад")
+    r = await click(CLIENT, "За МКАД")
+    ok("от 1 365 ₽ до 1 570 ₽" in last_text(r), "после правки диапазон пересчитан (1 365 → 1 570)")
+    await click(CLIENT, "Внести правки")
+    r = await click(CLIENT, "Назад")
+    ok("Ориентировочная стоимость" in last_text(r), "«Назад» возвращает на экран заказа")
+    await click(CLIENT, "Внести правки")
+    r = await click(CLIENT, "Изменить время")
+    ok("календар" in last_text(r), "«Изменить время» открывает календарь")
+    day2 = (datetime.now(_cfg.tz) + timedelta(days=5)).strftime("%d.%m.%Y")
+    r = await say(CLIENT, f"{day2} 10:00")
+    ok("Проверьте заказ" in last_text(r) and day2 in last_text(r), "после смены времени — снова экран заказа с новой датой")
+    n = (await db.fetch_one("SELECT COUNT(*) c FROM orders"))["c"]
+    r = await click(CLIENT, "Подтвердить")
+    ok("точную стоимость" in "".join(m["text"] for m in r), "после подтверждения сказано, что точную стоимость назовём после подбора")
+    o = await db.fetch_one("SELECT * FROM orders ORDER BY id DESC LIMIT 1")
+    ok((await db.fetch_one("SELECT COUNT(*) c FROM orders"))["c"] == n + 1 and o["price_total"] > 0, "заявка создана с расчётной ценой внутри")
+
+
+    # у почасовой услуги смена времени не должна заново спрашивать количество часов
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    await click(CLIENT, "Зооняня приходящая")
+    await say(CLIENT, f"{day} 11:00")
+    r = await click(CLIENT, "3")
+    ok("Проверьте заказ" in last_text(r) and "3 ч" in last_text(r), "зооняня: 3 часа, экран заказа")
+    await click(CLIENT, "Внести правки")
+    await click(CLIENT, "Изменить время")
+    r = await say(CLIENT, f"{day2} 12:00")
+    ok("Проверьте заказ" in last_text(r) and "3 ч" in last_text(r) and "Сколько часов" not in last_text(r),
+       "зооняня: после смены времени снова экран заказа, часы не переспрашиваются")
     await click(CLIENT, "Отмена")
 
     print("\nВСЕ ПРОВЕРКИ ПРОЙДЕНЫ")

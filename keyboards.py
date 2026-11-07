@@ -89,15 +89,25 @@ def use_profile_address(address: str) -> InlineKeyboardMarkup:
     return _kb([[Btn(text=f"📍 {short}", callback_data="pa:profile")]])
 
 
-def order_confirm(outside_mkad: bool, many_pets: bool) -> InlineKeyboardMarkup:
+def order_confirm() -> InlineKeyboardMarkup:
+    """Первый экран заказа: подбирать специалиста или вносить правки (сами правки спрятаны за второй кнопкой)."""
+    return _kb([
+        [Btn(text="✅ Подтвердить и подобрать специалиста", callback_data="ord:ok")],
+        [Btn(text="✏️ Внести правки", callback_data="ord:edit")],
+        [Btn(text="❌ Отмена", callback_data="ord:cancel")],
+    ])
+
+
+def order_edit(outside_mkad: bool, many_pets: bool) -> InlineKeyboardMarkup:
+    """Что можно поправить в заказе."""
     rows = [
-        [Btn(text="✅ Подтвердить заказ", callback_data="ord:ok")],
-        [Btn(text=f"🛣 За МКАД: {'да' if outside_mkad else 'нет'}", callback_data="ord:mkad")],
+        [Btn(text="🗓 Изменить время", callback_data="ord:when")],
         [Btn(text="✏️ Изменить адрес", callback_data="ord:addr")],
+        [Btn(text=f"🛣 За МКАД: {'да' if outside_mkad else 'нет'}", callback_data="ord:mkad")],
     ]
     if many_pets:
         rows.append([Btn(text="🐕 Другой питомец", callback_data="ord:pet")])
-    rows.append([Btn(text="❌ Отмена", callback_data="ord:cancel")])
+    rows.append([Btn(text="◀ Назад к заказу", callback_data="ord:back")])
     return _kb(rows)
 
 
