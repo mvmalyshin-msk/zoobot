@@ -10,6 +10,7 @@ from pathlib import Path
 from aiohttp import web
 
 import policy
+import webform
 
 log = logging.getLogger(__name__)
 WEBAPP_DIR = Path(__file__).parent / "webapp"
@@ -34,12 +35,16 @@ def make_app() -> web.Application:
     app.router.add_get("/", _index)
     app.router.add_get("/healthz", _health)
     app.router.add_get("/policy", _policy)
+    app.router.add_get("/request", webform.get_form)
+    app.router.add_post("/request", webform.post_form)
     app.router.add_static("/vendor/", WEBAPP_DIR / "vendor", follow_symlinks=False)  # add_static не выходит из папки
     return app
 
 
-async def start(port: int) -> web.AppRunner:
-    runner = web.AppRunner(make_app())
+async def start(port: int, bot=None) -> web.AppRunner:
+    app = make_app()
+    app["bot"] = bot  # веб-заявки уведомляют админа через бота
+    runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", port).start()
     log.info("Веб-сервер карты запущен на порту %s", port)
