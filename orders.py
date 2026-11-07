@@ -391,3 +391,50 @@ async def schedule_slot_reminders(o: dict) -> None:
     for kind, delta in (("client_24h", timedelta(hours=24)), ("client_2h", timedelta(hours=2))):
         if start - delta > now_utc():
             await schedule_reminder(o["id"], kind, start - delta)
+
+
+# ---------- Заявки клиента по заказу ----------
+
+REQUEST_KINDS = {"problem": "сообщил о проблеме", "move": "просит перенести"}
+MAX_REQUEST = 500
+
+
+async def order_history(order_id: int) -> list[dict]:
+    """Журнал заказа по порядку: смены статусов и заявки клиента (с текстом в note)."""
+    return await db.fetch_all(
+        "SELECT to_status, actor, note, created_at FROM order_statuses_log WHERE order_id=? ORDER BY id",
+        (order_id,))
+
+
+async def client_request(bot, order_id: int, kind: str, text: str | None, actor: str) -> tuple[bool, str]:
+    """Заявка клиента: проблема или просьба о переносе. Статус не меняется: заявка пишется в журнал
+    и уходит администратору, который решает дальше."""
+    if kind not in REQUEST_KINDS:
+        return False, "Такой заявки нет."
+    text = (text or "").strip()
+    if not text:
+        return False, "Напишите, пожалуйста, текстом: что случилось или на какое время перенести."
+    if len(text) > MAX_REQUEST:
+        return False, f"Слишком длинно: не больше {MAX_REQUEST} знаков."
+    o = await get_order_full(order_id)
+    if o is None:
+        return False, f"Заказ №{order_id} не найден."
+    if o["status"] not in ACTIVE_STATUSES:
+        return False, f"Заказ №{order_id} уже завершён — напишите нам в чат."
+    note = f"Клиент {REQUEST_KINDS[kind]}: {text}"
+    async with db.transaction() as conn:
+        await conn.execute(
+            "INSERT INTO order_statuses_log (order_id, from_status, to_status, actor, note) VALUES (?,?,?,?,?)",
+            (order_id, o["status"], o["status"], actor, note))
+    await notify_admins(bot, f"📝 Заказ №{order_id} ({texts.STATUS_LABELS[o['status']]}). {note}")
+    return True, "Передали администратору. Мы свяжемся с вами."
+
+
+async def client_cancel(bot, order_id: int, user_id: int, actor: str) -> tuple[bool, str]:
+    """Отмена клиентом до оплаты — те же правила, что в боте. Чужие заказы отменить нельзя."""
+    o = await get_order_full(order_id)
+    if o is None or o["user_id"] != user_id:
+        return False, f"Заказ №{order_id} не найден."
+    if o["status"] not in ("created", "confirmed"):
+        return False, "Этот заказ уже нельзя отменить самостоятельно — напишите нам."
+    return await change_status(bot, order_id, "cancelled", actor, "отменён клиентом")
