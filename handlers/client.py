@@ -72,6 +72,41 @@ async def send_policy(msg: Message) -> None:
         await msg.answer(part)
 
 
+@router.message(Command("delete_me"))
+async def cmd_delete_me(m: Message, state: FSMContext) -> None:
+    await state.clear()
+    await _erase_ask(m)
+
+
+@router.message(F.text.func(texts.is_erase_request))
+async def msg_erase(m: Message, state: FSMContext) -> None:
+    await state.clear()
+    await _erase_ask(m)
+
+
+async def _erase_ask(m: Message) -> None:
+    u = await repo.get_or_create_user(m.from_user)
+    if await repo.active_order_count(u["id"]):
+        await m.answer(texts.ERASE_ACTIVE)
+        return
+    await m.answer(texts.ERASE_ASK, reply_markup=kb.erase_confirm())
+
+
+@router.callback_query(F.data.in_({"del:yes", "del:no"}))
+async def cb_erase(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    if cb.data == "del:no":
+        await cb.message.answer(texts.ERASE_CANCELLED)
+        return
+    u = await repo.get_or_create_user(cb.from_user)
+    if await repo.active_order_count(u["id"]):  # за время раздумий мог появиться заказ
+        await cb.message.answer(texts.ERASE_ACTIVE)
+        return
+    await repo.erase_user(u["id"])
+    await state.clear()
+    await cb.message.answer(texts.ERASE_DONE)
+
+
 @router.message(Command("policy"))
 async def cmd_policy(m: Message) -> None:
     await send_policy(m)

@@ -20,7 +20,7 @@ from scheduler import setup_scheduler
 
 log = logging.getLogger("zoobot")
 
-CLIENT_COMMANDS = {"/start", "/menu", "/profile"}
+CLIENT_COMMANDS = {"/start", "/menu", "/profile", "/delete_me"}
 
 
 class ConsentMiddleware(BaseMiddleware):
@@ -31,7 +31,7 @@ class ConsentMiddleware(BaseMiddleware):
         if isinstance(event, Message):
             text = (event.text or "").split("@")[0]
             cmd = text.split(" ")[0]
-            if cmd in ("/start", "/policy"):  # политику можно прочитать до согласия
+            if cmd in ("/start", "/policy", "/delete_me"):  # политику читаем и данные удаляем без согласия
                 return await handler(event, data)
             # админ-команды и /my исполнителя не требуют согласия клиента
             if cmd.startswith("/") and cmd not in CLIENT_COMMANDS:
@@ -41,7 +41,7 @@ class ConsentMiddleware(BaseMiddleware):
                 return await handler(event, data)
             answer_to = event
         else:  # CallbackQuery
-            if event.data in ("pdn:agree", "pol:show") or (event.data or "").startswith(("ex:", "rp:")):
+            if event.data in ("pdn:agree", "pol:show", "del:yes", "del:no") or (event.data or "").startswith(("ex:", "rp:")):
                 return await handler(event, data)
             answer_to = event.message
 
@@ -73,6 +73,7 @@ async def set_commands(bot: Bot) -> None:
         BotCommand(command="menu", description="Главное меню"),
         BotCommand(command="profile", description="Профиль и питомцы"),
         BotCommand(command="policy", description="Политика обработки данных"),
+        BotCommand(command="delete_me", description="Удалить мои данные"),
     ])
     for admin_id in config.admin_ids:
         try:
