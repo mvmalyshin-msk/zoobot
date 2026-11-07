@@ -7,10 +7,12 @@ from datetime import datetime
 from aiogram import BaseMiddleware, F, Router
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
 
 import db
+import keyboards as kb
 import orders
+import payinfo
 import pricing
 import texts
 from config import config
@@ -19,11 +21,15 @@ from utils import fmt_local, min_age, now_utc, rub, to_db, to_local
 log = logging.getLogger(__name__)
 router = Router()
 router.message.filter(F.from_user.id.in_(config.admin_ids))  # остальным эти команды «не существуют»
+router.callback_query.filter(F.from_user.id.in_(config.admin_ids))
 
 SERVICES = ("walk", "sitter", "boarding", "taxi")
 LEGAL = ("self_employed", "ip", "legal", "individual")
 
 HELP = """Команды админа
+
+Кнопки (команды копировать не нужно): новая заявка приходит с «Подтвердить / Отклонить / Чат с клиентом»;
+ссылку на оплату просто вставьте сообщением — бот поймёт заказ и отправит; «Оплата пришла» отмечает оплату.
 
 Заказы:
 /orders — активные заказы
@@ -124,10 +130,22 @@ async def _simple_status(m: Message, command: CommandObject, new: str, reason: s
         return
     ok, text = await orders.change_status(m.bot, ids[0], new, f"admin:{m.from_user.id}", reason)
     if ok and new == "confirmed":
-        text += f"\nДалее: /send_payment {ids[0]} <ссылка на оплату>"
+        text += "\nДалее: просто пришлите сюда ссылку на оплату (или ничего: клиент сам увидит дежурные реквизиты)."
+        await _offer_methods(m.bot, ids[0])
     elif ok and new == "paid":
         text += f"\nДалее: /assign {ids[0]} <id исполнителя>"
     await m.answer(("✅ " if ok else "⚠️ ") + text)
+
+
+async def _offer_methods(bot, order_id: int) -> bool:
+    """Клиенту сразу после подтверждения уходят дежурные способы оплаты (СБП / карта) и кнопка «Я оплатил»."""
+    have = payinfo.methods(order_id)
+    if not have:
+        return False
+    o = await orders.get_order_full(order_id)
+    return await orders.notify(
+        bot, o["client_tg_id"], f"Выберите, как удобнее оплатить заказ №{order_id} ({rub(o['price_total'])}):",
+        kb.pay_options(order_id, None, sbp="sbp" in have, card="card" in have))
 
 
 @router.message(Command("confirm"))
@@ -375,13 +393,18 @@ def _pct(part: int, whole: int) -> str:
 
 @router.message(Command("report"))
 async def cmd_report(m: Message, command: CommandObject) -> None:
-    import report
     arg = (command.args or "").strip()
     try:
         day = datetime.strptime(arg, "%Y-%m-%d").date() if arg else to_local(now_utc()).date()
     except ValueError:
         await m.answer("Дата в формате ГГГГ-ММ-ДД, например /report 2026-11-07")
         return
+    await _send_report(m, day)
+
+
+async def _send_report(m: Message, day) -> None:
+    import report
+    day = day or to_local(now_utc()).date()
     if not await report.send_daily_report(m.bot, day, always=True):
         await m.answer("Не получилось отправить отчёт, подробности в журнале.")
 
@@ -450,3 +473,156 @@ async def cmd_broadcast(m: Message, command: CommandObject) -> None:
         await asyncio.sleep(0.05)  # ~20 сообщений/сек — в пределах лимитов Telegram
     await m.answer(f"📣 Рассылка завершена: доставлено {sent}, не доставлено {failed}, "
                    f"получателей с согласием: {len(users)}.")
+
+
+# ---------- Кнопки вместо команд ----------
+
+_pending_links: dict[int, str] = {}  # ссылка, которую админ прислал, когда ждущих оплаты заказов несколько
+_URL = r"^\s*https?://\S+\s*$"
+
+
+async def _chat(order_id: int) -> str:
+    o = await orders.get_order_full(order_id)
+    return orders.chat_url(o["client_username"], o["client_tg_id"])
+
+
+async def _send_link(m_or_cb, bot, order_id: int, link: str, admin_id: int):
+    ok, text = await orders.send_payment(bot, order_id, link, f"admin:{admin_id}")
+    return ("✅ " if ok else "⚠️ ") + text
+
+
+@router.message(F.text.regexp(_URL))
+async def msg_payment_link(m: Message) -> None:
+    """Админ просто вставляет ссылку: бот сам понимает, к какому заказу она относится."""
+    link = m.text.strip()
+    pend = await orders.pending_payment_orders()
+    if not pend:
+        await m.answer("Нет подтверждённых заказов, которые ждут оплаты. Сначала подтвердите заказ.")
+        return
+    if len(pend) == 1:
+        await m.answer(await _send_link(m, m.bot, pend[0]["id"], link, m.from_user.id))
+        return
+    _pending_links[m.from_user.id] = link
+    await m.answer("К какому заказу эта ссылка?", reply_markup=kb.link_choose(pend))
+
+
+@router.callback_query(F.data.startswith("lnk:"))
+async def cb_link_pick(cb: CallbackQuery) -> None:
+    await cb.answer()
+    link = _pending_links.pop(cb.from_user.id, None)
+    if not link:
+        await cb.message.answer("Ссылку я уже не помню. Пришлите её ещё раз.")
+        return
+    await cb.message.answer(await _send_link(cb, cb.bot, int(cb.data[4:]), link, cb.from_user.id))
+
+
+def _parse(data: str, n: int) -> list[int] | None:
+    parts = data.split(":")[2:]
+    if len(parts) != n or not all(p.isdigit() for p in parts):
+        return None
+    return [int(p) for p in parts]
+
+
+@router.callback_query(F.data.startswith("ap:"))
+async def cb_approve(cb: CallbackQuery) -> None:
+    await cb.answer()
+    action = cb.data.split(":")[1]
+    nums = _parse(cb.data, 2 if action == "as" else 1)
+    if nums is None:
+        await cb.message.answer(texts.STALE)
+        return
+    order_id, actor = nums[0], f"admin:{cb.from_user.id}"
+    if action == "ok":
+        ok, text = await orders.change_status(cb.bot, order_id, "confirmed", actor)
+        if ok:
+            await _offer_methods(cb.bot, order_id)
+            text += "\nПришлите сюда ссылку на оплату — я пойму, к какому заказу она, и отправлю клиенту."
+        await cb.message.answer(("✅ " if ok else "⚠️ ") + text,
+                                reply_markup=kb.admin_after_confirm(order_id, await _chat(order_id),
+                                                                    methods=bool(payinfo.methods(order_id))) if ok else None)
+    elif action == "no":
+        ok, text = await orders.change_status(cb.bot, order_id, "cancelled", actor, "отклонён администратором")
+        await cb.message.answer(("✅ " if ok else "⚠️ ") + text)
+    elif action == "methods":
+        sent = await _offer_methods(cb.bot, order_id)
+        await cb.message.answer("✅ Способы оплаты отправлены клиенту." if sent else
+                                "Реквизиты не настроены: задайте PAY_SBP_PHONE или PAY_CARD в Railway → Variables.")
+    elif action == "paid":
+        ok, text = await orders.change_status(cb.bot, order_id, "paid", actor)
+        if not ok:
+            await cb.message.answer("⚠️ " + text)
+            return
+        o = await orders.get_order_full(order_id)
+        execs = [e for e in await db.fetch_all("SELECT id, name, services FROM executors WHERE active=1")
+                 if o["category"] in e["services"].split(",")]
+        await cb.message.answer(f"✅ {text}\nНазначьте исполнителя:", reply_markup=kb.admin_assign(order_id, execs))
+    elif action == "nopay":
+        o = await orders.get_order_full(order_id)
+        if o:
+            await orders.notify(cb.bot, o["client_tg_id"], texts.PAY_NOT_FOUND.format(id=order_id))
+        await cb.message.answer("Клиенту написала, что оплату пока не видно.")
+    elif action == "as":
+        ok, text = await orders.assign_executor(cb.bot, order_id, nums[1], actor)
+        await cb.message.answer(("✅ " if ok else "⚠️ ") + text)
+    else:
+        await cb.message.answer(texts.STALE)
+
+
+async def _rules_text() -> tuple[str, list]:
+    rows = await db.fetch_all(
+        """SELECT r.*, s.name AS service FROM price_rules r LEFT JOIN services s ON s.id=r.service_id
+           WHERE r.active=1 ORDER BY r.id""")
+    return ("⚙️ Наценки. ➖/➕ меняют значение (±10 % или ±50 ₽), 🗑 отключает правило. "
+            "Новое правило: /rule_add." if rows else "Правил нет. Добавить: /rule_add."), rows
+
+
+@router.callback_query(F.data.startswith("rl:"))
+async def cb_rule_change(cb: CallbackQuery) -> None:
+    await cb.answer()
+    parts = cb.data.split(":")
+    if len(parts) != 3 or not parts[2].isdigit() or parts[1] not in ("dn", "up", "off"):
+        await cb.message.answer(texts.STALE)
+        return
+    rid = int(parts[2])
+    r = await db.fetch_one("SELECT * FROM price_rules WHERE id=? AND active=1", (rid,))
+    if r:
+        if parts[1] == "off":
+            await db.execute(f"UPDATE price_rules SET active=0, {db.touch()} WHERE id=?", (rid,))
+        else:
+            step = (50 if r["effect_type"] == "fixed" else 10) * (1 if parts[1] == "up" else -1)
+            await db.execute(f"UPDATE price_rules SET value=?, {db.touch()} WHERE id=?",
+                             (max(0, r["value"] + step), rid))
+    text, rows = await _rules_text()
+    try:
+        await cb.message.edit_text(text, reply_markup=kb.rules_panel(rows))
+    except Exception:  # сообщение старое или не изменилось
+        await cb.message.answer(text, reply_markup=kb.rules_panel(rows))
+
+
+@router.callback_query(F.data.startswith("adm:"))
+async def cb_admin_menu(cb: CallbackQuery) -> None:
+    await cb.answer()
+    where = cb.data[4:]
+    msg = cb.message
+    if where == "home":
+        await msg.answer(texts.ADMIN_MENU_TEXT, reply_markup=kb.admin_menu())
+    elif where == "orders":
+        await cmd_orders(msg)
+    elif where == "report":
+        await _send_report(msg, None)
+    elif where == "services":
+        await cmd_services(msg)
+    elif where == "rules":
+        text, rows = await _rules_text()
+        await msg.answer(text, reply_markup=kb.rules_panel(rows))
+    elif where == "execs":
+        await cmd_executors(msg)
+    elif where == "pay":
+        have = payinfo.methods(0)
+        await msg.answer("Дежурные способы оплаты: " + (", ".join({"sbp": "СБП", "card": "карта"}[k] for k in have)
+                         if have else "не настроены") + ".\nРеквизиты задаются в Railway → Variables: "
+                         "PAY_SBP_PHONE, PAY_SBP_BANK, PAY_CARD, PAY_RECIPIENT (в чат их присылать не нужно).")
+    elif where == "help":
+        await msg.answer(HELP)
+    else:
+        await msg.answer(texts.STALE)

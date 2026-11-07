@@ -16,6 +16,7 @@ import db
 import geo
 import keyboards as kb
 import orders
+import payinfo
 import policy
 import pricing
 import repo
@@ -40,6 +41,8 @@ class Profile(StatesGroup):
     pet_size = State()
     pet_traits = State()
     pet_notes = State()
+    contact = State()
+    recognize = State()
 
 
 class Order(StatesGroup):
@@ -49,6 +52,7 @@ class Order(StatesGroup):
     point_b = State()
     confirm = State()
     edit_address = State()
+    comment = State()
 
 
 class Addr(StatesGroup):
@@ -75,21 +79,48 @@ async def send_policy(msg: Message) -> None:
 @router.message(Command("delete_me"))
 async def cmd_delete_me(m: Message, state: FSMContext) -> None:
     await state.clear()
-    await _erase_ask(m)
+    await _erase_ask(m, m.from_user)
 
 
 @router.message(F.text.func(texts.is_erase_request))
 async def msg_erase(m: Message, state: FSMContext) -> None:
     await state.clear()
-    await _erase_ask(m)
+    await _erase_ask(m, m.from_user)
 
 
-async def _erase_ask(m: Message) -> None:
-    u = await repo.get_or_create_user(m.from_user)
+async def _erase_blocked(msg: Message, user_id: int) -> None:
+    """Есть незавершённые заказы: не тупик, а кнопки — отменить неоплаченные или позвать администратора."""
+    rows = [r for r in await repo.user_orders(user_id, 20) if r["status"] in orders.ACTIVE_STATUSES]
+    cancellable = [r["id"] for r in rows if r["status"] in ("created", "confirmed")]
+    has_paid = any(r["status"] not in ("created", "confirmed") for r in rows)
+    await msg.answer(texts.ERASE_ACTIVE, reply_markup=kb.erase_blocked(cancellable, has_paid))
+
+
+async def _erase_ask(msg: Message, tg_user) -> None:
+    u = await repo.get_or_create_user(tg_user)
     if await repo.active_order_count(u["id"]):
-        await m.answer(texts.ERASE_ACTIVE)
+        await _erase_blocked(msg, u["id"])
         return
-    await m.answer(texts.ERASE_ASK, reply_markup=kb.erase_confirm())
+    await msg.answer(texts.ERASE_ASK, reply_markup=kb.erase_confirm())
+
+
+@router.callback_query(F.data == "del:ask")
+async def cb_erase_ask(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    await state.clear()
+    await _erase_ask(cb.message, cb.from_user)
+
+
+@router.callback_query(F.data == "del:ping")
+async def cb_erase_ping(cb: CallbackQuery) -> None:
+    await cb.answer()
+    u = await repo.get_or_create_user(cb.from_user)
+    ids = [f"№{r['id']}" for r in await repo.user_orders(u["id"], 20) if r["status"] in orders.ACTIVE_STATUSES]
+    await orders.notify_admins(
+        cb.bot, f"🗑 Клиент {u['name'] or cb.from_user.full_name} просит удалить данные, но есть незавершённые "
+                f"заказы: {', '.join(ids) or '—'}. Решите вопрос с ним.",
+        reply_markup=kb.chat_button(orders.chat_url(u["tg_username"], cb.from_user.id)))
+    await cb.message.answer(texts.ERASE_PING_SENT)
 
 
 @router.callback_query(F.data.in_({"del:yes", "del:no"}))
@@ -100,7 +131,7 @@ async def cb_erase(cb: CallbackQuery, state: FSMContext) -> None:
         return
     u = await repo.get_or_create_user(cb.from_user)
     if await repo.active_order_count(u["id"]):  # за время раздумий мог появиться заказ
-        await cb.message.answer(texts.ERASE_ACTIVE)
+        await _erase_blocked(cb.message, u["id"])
         return
     await repo.erase_user(u["id"])
     await state.clear()
@@ -118,17 +149,25 @@ async def cb_policy(cb: CallbackQuery) -> None:
     await send_policy(cb.message)
 
 
-async def show_menu(msg: Message, tg_user, text: str = texts.WELCOME) -> None:
+def is_admin(tg_user) -> bool:
+    return tg_user.id in config.admin_ids
+
+
+async def show_menu(msg: Message, tg_user, text: str | None = None) -> None:
+    if is_admin(tg_user):  # у админа меню только управления ботом, заказать с него нельзя
+        await msg.answer(texts.ADMIN_MENU_TEXT, reply_markup=kb.admin_menu())
+        return
     user = await repo.get_or_create_user(tg_user)
-    has_orders = await repo.last_order(user["id"]) is not None
-    await msg.answer(text, reply_markup=kb.main_menu(has_orders))
+    last = next(iter(await repo.user_orders(user["id"], 1)), None)
+    await msg.answer(text or texts.menu_text(last),
+                     reply_markup=kb.main_menu(last is not None, last["name"] if last else None))
 
 
 @router.message(CommandStart())
 async def cmd_start(m: Message, state: FSMContext) -> None:
     await state.clear()
     user = await repo.get_or_create_user(m.from_user)
-    if not user["pdn_consent"]:
+    if not user["pdn_consent"] and not is_admin(m.from_user):
         await show_consent(m)  # без нажатия кнопки дальше не пускаем (см. ConsentMiddleware)
         return
     await show_menu(m, m.from_user)
@@ -170,6 +209,7 @@ async def show_profile(msg: Message, tg_user) -> None:
         f"Телефон: {user['phone'] or '—'}",
         f"Район: {user['district'] or '—'}",
         f"Адрес: {user['address'] or '—'}",
+        "Связь: " + texts.CONTACT_LABELS.get(user["contact_pref"] or "telegram", "Telegram"),
         "",
         "Питомцы:",
     ]
@@ -181,7 +221,8 @@ async def show_profile(msg: Message, tg_user) -> None:
     if not pets:
         lines.append("— пока нет")
     lines.append("")
-    lines.append("Рассылки: " + ("включены ✅" if user["marketing_consent"] else "выключены"))
+    lines.append("Уведомления о заказах: включены ✅")
+    lines.append("Акции и новости: " + ("включены ✅" if user["marketing_consent"] else "выключены"))
     await msg.answer("\n".join(lines), reply_markup=kb.profile(bool(user["marketing_consent"])))
 
 
@@ -245,7 +286,8 @@ async def p_name(m: Message, state: FSMContext) -> None:
 
 @router.message(Profile.phone, F.contact)
 async def p_phone_contact(m: Message, state: FSMContext) -> None:
-    await _save_phone(m, state, m.contact.phone_number)
+    # узнаём по номеру только тех, кто прислал СВОЙ контакт кнопкой: напечатанный номер может быть чужим
+    await _save_phone(m, state, m.contact.phone_number, verified=m.contact.user_id == m.from_user.id)
 
 
 @router.message(Profile.phone, F.text)
@@ -253,7 +295,7 @@ async def p_phone_text(m: Message, state: FSMContext) -> None:
     await _save_phone(m, state, m.text)
 
 
-async def _save_phone(m: Message, state: FSMContext, raw: str) -> None:
+async def _save_phone(m: Message, state: FSMContext, raw: str, verified: bool = False) -> None:
     phone = normalize_phone(raw)
     if not phone:
         await m.answer(texts.BAD_PHONE)
@@ -261,8 +303,51 @@ async def _save_phone(m: Message, state: FSMContext, raw: str) -> None:
     await state.update_data(phone=phone)
     name = (await state.get_data()).get("name") or m.from_user.full_name
     await orders.notify_lead(m.bot, m.from_user, 1, name=name, phone=phone)  # лид — сразу, не ждём заказа
+    if verified:
+        me = await repo.get_or_create_user(m.from_user)
+        known = await repo.find_profile_by_phone(phone, me["id"])
+        if known:  # этот номер уже есть в базе: просим второй признак и подтягиваем данные
+            await state.update_data(rc_from=known["id"], rc_fails=0)
+            await state.set_state(Profile.recognize)
+            await m.answer(texts.ASK_RECOGNIZE, reply_markup=kb.recognize_skip())
+            return
+    await _ask_address(m, state)
+
+
+async def _ask_address(msg: Message, state: FSMContext) -> None:
     await state.set_state(Profile.address)
-    await m.answer(texts.ASK_ADDRESS + texts.MAP_HINT * bool(config.webapp_url), reply_markup=kb.address_ask())
+    await msg.answer(texts.ASK_ADDRESS + texts.MAP_HINT * bool(config.webapp_url), reply_markup=kb.address_ask())
+
+
+async def _recognized(msg: Message, state: FSMContext, tg_user, text: str) -> bool:
+    """Второй признак совпал: переносим профиль и питомцев. False — не совпало."""
+    data = await state.get_data()
+    old = await repo.get_user(data["rc_from"])
+    if not old or not await repo.match_second_factor(old["id"], text):
+        return False
+    me = await repo.get_or_create_user(tg_user)
+    await repo.copy_profile(old["id"], me["id"])
+    await msg.answer(texts.RECOGNIZED.format(name=old["name"] or "друг"))
+    await _after_address_block(msg, state, tg_user)
+    return True
+
+
+@router.message(Profile.recognize, F.text)
+async def p_recognize(m: Message, state: FSMContext) -> None:
+    if await _recognized(m, state, m.from_user, m.text):
+        return
+    fails = (await state.get_data()).get("rc_fails", 0) + 1
+    await state.update_data(rc_fails=fails)
+    if fails >= 2:  # не мучаем: обычный опрос дальше
+        await _ask_address(m, state)
+        return
+    await m.answer(texts.RECOGNIZE_AGAIN, reply_markup=kb.recognize_skip())
+
+
+@router.callback_query(Profile.recognize, F.data == "rc:skip")
+async def cb_recognize_skip(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    await _ask_address(cb.message, state)
 
 
 # =====================================================================
@@ -391,8 +476,14 @@ async def addr_webapp(m: Message, state: FSMContext) -> None:
         return
     place = await geo.reverse(pick["lat"], pick["lon"])  # район и МКАД; если карта молчит — по координатам
     outside = place.outside_mkad if place else geo.outside_by_coords(pick["lat"], pick["lon"])
-    await _address_done(m, state, target, pick["label"][:200], place.district if place else None, outside,
-                        True, m.from_user)
+    label = pick["label"][:200]
+    # клиент должен увидеть выбранный адрес и подтвердить его (или сразу ввести заново), а не ехать дальше вслепую
+    back = cur if cur in ADDR_STATES else data.get("addr_back")
+    opts = [{"label": label, "district": place.district if place else None, "outside": outside, "has_house": True}]
+    await state.update_data(addr_target=target, addr_back=back, addr_text=label, addr_options=opts,
+                            addr_fails=0, addr_outside=False)
+    await state.set_state(Addr.pick)
+    await m.answer(texts.ADDR_CHECK.format(label=label), reply_markup=kb.address_options([label], False))
 
 
 async def _address_done(msg: Message, state: FSMContext, target: str, label: str, district: str | None,
@@ -408,11 +499,8 @@ async def _address_done(msg: Message, state: FSMContext, target: str, label: str
             fields["district"] = district
         await repo.update_user(user["id"], **fields)
         await orders.notify_lead(msg.bot, tg_user, 2, name=data["name"], phone=data["phone"], address=label)
-        if await repo.list_pets(user["id"]):
-            await finish_profile(msg, state, tg_user)
-        else:
-            await state.set_state(Profile.pet_name)
-            await msg.answer(texts.ASK_PET_NAME, reply_markup=ReplyKeyboardRemove())
+        await state.set_state(Profile.contact)
+        await msg.answer(texts.ASK_CONTACT, reply_markup=kb.contact_pref())
         return
     if target in ("a", "edit"):
         await state.update_data(address=label, out_a=bool(outside), unv_a=not verified)
@@ -425,6 +513,36 @@ async def _address_done(msg: Message, state: FSMContext, target: str, label: str
         await msg.answer(texts.ASK_POINT_B, reply_markup=kb.address_ask())
     else:
         await show_confirm(msg, state, tg_user)
+
+
+async def _after_address_block(msg: Message, state: FSMContext, tg_user) -> None:
+    """Имя, телефон, адрес и способ связи есть: если питомец уже известен — готово, иначе спрашиваем про питомца."""
+    user = await repo.get_or_create_user(tg_user)
+    if await repo.list_pets(user["id"]):
+        await finish_profile(msg, state, tg_user)
+    else:
+        await state.set_state(Profile.pet_name)
+        await msg.answer(texts.ASK_PET_NAME, reply_markup=ReplyKeyboardRemove())
+
+
+@router.callback_query(F.data.startswith("cp:"))
+async def cb_contact(cb: CallbackQuery, state: FSMContext) -> None:
+    """Предпочтительный способ связи: при заполнении профиля и по кнопке в профиле."""
+    await cb.answer()
+    arg = cb.data[3:]
+    if arg == "menu":
+        await cb.message.answer(texts.ASK_CONTACT, reply_markup=kb.contact_pref())
+        return
+    if arg not in texts.CONTACT_LABELS:
+        await cb.message.answer(texts.STALE)
+        return
+    user = await repo.get_or_create_user(cb.from_user)
+    await repo.update_user(user["id"], contact_pref=arg)
+    await cb.message.answer(texts.CONTACT_SAVED.format(how=texts.CONTACT_LABELS[arg]))
+    if await state.get_state() == Profile.contact.state:
+        await _after_address_block(cb.message, state, cb.from_user)
+    else:
+        await show_profile(cb.message, cb.from_user)
 
 
 @router.message(Profile.pet_name, F.text)
@@ -601,12 +719,28 @@ async def finish_profile(msg: Message, state: FSMContext, tg_user=None) -> None:
 
 async def show_services(msg: Message) -> None:
     items = await db.fetch_all("SELECT * FROM services WHERE active=1 ORDER BY id")
-    await msg.answer(texts.CHOOSE_SERVICE, reply_markup=kb.services(items))
+    await msg.answer(texts.CHOOSE_SERVICE, reply_markup=kb.service_categories(items))
+
+
+@router.callback_query(F.data.startswith("cat:"))
+async def cb_category(cb: CallbackQuery) -> None:
+    """Второй уровень: внутри услуги — время, уровень, приходящая или с проживанием и т. д."""
+    await cb.answer()
+    cat = cb.data[4:]
+    items = await db.fetch_all("SELECT * FROM services WHERE active=1 AND category=? ORDER BY id", (cat,))
+    if cat not in texts.CATEGORY_TITLES or not items:
+        await cb.message.answer("Эта услуга сейчас недоступна.")
+        return
+    await _edit(cb.message, texts.CHOOSE_VARIANT.format(title=texts.CATEGORY_TITLES[cat]),
+                kb.category_variants(items, cat))
 
 
 @router.callback_query(F.data == "menu:order")
 async def cb_order(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
+    if is_admin(cb.from_user):
+        await show_menu(cb.message, cb.from_user)
+        return
     user = await repo.get_or_create_user(cb.from_user)
     # при первом заказе собираем профиль и питомца, потом возвращаемся к выбору услуги
     if not repo.profile_complete(user) or not await repo.list_pets(user["id"]):
@@ -619,6 +753,9 @@ async def cb_order(cb: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data.startswith("svc:"))
 async def cb_service(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
+    if is_admin(cb.from_user):
+        await show_menu(cb.message, cb.from_user)
+        return
     service = await db.fetch_one("SELECT * FROM services WHERE id=? AND active=1",
                                  (int(cb.data.split(":")[1]),))
     if not service:
@@ -684,10 +821,10 @@ async def _accept_when(msg: Message, state: FSMContext, tg_user, dt) -> bool:
         await show_confirm(msg, state, tg_user)
     elif service["unit"] == "час":
         await state.set_state(Order.qty)
-        await msg.answer(texts.ASK_HOURS, reply_markup=kb.quantity([1, 2, 3, 4, 6, 8]))
+        await msg.answer(texts.ASK_HOURS, reply_markup=kb.quantity([1, 2, 3, 4, 6, 8, 10, 12], other=True))
     elif service["unit"] == "сутки":
         await state.set_state(Order.qty)
-        await msg.answer(texts.ASK_NIGHTS, reply_markup=kb.quantity([1, 2, 3, 5, 7, 10, 14]))
+        await msg.answer(texts.ASK_NIGHTS, reply_markup=kb.quantity([1, 2, 3, 5, 7, 10, 14, 21], other=True))
     elif service["category"] == "taxi":
         user = await repo.get_or_create_user(tg_user)
         await state.set_state(Order.point_a)
@@ -758,12 +895,18 @@ async def cb_calendar_stale(cb: CallbackQuery) -> None:
 async def _set_qty(msg: Message, tg_user, state: FSMContext, raw: str) -> None:
     data = await state.get_data()
     service = await db.fetch_one("SELECT * FROM services WHERE id=?", (data["service_id"],))
-    limit = 12 if service["unit"] == "час" else 30
+    limit = 24 if service["unit"] == "час" else 30
     if not raw.isdigit() or not 1 <= int(raw) <= limit:
         await msg.answer(f"{texts.BAD_QTY} (от 1 до {limit})")
         return
     await state.update_data(quantity=int(raw))
     await show_confirm(msg, state, tg_user)
+
+
+@router.callback_query(Order.qty, F.data == "qty:other")
+async def cb_qty_other(cb: CallbackQuery) -> None:
+    await cb.answer()
+    await cb.message.answer(texts.ASK_QTY_OTHER)
 
 
 @router.callback_query(Order.qty, F.data.startswith("qty:"))
@@ -827,6 +970,9 @@ async def _price_for(data: dict) -> tuple[int, list, dict, dict]:
         "pet_size": pet["size"] if pet and pet["species"] == "собака" else None,
         "is_urgent": to_local(start).date() == to_local(now_utc()).date(),  # «сегодня»
         "outside_mkad": bool(data.get("outside_mkad")),
+        "pet_traits": pet["traits"] if pet else None,
+        "pet_notes": (pet["notes"] or "") if pet else "",
+        "pet_species": pet["species"] if pet else None,
     }
     total, breakdown = await pricing.calculate_price(service["id"], params)
     return total, breakdown, service, pet, params
@@ -849,6 +995,8 @@ async def show_confirm(msg: Message, state: FSMContext, tg_user) -> None:
     if pet:
         size = f", {pet['size']}" if pet["size"] else ""
         lines.append(f"Питомец: {pet['name']} ({pet['species']}{size})")
+    if data.get("comment"):
+        lines.append(f"Комментарий: {data['comment']}")
     lines += ["", "💰 " + pricing.format_range(total), "Что учтено:", pricing.format_breakdown_lines(breakdown),
               "", texts.CONFIRM_QUESTION]
 
@@ -863,6 +1011,20 @@ async def cb_edit_menu(cb: CallbackQuery, state: FSMContext) -> None:
     user = await repo.get_or_create_user(cb.from_user)
     many_pets = len(await repo.list_pets(user["id"])) > 1
     await cb.message.answer("Что поправить?", reply_markup=kb.order_edit(bool(data.get("outside_mkad")), many_pets))
+
+
+@router.callback_query(Order.confirm, F.data == "ord:comment")
+async def cb_comment(cb: CallbackQuery, state: FSMContext) -> None:
+    await cb.answer()
+    await state.set_state(Order.comment)
+    await cb.message.answer(texts.ASK_COMMENT)
+
+
+@router.message(Order.comment, F.text)
+async def msg_comment(m: Message, state: FSMContext) -> None:
+    await state.update_data(comment=m.text.strip()[:500])
+    await m.answer(texts.COMMENT_SAVED)
+    await show_confirm(m, state, m.from_user)
 
 
 @router.callback_query(Order.confirm, F.data == "ord:back")
@@ -945,14 +1107,16 @@ async def cb_order_ok(cb: CallbackQuery, state: FSMContext) -> None:
          "quantity": data["quantity"], "address": data["address"],
          "address_to": data.get("address_to"), "is_urgent": params["is_urgent"],
          "outside_mkad": params["outside_mkad"],
-         "address_unverified": bool(data.get("unv_a") or data.get("unv_b"))},
+         "address_unverified": bool(data.get("unv_a") or data.get("unv_b")),
+         "comment": data.get("comment")},
         total, breakdown, actor=f"client:{cb.from_user.id}",
     )
     await state.clear()
     await cb.message.answer(texts.ORDER_ACCEPTED.format(id=order_id), reply_markup=kb.back_to_menu())
     o = await orders.get_order_full(order_id)
-    await orders.notify_admins(cb.bot, f"🆕 Новая заявка\n\n{orders.order_card(o, for_staff=True)}\n\n"
-                                       f"Подтвердить: /confirm {order_id}")
+    await orders.notify_admins(
+        cb.bot, f"🆕 Новая заявка\n\n{orders.order_card(o, for_staff=True)}",
+        reply_markup=kb.admin_new_order(order_id, orders.chat_url(o["client_username"], o["client_tg_id"])))
 
 
 # ---- Повтор последнего заказа ----
@@ -990,20 +1154,12 @@ async def cb_my_orders(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
     await state.clear()
     user = await repo.get_or_create_user(cb.from_user)
-    rows = await db.fetch_all(
-        """SELECT o.id, o.status, o.start_at, o.price_total, s.name FROM orders o
-           JOIN services s ON s.id=o.service_id WHERE o.user_id=? ORDER BY o.id DESC LIMIT 5""",
-        (user["id"],))
+    rows = await repo.user_orders(user["id"], 8)
     if not rows:
         await cb.message.answer("Заказов пока нет.", reply_markup=kb.back_to_menu())
         return
-    lines = ["📋 Ваши последние заказы:", ""]
-    for r in rows:
-        lines.append(f"№{r['id']} · {r['name']} · {fmt_local(r['start_at'])} · "
-                     f"{rub(r['price_total'])} · {texts.STATUS_LABELS[r['status']]}")
-    lines.append("\nОтменить можно заказ до оплаты. После оплаты — напишите нам.")
     cancellable = [r["id"] for r in rows if r["status"] in ("created", "confirmed")]
-    await cb.message.answer("\n".join(lines), reply_markup=kb.my_orders(cancellable))
+    await cb.message.answer(orders.format_my_orders(rows), reply_markup=kb.my_orders(cancellable))
 
 
 @router.callback_query(F.data.startswith("cancel:"))
@@ -1028,6 +1184,54 @@ async def cb_cancel_yes(cb: CallbackQuery) -> None:
                                               f"client:{cb.from_user.id}", "отменён клиентом")
     if not ok:
         await cb.message.answer(msg_text)
+
+
+# =====================================================================
+# Оплата: дежурные реквизиты и «я оплатил»
+# =====================================================================
+
+async def _claim_paid(bot, order: dict) -> None:
+    await orders.notify_admins(
+        bot, f"💰 Клиент {order['client_name'] or '—'} пишет, что оплатил заказ №{order['id']} "
+             f"({rub(order['price_total'])}). Проверьте поступление.",
+        reply_markup=kb.admin_paid_check(order["id"], orders.chat_url(order["client_username"], order["client_tg_id"])))
+
+
+@router.callback_query(F.data.startswith("pay:"))
+async def cb_pay(cb: CallbackQuery) -> None:
+    await cb.answer()
+    try:
+        _, kind, oid = cb.data.split(":")
+        order_id = int(oid)
+    except ValueError:
+        await cb.message.answer(texts.STALE)
+        return
+    user = await repo.get_or_create_user(cb.from_user)
+    o = await orders.get_order_full(order_id)
+    if not o or o["user_id"] != user["id"] or o["status"] != "confirmed":
+        await cb.message.answer(texts.PAY_CLAIM_NONE)
+        return
+    if kind in ("sbp", "card") and payinfo.available(os.environ, kind):
+        make = payinfo.sbp_text if kind == "sbp" else payinfo.card_text
+        await cb.message.answer(make(os.environ, order_id, o["price_total"]))
+    elif kind == "claim":
+        await _claim_paid(cb.bot, o)
+        await cb.message.answer(texts.PAY_CLAIM_THANKS)
+    else:
+        await cb.message.answer(texts.PAY_CLAIM_NONE)
+
+
+@router.message(StateFilter(None), F.text.func(texts.is_paid_claim))
+async def msg_paid_claim(m: Message) -> None:
+    """Клиент просто пишет «оплатил» — передаём администратору по его ожидающим оплаты заказам."""
+    user = await repo.get_or_create_user(m.from_user)
+    rows = await db.fetch_all("SELECT id FROM orders WHERE user_id=? AND status='confirmed'", (user["id"],))
+    if not rows:
+        await m.answer(texts.PAY_CLAIM_NONE)
+        return
+    for r in rows:
+        await _claim_paid(m.bot, await orders.get_order_full(r["id"]))
+    await m.answer(texts.PAY_CLAIM_THANKS)
 
 
 # =====================================================================
@@ -1090,6 +1294,7 @@ STATE_HINTS = {
     Profile.pet_traits.state: texts.HINT_TRAITS,
     Profile.phone.state: texts.HINT_PHONE,
     Addr.pick.state: texts.HINT_ADDR_PICK,
+    Profile.recognize.state: texts.HINT_RECOGNIZE,
 }
 
 

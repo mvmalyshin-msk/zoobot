@@ -12,6 +12,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError
 
 import db
+import payinfo
 import keyboards as kb
 import texts
 import traits
@@ -43,6 +44,7 @@ async def get_order_full(order_id: int) -> dict | None:
     return await db.fetch_one(
         """SELECT o.*, s.name AS service_name, s.category, s.unit,
                   u.tg_id AS client_tg_id, u.name AS client_name, u.phone AS client_phone,
+                  u.tg_username AS client_username, u.contact_pref AS client_contact_pref,
                   p.name AS pet_name, p.species AS pet_species, p.breed AS pet_breed,
                   p.size AS pet_size, p.notes AS pet_notes, p.traits AS pet_traits,
                   e.name AS executor_name, e.tg_id AS executor_tg_id, e.phone AS executor_phone
@@ -69,6 +71,8 @@ def order_card(o: dict, *, for_staff: bool = False) -> str:
         lines.append(f"Адрес: {o['address']}")
     if o["outside_mkad"]:
         lines.append("За МКАД: да")
+    if o.get("comment"):
+        lines.append(f"Комментарий: {o['comment']}")
     if for_staff and o.get("address_unverified"):
         lines.append("⚠️ Адрес не подтверждён картой — уточните у клиента")
     if o["pet_name"]:
@@ -86,8 +90,26 @@ def order_card(o: dict, *, for_staff: bool = False) -> str:
                 lines.append(f"Здоровье и особенности: {o['pet_notes']}")
     if for_staff:
         lines.append(f"Клиент: {o['client_name']}, {o['client_phone']}")
+        lines.append(f"Связь: {texts.CONTACT_LABELS.get(o.get('client_contact_pref'), 'Telegram')}")
     lines.append(f"Сумма: {rub(o['price_total'])}")
     return "\n".join(lines)
+
+
+def format_my_orders(rows: list[dict]) -> str:
+    """Экран «Мои заказы»: сверху заказы в работе (подсвечены 🟢), ниже отдельным блоком завершённые и отменённые."""
+    active = [r for r in rows if r["status"] in ACTIVE_STATUSES]
+    done = [r for r in rows if r["status"] not in ACTIVE_STATUSES]
+
+    def line(r, mark):
+        return (f"{mark} №{r['id']} · {r['name']} · {fmt_local(r['start_at'])} · {rub(r['price_total'])}\n"
+                f"      {texts.STATUS_LABELS[r['status']]}")
+    out = ["📋 Ваши заказы"]
+    if active:
+        out += ["", "🟢 В работе:"] + [line(r, "🟢") for r in active]
+    if done:
+        out += ["", "Завершённые и отменённые:"] + [line(r, "▫️") for r in done]
+    out.append("\nОтменить можно заказ до оплаты. После оплаты — напишите нам.")
+    return "\n".join(out)
 
 
 # ---------- Уведомления ----------
@@ -104,11 +126,24 @@ async def notify(bot: Bot, tg_id: int, text: str, reply_markup=None) -> bool:
     return False
 
 
-async def notify_admins(bot: Bot, text: str) -> None:
+def chat_url(username: str | None, tg_id: int) -> str:
+    """Ссылка «открыть чат с клиентом»: по username, а без него — по Telegram ID."""
+    return f"https://t.me/{username}" if username else f"tg://user?id={tg_id}"
+
+
+async def pending_payment_orders() -> list[dict]:
+    """Подтверждённые заказы, по которым ещё ждём оплату (сюда админ присылает ссылку)."""
+    return await db.fetch_all(
+        """SELECT o.id, o.status, o.price_total, u.name AS client_name FROM orders o
+           JOIN users u ON u.id=o.user_id JOIN payments p ON p.order_id=o.id
+           WHERE o.status='confirmed' AND p.status IN ('pending','link_sent') ORDER BY o.id""")
+
+
+async def notify_admins(bot: Bot, text: str, reply_markup=None) -> None:
     if not config.admin_ids:
         log.error("ADMIN_IDS не задан: некому отправить уведомление")
     for admin_id in config.admin_ids:
-        if not await notify(bot, admin_id, text):
+        if not await notify(bot, admin_id, text, reply_markup):
             log.error("Не удалось отправить уведомление админу %s (он нажал /start у бота?)", admin_id)
 
 
@@ -124,7 +159,7 @@ async def notify_lead(bot: Bot, tg_user, stage: int, *, name: str, phone: str, a
     if address:
         lines.append(f"Адрес: {address}")
     lines.append(f"Telegram: {handle}, tg://user?id={tg_user.id}")
-    await notify_admins(bot, "\n".join(lines))
+    await notify_admins(bot, "\n".join(lines), kb.chat_button(chat_url(tg_user.username, tg_user.id)))
 
 
 # ---------- Создание заказа ----------
@@ -137,13 +172,14 @@ async def create_order(data: dict, total: int, breakdown: list, actor: str) -> i
         cur = await conn.execute(
             """INSERT INTO orders (user_id, pet_id, service_id, status, start_at, end_at, quantity,
                                    address, address_to, is_urgent, outside_mkad, params_json,
-                                   price_total, price_breakdown, address_unverified)
-               VALUES (?,?,?,'created',?,?,?,?,?,?,?,?,?,?,?)""",
+                                   price_total, price_breakdown, address_unverified, comment)
+               VALUES (?,?,?,'created',?,?,?,?,?,?,?,?,?,?,?,?)""",
             (data["user_id"], data["pet_id"], data["service_id"], to_db(data["start_at"]),
              to_db(data["end_at"]) if data.get("end_at") else None, data["quantity"],
              data["address"], data.get("address_to"), int(data["is_urgent"]),
              int(data["outside_mkad"]), json.dumps(params, ensure_ascii=False), total,
-             json.dumps(breakdown, ensure_ascii=False), int(data.get("address_unverified", False))),
+             json.dumps(breakdown, ensure_ascii=False), int(data.get("address_unverified", False)),
+             (data.get("comment") or None)),
         )
         order_id = cur.lastrowid
         await conn.execute(
@@ -254,9 +290,10 @@ async def send_payment(bot: Bot, order_id: int, link: str, actor: str) -> tuple[
         (link, order_id),
     )
     await schedule_reminder(order_id, "pay_3h", now_utc() + timedelta(hours=3))
+    have = payinfo.methods(order_id)
     delivered = await notify(bot, o["client_tg_id"],
                              f"💳 Ссылка для оплаты заказа №{order_id} на {rub(o['price_total'])}:",
-                             kb.pay_button(link))
+                             kb.pay_options(order_id, link, sbp="sbp" in have, card="card" in have))
     if not delivered:
         return True, (f"Ссылка по заказу №{order_id} сохранена, но клиент её не получил (заблокировал бота)."
                       + _NOT_DELIVERED.format(phone=o["client_phone"] or "—") + f"\nСсылка: {link}")

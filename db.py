@@ -29,6 +29,12 @@ MIGRATIONS: dict[int, str] = {
     #    Список правится командами /holiday_add и /holiday_del.
     # 5: стадия лида: 1 — оставил телефон, 2 — оставил адрес (чтобы админу не слать одно и то же дважды)
     5: "ALTER TABLE users ADD COLUMN lead_stage INTEGER NOT NULL DEFAULT 0;",
+    # 6: когда клиент удалил данные (старые заказы ему больше не показываем), способ связи, комментарий к заказу
+    6: """
+    ALTER TABLE users ADD COLUMN erased_at TEXT;
+    ALTER TABLE users ADD COLUMN contact_pref TEXT NOT NULL DEFAULT 'telegram';
+    ALTER TABLE orders ADD COLUMN comment TEXT;
+    """,
     # 4: повадки питомца (анкета для выгульщика): коды через запятую, см. traits.py
     4: "ALTER TABLE pets ADD COLUMN traits TEXT;",
     3: """
