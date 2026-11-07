@@ -4,8 +4,10 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     KeyboardButton,
     ReplyKeyboardMarkup,
+    WebAppInfo,
 )
 
+from config import config
 from utils import rub
 
 
@@ -140,10 +142,11 @@ def executor_done(order_id: int) -> InlineKeyboardMarkup:
 
 def address_ask() -> ReplyKeyboardMarkup:
     """Кнопка «отправить геопозицию» под строкой ввода (один раз)."""
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="📍 Отправить геопозицию", request_location=True)]],
-        resize_keyboard=True, one_time_keyboard=True,
-    )
+    rows = []
+    if config.webapp_url:  # мини-приложение с картой и подсказками адреса
+        rows.append([KeyboardButton(text="🗺 Найти на карте", web_app=WebAppInfo(url=config.webapp_url))])
+    rows.append([KeyboardButton(text="📍 Отправить геопозицию", request_location=True)])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True, one_time_keyboard=True)
 
 
 def address_options(labels: list[str], can_keep: bool) -> InlineKeyboardMarkup:

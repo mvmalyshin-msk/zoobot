@@ -6,6 +6,7 @@
 владельца в запрос не попадают — только текст адреса.
 """
 import asyncio
+import json
 import logging
 import math
 import re
@@ -136,6 +137,31 @@ def parse_nominatim(items: list[dict], limit: int = 5) -> list[Place]:
         if len(out) >= limit:
             break
     return out
+
+
+def outside_by_coords(lat: float, lon: float) -> bool:
+    """Запасное определение «за МКАД» по расстоянию от центра, если адреса с областью нет."""
+    return _km(lat, lon, *MKAD_CENTER) > MKAD_RADIUS_KM
+
+
+def parse_pick(raw: str) -> dict | None:
+    """Ответ мини-приложения с картой: {"lat","lon","label","flat"}. Ничему не верим на слово:
+    координаты обязаны лежать в Москве/области, текст адреса проходит ту же проверку, что и набранный вручную."""
+    try:
+        d = json.loads(raw)
+        lat, lon = float(d["lat"]), float(d["lon"])
+        label = " ".join(str(d["label"]).split())
+        flat = str(d.get("flat") or "").strip()
+    except (ValueError, KeyError, TypeError):
+        return None
+    left, top, right, bottom = VIEWBOX
+    if not (math.isfinite(lat) and math.isfinite(lon) and bottom <= lat <= top and left <= lon <= right):
+        return None
+    if not looks_like_address(label) or len(label) > 150:
+        return None
+    if re.fullmatch(r"[0-9A-Za-zА-Яа-я/\-]{1,10}", flat):  # странный «номер квартиры» просто отбрасываем
+        label += f", кв. {flat}"
+    return {"lat": lat, "lon": lon, "label": label}
 
 
 # ---------- Сеть ----------

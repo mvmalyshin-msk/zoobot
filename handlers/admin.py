@@ -14,7 +14,7 @@ import orders
 import pricing
 import texts
 from config import config
-from utils import fmt_local, now_utc, rub, to_db, to_local
+from utils import fmt_local, min_age, now_utc, rub, to_db, to_local
 
 log = logging.getLogger(__name__)
 router = Router()
@@ -341,10 +341,14 @@ async def cmd_add_executor(m: Message, command: CommandObject) -> None:
         return
 
     parent_ok = parent == "1"
-    if status == "individual" and birth_year:
-        age = now_utc().year - birth_year
+    if status == "individual":
+        if not birth_year:
+            await m.answer("Для физлица укажите год рождения (8-е поле): нужно проверить возраст.")
+            return
+        age = min_age(birth_year)
         if age < 14:
-            await m.answer("Физлицам младше 14 лет работать нельзя.")
+            await m.answer("Физлицам младше 14 лет работать нельзя (считаем осторожно: по году рождения, "
+                           "без точной даты).")
             return
         if age < 18 and not parent_ok:
             await m.answer("Исполнителю 14–17 лет нужно согласие родителей: поставьте 1 в поле «согласие родителей».")

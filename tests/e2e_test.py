@@ -4,6 +4,7 @@
     BOT_TOKEN=1:x ADMIN_IDS=111 DB_PATH=/tmp/e2e.db python tests/e2e_test.py
 """
 import asyncio
+import json
 import os
 import sys
 import time
@@ -20,16 +21,15 @@ for suffix in ("", "-wal", "-shm"):
     except FileNotFoundError:
         pass
 
-from aiogram import Bot, Dispatcher, F  # noqa: E402
+from aiogram import Bot  # noqa: E402
 from aiogram.client.session.base import BaseSession  # noqa: E402
-from aiogram.fsm.storage.memory import MemoryStorage  # noqa: E402
-from aiogram.methods import SendMessage  # noqa: E402
+from aiogram.exceptions import TelegramForbiddenError  # noqa: E402
+from aiogram.methods import AnswerCallbackQuery, SendMessage  # noqa: E402
 from aiogram.types import Chat, Message  # noqa: E402
 
 import db  # noqa: E402
 import geo  # noqa: E402
-from bot import ConsentMiddleware  # noqa: E402
-from handlers import admin, client, executor  # noqa: E402
+from bot import build_dispatcher  # noqa: E402
 from scheduler import process_due_reminders  # noqa: E402
 
 CLIENT, ADMIN, EXEC = 1000, 111, 2000
@@ -52,8 +52,14 @@ async def fake_search(text):
     return []
 
 
-geo.search = fake_search
+async def fake_reverse(lat, lon):
+    return None  # карта «не отвечает» на обратный поиск: район и МКАД определяются по координатам
+
+
+geo.search, geo.reverse = fake_search, fake_reverse
 SENT: list[dict] = []  # всё, что бот «отправил»
+BLOCKED: set[int] = set()  # кто «заблокировал бота»
+ANSWERS: list[str] = []  # всплывающие ответы на кнопки (answerCallbackQuery)
 
 
 class FakeSession(BaseSession):
@@ -62,21 +68,19 @@ class FakeSession(BaseSession):
 
     async def make_request(self, bot, method, timeout=None):
         if isinstance(method, SendMessage):
+            if method.chat_id in BLOCKED:
+                raise TelegramForbiddenError(method=method, message="Forbidden: bot was blocked by the user")
             markup = method.reply_markup
             SENT.append({"to": method.chat_id, "text": method.text, "markup": markup})
             return Message(message_id=len(SENT), date=datetime.now(), chat=Chat(id=method.chat_id, type="private"),
                            text=method.text)
+        if isinstance(method, AnswerCallbackQuery) and method.text:
+            ANSWERS.append(method.text)
         return True
 
 
 bot = Bot("1:x", session=FakeSession())
-dp = Dispatcher(storage=MemoryStorage())
-dp.message.filter(F.chat.type == "private")
-consent = ConsentMiddleware()
-dp.message.outer_middleware(consent)
-dp.callback_query.outer_middleware(consent)
-for r in (admin.router, executor.router, client.router):
-    dp.include_router(r)
+dp = build_dispatcher()
 
 _uid = 0
 
@@ -129,6 +133,29 @@ async def click(uid: int, label: str) -> list[dict]:
                 await dp.feed_raw_update(bot, {"update_id": _uid, "callback_query": cb})
                 return SENT[start:]
     raise AssertionError(f"Кнопка «{label}» не найдена у {uid}")
+
+
+async def raw_callback(uid: int, data: str) -> list[dict]:
+    """Нажатие кнопки с произвольным callback_data (в том числе «битым»)."""
+    global _uid
+    _uid += 1
+    start = len(SENT)
+    cb = {"id": str(_uid), "from": _user(uid), "chat_instance": "ci", "data": data,
+          "message": {"message_id": _uid, "date": int(time.time()), "chat": {"id": uid, "type": "private"},
+                      "from": {"id": 999, "is_bot": True, "first_name": "bot"}, "text": "x"}}
+    await dp.feed_raw_update(bot, {"update_id": _uid, "callback_query": cb})
+    return SENT[start:]
+
+
+async def web_app_pick(uid: int, payload: dict) -> list[dict]:
+    """Клиент выбрал адрес в мини-приложении с картой (Telegram присылает web_app_data)."""
+    global _uid
+    _uid += 1
+    start = len(SENT)
+    msg = {"message_id": _uid, "date": int(time.time()), "chat": {"id": uid, "type": "private"},
+           "from": _user(uid), "web_app_data": {"data": json.dumps(payload), "button_text": "Найти на карте"}}
+    await dp.feed_raw_update(bot, {"update_id": _uid, "message": msg})
+    return SENT[start:]
 
 
 def last_text(msgs, to=None):
@@ -275,6 +302,13 @@ async def main():
     r = await say(ADMIN, "/add_executor Петя | +79001112233 | individual | walk | Химки | 300 | 2001 | " +
                   str(datetime.now().year - 15) + " | 0")
     ok("согласие родителей" in last_text(r), "15-летний без согласия родителей отклонён")
+    yr = datetime.now().year
+    r = await say(ADMIN, f"/add_executor Вася | +79001112244 | individual | walk | Химки | 300 | 2002 | {yr - 14} | 1")
+    ok("младше 14" in last_text(r), "родился в год «текущий − 14»: возможно, ему ещё 13 — отклонён (год без даты считаем осторожно)")
+    r = await say(ADMIN, "/add_executor Коля | +79001112255 | individual | walk | Химки | 300 | 2003")
+    ok("год рождения" in last_text(r).lower(), "физлицо без года рождения не добавляется (возраст неизвестен)")
+    r = await say(ADMIN, f"/add_executor Лена | +79001112266 | individual | walk | Химки | 300 | 2004 | {yr - 16} | 1")
+    ok("добавлен" in last_text(r), "физлицо 15–17 лет с согласием родителей добавлено")
     r = await say(ADMIN, "/assign 1 1")
     txt = last_text(r, ADMIN)
     ok("Ваша маржа: 312 ₽" in txt and "Вознаграждение: 728 ₽" in txt, "маржа: 1040 − 70% = 312 ₽ → " + txt.splitlines()[-1])
@@ -311,6 +345,8 @@ async def main():
     await say(CLIENT, "через неделю")
     r = await say(CLIENT, "01.01.2020 10:00")
     ok("будущем" in last_text(r), "дата в прошлом отклоняется")
+    r = await say(CLIENT, "01.01.2099 10:00")
+    ok("далеко" in last_text(r), "дата через десятилетия (опечатка в годе) отклоняется")
     future = (datetime.now() + timedelta(days=3)).strftime("%d.%m %H:%M")
     r = await say(CLIENT, future.replace(future[-5:], "11:00"))
     r = await click(CLIENT, "3")
@@ -387,6 +423,56 @@ async def main():
     for t in bad:
         cols = [c["name"] for c in await db.fetch_all(f"PRAGMA table_info({t['name']})")]
         ok("updated_at" in cols, f"updated_at есть в {t['name']}")
+    print("9. Устойчивость к «битым» кнопкам")
+    for bad_data in ("svc:abc", "ex:x", "ex:a:b:c", "cancel:x", "qty:"):
+        n = len(ANSWERS)
+        await raw_callback(CLIENT, bad_data)
+        ok(len(ANSWERS) > n and ("не так" in ANSWERS[-1] or "устарела" in ANSWERS[-1]), f"битая кнопка «{bad_data}» не оставляет клиента без ответа")
+
+    print("10. Клиент заблокировал бота: админ должен об этом узнать")
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    await click(CLIENT, "Выгул 30")
+    await say(CLIENT, future.replace(future[-5:], "16:00"))
+    await click(CLIENT, "Подтвердить")
+    n = (await db.fetch_one("SELECT MAX(id) n FROM orders"))["n"]
+    BLOCKED.add(CLIENT)
+    r = await say(ADMIN, f"/confirm {n}")
+    ok("не получил" in last_text(r, ADMIN), "админ видит: клиент не получил уведомление о статусе")
+    r = await say(ADMIN, f"/send_payment {n} https://pay.example/blocked")
+    ok("не получил" in last_text(r, ADMIN), "админ видит: клиент не получил ссылку на оплату")
+    BLOCKED.discard(CLIENT)
+
+    print("11. Двойное нажатие «Подтвердить» не создаёт два заказа")
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    await click(CLIENT, "Выгул 30")
+    await say(CLIENT, future.replace(future[-5:], "17:00"))
+    before = (await db.fetch_one("SELECT COUNT(*) n FROM orders"))["n"]
+    await asyncio.gather(click(CLIENT, "Подтвердить"), click(CLIENT, "Подтвердить"))
+    after = (await db.fetch_one("SELECT COUNT(*) n FROM orders"))["n"]
+    ok(after == before + 1, f"двойной тап: создан один заказ (было {before}, стало {after})")
+
+    print("12. Адрес из мини-приложения с картой")
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    await click(CLIENT, "Выгул 30")
+    r = await say(CLIENT, future.replace(future[-5:], "18:00"))
+    await click(CLIENT, "Изменить адрес")
+    r = await web_app_pick(CLIENT, {"lat": 59.9, "lon": 30.3, "label": "Невский проспект, 1", "flat": ""})
+    ok("не получилось" in last_text(r).lower(), "точка вне Москвы и области отклоняется")
+    r = await web_app_pick(CLIENT, {"lat": 55.97, "lon": 37.2, "label": "ывфвф 5", "flat": ""})
+    ok("не получилось" in last_text(r).lower(), "мусорный текст адреса из карты отклоняется")
+    r = await web_app_pick(CLIENT, {"lat": 55.97, "lon": 37.2, "label": "Зеленоград, корпус 1105", "flat": "12"})
+    t = last_text(r)
+    ok("Адрес: Зеленоград, корпус 1105, кв. 12" in t, "адрес с карты и квартира попали на экран заказа")
+    ok("За МКАД: да" in str(_buttons(r[-1])), "«за МКАД» определено по координатам точки")
+    r = await click(CLIENT, "Подтвердить")
+    o = await db.fetch_one("SELECT * FROM orders ORDER BY id DESC LIMIT 1")
+    ok(o["address_unverified"] == 0 and o["outside_mkad"] == 1, "заказ: адрес подтверждён картой, за МКАД")
+    r = await web_app_pick(CLIENT, {"lat": 55.97, "lon": 37.2, "label": "Зеленоград 1", "flat": ""})
+    ok(not any("Проверьте заказ" in m["text"] for m in r), "картой вне диалога адреса ничего не меняется")
+
     print("\nВСЕ ПРОВЕРКИ ПРОЙДЕНЫ")
 
 
