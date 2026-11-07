@@ -23,6 +23,10 @@ async def get_or_create_user(tg_user) -> dict:
     return user
 
 
+async def get_user_by_tg(tg_id: int) -> dict | None:
+    return await db.fetch_one("SELECT * FROM users WHERE tg_id=?", (tg_id,))
+
+
 async def get_user(user_id: int) -> dict | None:
     return await db.fetch_one("SELECT * FROM users WHERE id=?", (user_id,))
 
