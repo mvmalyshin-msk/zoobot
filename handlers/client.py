@@ -360,7 +360,7 @@ async def cb_pet_delyes(cb: CallbackQuery) -> None:
     if not await repo.deactivate_pet(int(cb.data.split(":")[2]), user["id"]):
         await cb.message.answer(texts.STALE)
         return
-    await cb.message.answer("Убрала ✅")
+    await cb.message.answer("Убрал ✅")
     await show_pets(cb.message, cb.from_user)
 
 
@@ -904,10 +904,10 @@ async def finish_profile(msg: Message, state: FSMContext, tg_user=None, pet_id: 
         await _init_order(state, user, service, pet_id)
         await _taxi_warn(msg, state, await repo.get_pet(pet_id))
     elif data.get("back") == "pets":
-        await msg.answer("Сохранила ✅ Хотите сразу заказать услугу?", reply_markup=kb.offer_order())
+        await msg.answer("Сохранил ✅ Хотите сразу заказать услугу?", reply_markup=kb.offer_order())
         await show_pets(msg, tg_user)
     else:
-        await msg.answer("Сохранила ✅ Хотите сразу заказать услугу?", reply_markup=kb.offer_order())
+        await msg.answer("Сохранил ✅ Хотите сразу заказать услугу?", reply_markup=kb.offer_order())
         await show_profile(msg, tg_user)
 
 
