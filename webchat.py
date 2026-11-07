@@ -23,6 +23,7 @@ from aiogram.types import (Chat, InlineKeyboardMarkup, Message, ReplyKeyboardMar
 from aiohttp import web
 
 import db
+import ribbons
 from config import config
 
 log = logging.getLogger(__name__)
@@ -271,7 +272,11 @@ async def page_chat(request: web.Request) -> web.Response:
     token = None
     if uid is None:
         token = await new_session()
-    html = _ui("chat.html").replace("__TG_URL__", f"https://t.me/{config.bot_username}")
+    role = ribbons.ADMIN if uid in config.admin_ids else ribbons.CLIENT
+    html = (_ui("chat.html").replace("__TG_URL__", f"https://t.me/{config.bot_username}")
+            .replace("__RIBBON__", ribbons.html(role)))
+    if role == ribbons.ADMIN:  # админский и клиентский интерфейсы не смешиваем: «Кабинет» — клиентский
+        html = html.replace('<a href="/cabinet">Кабинет</a>', "")
     resp = web.Response(text=html, content_type="text/html",
                         headers={"Cache-Control": "no-cache", "Referrer-Policy": "no-referrer"})
     if token:
@@ -287,11 +292,12 @@ async def page_login(request: web.Request) -> web.Response:
     title, text = (("Вход администратора", "Нажмите кнопку, чтобы войти под своим аккаунтом администратора.")
                    if n == "portal" else ("Ваш кабинет", "Нажмите кнопку, чтобы открыть кабинет Зооконсьерж на этом телефоне."))
     page = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-            f"<title>{brand.NAME} — вход</title>{brand.HEAD}<body style='max-width:420px;margin:10vh auto;padding:16px'>"
+            f"<title>{brand.NAME} — вход</title>{brand.HEAD}<body>{ribbons.html(ribbons.ADMIN if n == 'portal' else ribbons.CLIENT)}"
+            "<div style='max-width:420px;margin:10vh auto;padding:16px'>"
             f"<div style='text-align:center;font-size:26px'>{brand.LOGO}</div>"
             f"<h2 style='text-align:center'>{title}</h2><p>{text}</p>"
             f"<form method=post action=/chat/login><input type=hidden name=t value='{t}'><input type=hidden name=n value='{n}'>"
-            "<button class='btn' style='width:100%'>Войти</button></form></body>")
+            "<button class='btn' style='width:100%'>Войти</button></form></div></body>")
     return web.Response(text=page, content_type="text/html",
                         headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
