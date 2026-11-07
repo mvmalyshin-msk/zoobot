@@ -167,22 +167,20 @@ async def search(text: str) -> list[Place] | None:
     key = " ".join(text.lower().split())
     if key in _cache:
         return _cache[key]
-    failed = 0
     for q in query_variants(text):
         data = await _get_json("/search", {
             "q": q, "format": "jsonv2", "addressdetails": 1, "limit": 8, "countrycodes": "ru",
             "accept-language": "ru", "bounded": 1,
             "viewbox": ",".join(str(x) for x in VIEWBOX)})
-        if data is None:
-            failed += 1
-            continue
+        if data is None:  # сервис не отвечает — остальные варианты бессмысленны
+            return None
         places = parse_nominatim(data)
         if places:
             if len(_cache) > 300:
                 _cache.clear()
             _cache[key] = places
             return places
-    return None if failed == len(query_variants(text)) else []
+    return []
 
 
 async def reverse(lat: float, lon: float) -> Place | None:
