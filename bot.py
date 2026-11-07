@@ -14,6 +14,8 @@ import texts
 import webserver
 from config import config
 from handlers import admin, client, executor
+from handlers.executor import Report
+import policy
 from scheduler import setup_scheduler
 
 log = logging.getLogger("zoobot")
@@ -29,15 +31,17 @@ class ConsentMiddleware(BaseMiddleware):
         if isinstance(event, Message):
             text = (event.text or "").split("@")[0]
             cmd = text.split(" ")[0]
-            if cmd == "/start":
+            if cmd in ("/start", "/policy"):  # политику можно прочитать до согласия
                 return await handler(event, data)
             # админ-команды и /my исполнителя не требуют согласия клиента
             if cmd.startswith("/") and cmd not in CLIENT_COMMANDS:
                 if user.id in config.admin_ids or cmd == "/my":
                     return await handler(event, data)
+            if data.get("raw_state") == Report.writing.state:  # исполнитель пишет отчёт о выгуле
+                return await handler(event, data)
             answer_to = event
         else:  # CallbackQuery
-            if event.data == "pdn:agree" or (event.data or "").startswith("ex:"):
+            if event.data in ("pdn:agree", "pol:show") or (event.data or "").startswith(("ex:", "rp:")):
                 return await handler(event, data)
             answer_to = event.message
 
@@ -46,7 +50,7 @@ class ConsentMiddleware(BaseMiddleware):
             return await handler(event, data)
         if isinstance(event, CallbackQuery):
             await event.answer()
-        await answer_to.answer(texts.CONSENT_TEXT, reply_markup=kb.consent(config.policy_url))
+        await answer_to.answer(texts.CONSENT_TEXT, reply_markup=kb.consent(policy.current_link()))
 
 
 async def on_error(event: ErrorEvent) -> bool:
@@ -68,6 +72,7 @@ async def set_commands(bot: Bot) -> None:
     await bot.set_my_commands([
         BotCommand(command="menu", description="Главное меню"),
         BotCommand(command="profile", description="Профиль и питомцы"),
+        BotCommand(command="policy", description="Политика обработки данных"),
     ])
     for admin_id in config.admin_ids:
         try:

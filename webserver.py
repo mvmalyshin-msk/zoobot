@@ -4,9 +4,12 @@
 (WebApp.sendData). Railway сам выдаёт порт (переменная PORT) и публичный домен.
 """
 import logging
+import os
 from pathlib import Path
 
 from aiohttp import web
+
+import policy
 
 log = logging.getLogger(__name__)
 WEBAPP_DIR = Path(__file__).parent / "webapp"
@@ -21,10 +24,16 @@ async def _health(request: web.Request) -> web.Response:
     return web.Response(text="ok")
 
 
+async def _policy(request: web.Request) -> web.Response:
+    html = policy.render_html(policy.operator_from_env(os.environ))
+    return web.Response(text=html, content_type="text/html", headers={"Cache-Control": "no-cache"})
+
+
 def make_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/", _index)
     app.router.add_get("/healthz", _health)
+    app.router.add_get("/policy", _policy)
     app.router.add_static("/vendor/", WEBAPP_DIR / "vendor", follow_symlinks=False)  # add_static не выходит из папки
     return app
 

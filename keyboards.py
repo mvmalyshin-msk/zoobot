@@ -17,8 +17,11 @@ def _kb(rows: list[list[Btn]]) -> InlineKeyboardMarkup:
 
 # ---------- Согласие и меню ----------
 def consent(policy_url: str) -> InlineKeyboardMarkup:
+    """Без публичного адреса сайта ссылки нет: политику показываем текстом в чате (кнопка pol:show)."""
+    policy_btn = (Btn(text="📄 Политика обработки ПДн", url=policy_url) if policy_url
+                  else Btn(text="📄 Политика обработки ПДн", callback_data="pol:show"))
     return _kb([
-        [Btn(text="📄 Политика обработки ПДн", url=policy_url)],
+        [policy_btn],
         [Btn(text="✅ Согласен на обработку ПДн", callback_data="pdn:agree")],  # отдельная кнопка
     ])
 
@@ -56,6 +59,18 @@ def pet_size() -> InlineKeyboardMarkup:
     return _kb([[Btn(text=s, callback_data=f"sz:{s}") for s in ("S", "M", "L")]])
 
 
+def traits_kb(selected: list[str]) -> InlineKeyboardMarkup:
+    import traits
+    rows = [[Btn(text=("✅ " if c in selected else "") + label[0].upper() + label[1:], callback_data=f"tr:{c}")]
+            for c, label in traits.TRAITS]
+    rows.append([Btn(text="Готово ➡️", callback_data="tr:done")])
+    return _kb(rows)
+
+
+def report_done(order_id: int) -> InlineKeyboardMarkup:
+    return _kb([[Btn(text="✅ Готово, отчёт отправлен", callback_data=f"rp:done:{order_id}")]])
+
+
 def no_notes() -> InlineKeyboardMarkup:
     return _kb([[Btn(text="Ничего особенного", callback_data="pn:none")]])
 
@@ -89,15 +104,25 @@ def use_profile_address(address: str) -> InlineKeyboardMarkup:
     return _kb([[Btn(text=f"📍 {short}", callback_data="pa:profile")]])
 
 
-def order_confirm(outside_mkad: bool, many_pets: bool) -> InlineKeyboardMarkup:
+def order_confirm() -> InlineKeyboardMarkup:
+    """Первый экран заказа: подбирать специалиста или вносить правки (сами правки спрятаны за второй кнопкой)."""
+    return _kb([
+        [Btn(text="✅ Подтвердить и подобрать специалиста", callback_data="ord:ok")],
+        [Btn(text="✏️ Внести правки", callback_data="ord:edit")],
+        [Btn(text="❌ Отмена", callback_data="ord:cancel")],
+    ])
+
+
+def order_edit(outside_mkad: bool, many_pets: bool) -> InlineKeyboardMarkup:
+    """Что можно поправить в заказе."""
     rows = [
-        [Btn(text="✅ Подтвердить заказ", callback_data="ord:ok")],
-        [Btn(text=f"🛣 За МКАД: {'да' if outside_mkad else 'нет'}", callback_data="ord:mkad")],
+        [Btn(text="🗓 Изменить время", callback_data="ord:when")],
         [Btn(text="✏️ Изменить адрес", callback_data="ord:addr")],
+        [Btn(text=f"🛣 За МКАД: {'да' if outside_mkad else 'нет'}", callback_data="ord:mkad")],
     ]
     if many_pets:
         rows.append([Btn(text="🐕 Другой питомец", callback_data="ord:pet")])
-    rows.append([Btn(text="❌ Отмена", callback_data="ord:cancel")])
+    rows.append([Btn(text="◀ Назад к заказу", callback_data="ord:back")])
     return _kb(rows)
 
 

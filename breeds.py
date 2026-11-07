@@ -271,3 +271,19 @@ def parse_size(text: str) -> str | None:
     if re.search(r"\b(?:больш\w*|крупн\w*|огромн\w*|гигант\w*|здоровенн\w*)\b", t):
         return "L"
     return None
+
+
+_SPECIES_WORDS = {
+    "собака": {"собака", "собачка", "пес", "пёс", "песик", "щенок", "собаки"},
+    "кошка": {"кошка", "кот", "котик", "кошечка", "котенок", "котёнок", "кошки", "кошак"},
+    "другое": {"другое", "другой", "другая", "иное"},
+}
+
+
+def parse_species(text: str) -> str | None:
+    """Вид питомца словом: «кошка», «пёс», «котик» → собака / кошка / другое. Иначе None."""
+    t = text.strip().lower()
+    for species, words in _SPECIES_WORDS.items():
+        if t in words:
+            return species
+    return None

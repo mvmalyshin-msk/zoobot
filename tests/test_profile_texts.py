@@ -32,6 +32,9 @@ class ProfileTexts(unittest.TestCase):
 
     def test_no_garbage(self):
         self.assertNotIn("TRAS", texts.BOT_DESCRIPTION)
+        self.assertIn("подбор", texts.BOT_DESCRIPTION.lower())  # мы — именно подбор специалистов
+        self.assertIn("Подбор", texts.BOT_SHORT_DESCRIPTION)
+        self.assertNotIn("собак", texts.BOT_DESCRIPTION.lower())  # выгул любых питомцев, не только собак
 
     def test_set_on_start(self):
         b = FakeBot()

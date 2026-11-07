@@ -24,7 +24,7 @@ for suffix in ("", "-wal", "-shm"):
 from aiogram import Bot  # noqa: E402
 from aiogram.client.session.base import BaseSession  # noqa: E402
 from aiogram.exceptions import TelegramForbiddenError  # noqa: E402
-from aiogram.methods import AnswerCallbackQuery, SendMessage  # noqa: E402
+from aiogram.methods import AnswerCallbackQuery, EditMessageText, SendMessage, SendPhoto  # noqa: E402
 from aiogram.types import Chat, Message  # noqa: E402
 
 import db  # noqa: E402
@@ -56,7 +56,19 @@ async def fake_reverse(lat, lon):
     return None  # карта «не отвечает» на обратный поиск: район и МКАД определяются по координатам
 
 
-geo.search, geo.reverse = fake_search, fake_reverse
+DIAG = {"троицк": geo.Diagnosis(where="Троицк, Челябинская область", town="Троицк"),
+        "минск": geo.Diagnosis(where="Минск, Беларусь", town=None),
+        "зеленоград": geo.Diagnosis(where=None, town="Зеленоград")}
+
+
+async def fake_diagnose(text):
+    for key, d in DIAG.items():
+        if key in text.lower():
+            return d
+    return geo.Diagnosis(None, None)
+
+
+geo.search, geo.reverse, geo.diagnose = fake_search, fake_reverse, fake_diagnose
 SENT: list[dict] = []  # всё, что бот «отправил»
 BLOCKED: set[int] = set()  # кто «заблокировал бота»
 ANSWERS: list[str] = []  # всплывающие ответы на кнопки (answerCallbackQuery)
@@ -74,6 +86,12 @@ class FakeSession(BaseSession):
             SENT.append({"to": method.chat_id, "text": method.text, "markup": markup})
             return Message(message_id=len(SENT), date=datetime.now(), chat=Chat(id=method.chat_id, type="private"),
                            text=method.text)
+        if isinstance(method, SendPhoto):
+            SENT.append({"to": method.chat_id, "text": method.caption or "", "markup": method.reply_markup, "photo": True})
+            return Message(message_id=len(SENT), date=datetime.now(), chat=Chat(id=method.chat_id, type="private"))
+        if isinstance(method, EditMessageText):  # окно календаря меняется на месте
+            SENT.append({"to": method.chat_id, "text": method.text, "markup": method.reply_markup, "edited": True})
+            return True
         if isinstance(method, AnswerCallbackQuery) and method.text:
             ANSWERS.append(method.text)
         return True
@@ -98,6 +116,18 @@ async def say(uid: int, text: str) -> list[dict]:
            "from": _user(uid), "text": text}
     if text.startswith("/"):
         msg["entities"] = [{"type": "bot_command", "offset": 0, "length": len(text.split()[0])}]
+    await dp.feed_raw_update(bot, {"update_id": _uid, "message": msg})
+    return SENT[start:]
+
+
+async def photo(uid: int, caption: str = "") -> list[dict]:
+    global _uid
+    _uid += 1
+    start = len(SENT)
+    msg = {"message_id": _uid, "date": int(time.time()), "chat": {"id": uid, "type": "private"}, "from": _user(uid),
+           "photo": [{"file_id": "f", "file_unique_id": "u", "width": 5, "height": 5}]}
+    if caption:
+        msg["caption"] = caption
     await dp.feed_raw_update(bot, {"update_id": _uid, "message": msg})
     return SENT[start:]
 
@@ -158,6 +188,12 @@ async def web_app_pick(uid: int, payload: dict) -> list[dict]:
     return SENT[start:]
 
 
+async def edit_click(uid: int, label: str) -> list[dict]:
+    """Правка заказа: сначала «Внести правки», потом нужная кнопка."""
+    await click(uid, "Внести правки")
+    return await click(uid, label)
+
+
 def last_text(msgs, to=None):
     msgs = [m for m in msgs if to is None or m["to"] == to]
     return msgs[-1]["text"] if msgs else ""
@@ -201,6 +237,17 @@ async def main():
        "несуществующий адрес: просит переписать, «оставить как есть» ещё нет")
     r = await say(CLIENT, "абракадабра 9")
     ok("Оставить как написано" in str(_buttons(r[-1])), "после второй неудачи появляется «оставить как написано»")
+    r = await say(CLIENT, "троицк садовая 3")
+    ok("Челябинская область" in last_text(r) and "Москве и Московской области" in last_text(r),
+       "адрес из другого региона: бот называет, где он, и что это вне зоны работы")
+    r = await say(CLIENT, "троицк пушкина 3")
+    ok("Оставить как написано" not in str(_buttons(r[-1])), "адрес вне региона: «оставить как написано» не предлагается даже после двух неудач")
+    n_users_addr = (await db.fetch_one("SELECT address FROM users"))["address"]
+    await raw_callback(CLIENT, "ad:keep")
+    ok((await db.fetch_one("SELECT address FROM users"))["address"] == n_users_addr,
+       "устаревшая кнопка «оставить как написано» не сохраняет адрес из другого региона")
+    r = await say(CLIENT, "зеленоград новая 9")
+    ok("Зеленоград" in last_text(r) and "улиц" in last_text(r), "найден только город: бот просит уточнить улицу и дом")
     r = await say(CLIENT, "ул. Ленина, 1, кв. 5")
     ok(len(_buttons(r[-1])) >= 3 and "Ленина" in str(_buttons(r[-1])), "адрес найден: варианты кнопками")
     r = await click(CLIENT, "Ленина, 1, Москва")
@@ -223,7 +270,9 @@ async def main():
     r = await say(CLIENT, "ыыыы")
     ok("S, M, L" in last_text(r), "на мусор вместо размера бот подсказывает варианты")
     r = await say(CLIENT, "большой")
-    ok("Особенности" in last_text(r), "слово «большой» понято как размер L")
+    ok("Особенности" in last_text(r), "слово «большой» понято как размер L; дальше — анкета повадок")
+    r = await click(CLIENT, "Готово")
+    ok("Здоровье" in last_text(r), "после повадок — здоровье и аллергии")
     r = await click(CLIENT, "Ничего")
     pet = await db.fetch_one("SELECT * FROM pets")
     ok(pet["name"] == "Рекс" and pet["breed"] == "Лабрадор-ретривер" and pet["size"] == "L", "питомец сохранён с проверенной породой")
@@ -262,14 +311,14 @@ async def main():
 
     print("3. Выгул 60 мин ночью: расчёт цены")
     await click(CLIENT, "Выгул 60")
-    r = await say(CLIENT, "завтра 22:30")
+    r = await say(CLIENT, "послезавтра 22:30")
     txt = last_text(r)
     # (700 + 100 за крупную собаку) × 1.3 ночью = 1040
     ok("1 040 ₽" in txt and "Крупная собака" in txt and "Ночное" in txt, "разбивка: база + L + ночь = 1 040 ₽")
-    r = await click(CLIENT, "За МКАД")
+    r = await edit_click(CLIENT, "За МКАД")
     ok("(700 + 100 + 150) × 1.3" or "1 235 ₽" in last_text(r), "за МКАД пересчитывает")
     ok("1 235 ₽" in last_text(r), "итог за МКАД = 1 235 ₽")
-    await click(CLIENT, "За МКАД")
+    await edit_click(CLIENT, "За МКАД")
     r = await click(CLIENT, "Подтвердить")
     ok("принята" in last_text(r, CLIENT), "клиент получил подтверждение заявки")
     ok(any(m["to"] == ADMIN and "Новая заявка" in m["text"] for m in r), "админ получил уведомление")
@@ -325,6 +374,16 @@ async def main():
     ok(o["status"] == "in_progress", "assigned → in_progress (кнопкой исполнителя)")
     r = await click(EXEC, "Завершил")
     ok(any(m["to"] == CLIENT and "Оцените" in m["text"] for m in r), "completed → клиенту запрос оценки")
+    ok(any(m["to"] == EXEC and "отчёт" in m["text"].lower() and "Готово" in str(_buttons(m)) for m in r),
+       "после выгула исполнителю предложено отправить отчёт")
+    r = await say(EXEC, "Гуляли в парке, настроение бодрое, большие дела в норме")
+    ok(any(m["to"] == CLIENT and "Отчёт о выгуле" in m["text"] for m in r) and any(m["to"] == CLIENT and "в парке" in m["text"] for m in r), "отчёт (заголовок и текст) ушёл клиенту")
+    r = await photo(EXEC, "Рекс в парке")
+    ok(any(m["to"] == CLIENT and m.get("photo") and "Рекс в парке" in m["text"] for m in r), "фото с подписью ушло клиенту")
+    r = await click(EXEC, "Готово")
+    ok(any(m["to"] == EXEC and "Спасибо" in m["text"] for m in r), "исполнитель закончил отчёт")
+    r = await say(EXEC, "это уже не отчёт")
+    ok(not any(m["to"] == CLIENT for m in r), "после «Готово» сообщения исполнителя клиенту не пересылаются")
     await click(CLIENT, "⭐⭐⭐⭐⭐")
     r = await say(CLIENT, "Всё отлично, спасибо!")
     rv = await db.fetch_one("SELECT * FROM reviews")
@@ -336,7 +395,7 @@ async def main():
     r = await click(CLIENT, "Повторить") if any("Повторить" in str(_buttons(m)) for m in SENT if m["to"] == CLIENT) else await say(CLIENT, "/menu")
     if "Повторяем" not in last_text(r):
         await click(CLIENT, "Повторить")
-    r = await say(CLIENT, "завтра 10:00")
+    r = await say(CLIENT, "послезавтра 10:00")
     ok("Проверьте заказ" in last_text(r) and "Рекс" in last_text(r), "повтор: спросил только время, остальное из профиля")
     await click(CLIENT, "Отмена")
     await say(CLIENT, "/menu")
@@ -344,7 +403,7 @@ async def main():
     await click(CLIENT, "Зооняня приходящая")
     await say(CLIENT, "через неделю")
     r = await say(CLIENT, "01.01.2020 10:00")
-    ok("будущем" in last_text(r), "дата в прошлом отклоняется")
+    ok("Самое раннее" in last_text(r), "дата в прошлом отклоняется с подсказкой самого раннего времени")
     r = await say(CLIENT, "01.01.2099 10:00")
     ok("далеко" in last_text(r), "дата через десятилетия (опечатка в годе) отклоняется")
     future = (datetime.now() + timedelta(days=3)).strftime("%d.%m %H:%M")
@@ -362,7 +421,7 @@ async def main():
     r = await click(CLIENT, "Шереметьево")
     t = last_text(r)
     ok("Откуда: ул. Ленина" in t and "Куда: Москва" in t, "такси: точки А и Б на экране подтверждения")
-    ok("За МКАД: да" in str(_buttons(r[-1])), "такси в аэропорт: «за МКАД» определено по карте само")
+    ok("за мкад" in last_text(r).lower() and "Ориентировочная" in last_text(r), "такси в аэропорт: «за МКАД» определено по карте само")
     await click(CLIENT, "Подтвердить")
     ok(await db.fetch_one("SELECT 1 FROM orders WHERE address_to IS NOT NULL") is not None, "заказ такси создан с точкой Б")
     r = await say(ADMIN, "/cancel 2 клиент передумал")
@@ -378,7 +437,7 @@ async def main():
     await say(CLIENT, future.replace(future[-5:], "15:00"))
     global MAP_DOWN
     MAP_DOWN = True
-    await click(CLIENT, "Изменить адрес")
+    await edit_click(CLIENT, "Изменить адрес")
     r = await say(CLIENT, "ул. Новая, 7")
     ok("Карта сейчас не отвечает" in str([m["text"] for m in r]), "карта недоступна: адрес принят, клиент предупреждён")
     MAP_DOWN = False
@@ -458,7 +517,7 @@ async def main():
     await click(CLIENT, "Заказать")
     await click(CLIENT, "Выгул 30")
     r = await say(CLIENT, future.replace(future[-5:], "18:00"))
-    await click(CLIENT, "Изменить адрес")
+    await edit_click(CLIENT, "Изменить адрес")
     r = await web_app_pick(CLIENT, {"lat": 59.9, "lon": 30.3, "label": "Невский проспект, 1", "flat": ""})
     ok("не получилось" in last_text(r).lower(), "точка вне Москвы и области отклоняется")
     r = await web_app_pick(CLIENT, {"lat": 55.97, "lon": 37.2, "label": "ывфвф 5", "flat": ""})
@@ -466,12 +525,203 @@ async def main():
     r = await web_app_pick(CLIENT, {"lat": 55.97, "lon": 37.2, "label": "Зеленоград, корпус 1105", "flat": "12"})
     t = last_text(r)
     ok("Адрес: Зеленоград, корпус 1105, кв. 12" in t, "адрес с карты и квартира попали на экран заказа")
-    ok("За МКАД: да" in str(_buttons(r[-1])), "«за МКАД» определено по координатам точки")
+    ok("за мкад" in last_text(r).lower() and "Ориентировочная" in last_text(r), "«за МКАД» определено по координатам точки")
     r = await click(CLIENT, "Подтвердить")
     o = await db.fetch_one("SELECT * FROM orders ORDER BY id DESC LIMIT 1")
     ok(o["address_unverified"] == 0 and o["outside_mkad"] == 1, "заказ: адрес подтверждён картой, за МКАД")
     r = await web_app_pick(CLIENT, {"lat": 55.97, "lon": 37.2, "label": "Зеленоград 1", "flat": ""})
     ok(not any("Проверьте заказ" in m["text"] for m in r), "картой вне диалога адреса ничего не меняется")
+
+
+    print("13. Выбор даты и времени кнопками")
+    from config import config as _cfg
+    day = (datetime.now(_cfg.tz) + timedelta(days=3)).date().isoformat()
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    r = await click(CLIENT, "Выгул 30")
+    ok("календар" in last_text(r) and any(b.callback_data.startswith("cal:d:") for b in _buttons(r[-1])),
+       "после выбора услуги показан календарь")
+    n_orders = (await db.fetch_one("SELECT COUNT(*) c FROM orders"))["c"]
+    r = await raw_callback(CLIENT, "cal:d:2026-13-40")
+    ok(ANSWERS[-1].startswith("Не получилось"), "битая кнопка календаря не ломает бота")
+    r = await raw_callback(CLIENT, "cal:t:2020-01-01:10:00")
+    ok(ANSWERS[-1].startswith("Записываем не раньше"), "время в прошлом из календаря отклоняется")
+    r = await raw_callback(CLIENT, f"cal:d:{day}")
+    ok(f"cal:h:{day}:09" in str(_buttons(r[-1])) and r[-1].get("edited"), "день выбран → окно сменилось на часы")
+    r = await raw_callback(CLIENT, f"cal:h:{day}:11")
+    ok(f"cal:t:{day}:11:30" in str(_buttons(r[-1])), "час выбран → минуты")
+    r = await raw_callback(CLIENT, f"cal:t:{day}:11:30")
+    ok("Проверьте заказ" in last_text(r) and "11:30" in last_text(r), "время выбрано → экран подтверждения с этим временем")
+    ok("Когда:" in r[0]["text"] and "11:30" in r[0]["text"], "окно календаря заменено на выбранное время")
+    r = await raw_callback(CLIENT, f"cal:d:{day}")
+    ok("уже не нужно" in ANSWERS[-1], "кнопка из старого окна ничего не ломает")
+    await click(CLIENT, "Отмена")
+    ok((await db.fetch_one("SELECT COUNT(*) c FROM orders"))["c"] == n_orders, "заказов от календаря не создано")
+
+
+    print("14. Запись не раньше чем за сутки (кроме такси)")
+    import texts as _texts
+    _now = datetime.now(_cfg.tz)
+
+    def _fmt(dt):
+        return dt.strftime("%d.%m.%Y %H:%M")
+
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    r = await click(CLIENT, "Выгул 30")
+    ok("за сутки" in last_text(r), "в вопросе про время сказано про сутки")
+    today_btn = f"cal:d:{_now.date().isoformat()}"
+    ok(today_btn not in str(_buttons(r[-1])), "в календаре выгула сегодня недоступно")
+    r = await say(CLIENT, _fmt(_now + timedelta(hours=2)))
+    ok("не раньше чем за сутки" in last_text(r) and "Проверьте заказ" not in last_text(r), "выгул через 2 часа не принимается")
+    r = await say(CLIENT, _fmt(_now + timedelta(hours=23)))
+    ok("не раньше чем за сутки" in last_text(r), "выгул через 23 часа не принимается")
+    r = await say(CLIENT, _fmt(_now + timedelta(hours=25)))
+    ok("Проверьте заказ" in last_text(r), "выгул через 25 часов принимается")
+    await click(CLIENT, "Отмена")
+    for name in ("Зооняня приходящая", "Передержка"):  # другие услуги — то же правило
+        await say(CLIENT, "/menu")
+        await click(CLIENT, "Заказать")
+        try:
+            r = await click(CLIENT, name)
+        except AssertionError:
+            continue
+        r = await say(CLIENT, _fmt(_now + timedelta(hours=5)))
+        ok("не раньше чем за сутки" in last_text(r), f"{name}: через 5 часов не принимается")
+        await click(CLIENT, "Отмена")
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    r = await click(CLIENT, "Зоотакси")
+    ok("за сутки" not in last_text(r) and "машину" in last_text(r), "у такси про сутки не говорится")
+    if _now.hour < 23:
+        ok(today_btn in str(_buttons(r[-1])), "в календаре такси сегодня доступно")
+    r = await say(CLIENT, _fmt(_now + timedelta(hours=1)))
+    ok(any(_texts.ASK_POINT_A in m["text"] for m in r), "такси через час принимается")
+    r = await say(CLIENT, "01.01.2020 10:00")
+    await click(CLIENT, "Отмена")
+
+
+    print("15. Экран заказа: диапазон цены и вопрос «подбирать специалиста или внести правки»")
+    day = (datetime.now(_cfg.tz) + timedelta(days=4)).strftime("%d.%m.%Y")
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    await click(CLIENT, "Выгул 60")
+    r = await say(CLIENT, f"{day} 22:30")
+    t = last_text(r)
+    ok("Ориентировочная стоимость: от 1 170 ₽ до 1 350 ₽" in t, "цена показана диапазоном: от расчёта до +15 %")
+    ok("Итого" not in t, "точный «Итого» на экране заказа не показывается")
+    ok("Крупная собака" in t and "Ночное" in t, "что учтено в расчёте — видно")
+    ok("подобрать специалиста" in t.lower() and "правки" in t, "вопрос: подбирать специалиста или внести правки")
+    labels = " | ".join(b.text for b in _buttons(r[-1]))
+    ok("Подтвердить" in labels and "Внести правки" in labels and "За МКАД" not in labels,
+       "на первом экране две кнопки: подбирать / внести правки (правки спрятаны)")
+    r = await click(CLIENT, "Внести правки")
+    labels = " | ".join(b.text for b in _buttons(r[-1]))
+    ok(all(x in labels for x in ("За МКАД", "Изменить адрес", "Изменить время", "Назад")), "в правках: МКАД, адрес, время, назад")
+    r = await click(CLIENT, "За МКАД")
+    ok("от 1 365 ₽ до 1 570 ₽" in last_text(r), "после правки диапазон пересчитан (1 365 → 1 570)")
+    await click(CLIENT, "Внести правки")
+    r = await click(CLIENT, "Назад")
+    ok("Ориентировочная стоимость" in last_text(r), "«Назад» возвращает на экран заказа")
+    await click(CLIENT, "Внести правки")
+    r = await click(CLIENT, "Изменить время")
+    ok("календар" in last_text(r), "«Изменить время» открывает календарь")
+    day2 = (datetime.now(_cfg.tz) + timedelta(days=5)).strftime("%d.%m.%Y")
+    r = await say(CLIENT, f"{day2} 10:00")
+    ok("Проверьте заказ" in last_text(r) and day2 in last_text(r), "после смены времени — снова экран заказа с новой датой")
+    n = (await db.fetch_one("SELECT COUNT(*) c FROM orders"))["c"]
+    r = await click(CLIENT, "Подтвердить")
+    ok("точную стоимость" in "".join(m["text"] for m in r), "после подтверждения сказано, что точную стоимость назовём после подбора")
+    o = await db.fetch_one("SELECT * FROM orders ORDER BY id DESC LIMIT 1")
+    ok((await db.fetch_one("SELECT COUNT(*) c FROM orders"))["c"] == n + 1 and o["price_total"] > 0, "заявка создана с расчётной ценой внутри")
+
+
+    # у почасовой услуги смена времени не должна заново спрашивать количество часов
+    await say(CLIENT, "/menu")
+    await click(CLIENT, "Заказать")
+    await click(CLIENT, "Зооняня приходящая")
+    await say(CLIENT, f"{day} 11:00")
+    r = await click(CLIENT, "3")
+    ok("Проверьте заказ" in last_text(r) and "3 ч" in last_text(r), "зооняня: 3 часа, экран заказа")
+    await click(CLIENT, "Внести правки")
+    await click(CLIENT, "Изменить время")
+    r = await say(CLIENT, f"{day2} 12:00")
+    ok("Проверьте заказ" in last_text(r) and "3 ч" in last_text(r) and "Сколько часов" not in last_text(r),
+       "зооняня: после смены времени снова экран заказа, часы не переспрашиваются")
+    await click(CLIENT, "Отмена")
+
+
+    print("16. Анкета повадок собаки")
+    await say(CLIENT, "/profile")
+    await click(CLIENT, "питомц")
+    await say(CLIENT, "Бим")
+    await click(CLIENT, "Собака")
+    await say(CLIENT, "лабродор")
+    await click(CLIENT, "Лабрадор")
+    r = await say(CLIENT, "средний")
+    ok("Особенности" in last_text(r) and "Тянет поводок" in str(_buttons(r[-1])), "после размера собаки — анкета повадок")
+    r = await click(CLIENT, "Тянет")
+    ok("✅ Тянет поводок" in str(_buttons(r[-1])), "нажатая повадка отмечается галочкой")
+    await click(CLIENT, "Агрессия к собакам")
+    r = await click(CLIENT, "Тянет")
+    ok("✅ Тянет" not in str(_buttons(r[-1])), "повторное нажатие снимает отметку")
+    await click(CLIENT, "Подбирает")
+    r = await raw_callback(CLIENT, "tr:hack")
+    r = await say(CLIENT, "текст вместо кнопок")
+    ok("Готово" in last_text(r) or "отметьте" in last_text(r).lower(), "на текст бот напоминает про кнопки и «Готово»")
+    r = await click(CLIENT, "Готово")
+    r = await say(CLIENT, "Хромает на левую лапу")
+    bim = await db.fetch_one("SELECT * FROM pets WHERE name='Бим'")
+    ok(bim["traits"] == "pick,aggr_dog", "повадки сохранены кодами в порядке списка: " + str(bim["traits"]))
+    ok(bim["notes"] == "Хромает на левую лапу", "здоровье сохранено отдельно в заметках")
+    await say(CLIENT, "/profile")
+    await click(CLIENT, "питомц")
+    await say(CLIENT, "Тишка")
+    await click(CLIENT, "Кошка")
+    r = await say(CLIENT, "сиамская")
+    if "Сиам" in str(_buttons(r[-1])):
+        r = await click(CLIENT, "Сиам")
+    r = await click(CLIENT, "S")
+    ok("Здоровье" in last_text(r) and "Тянет поводок" not in str(_buttons(r[-1])), "у кошки анкеты повадок нет — сразу здоровье")
+    await click(CLIENT, "Ничего")
+    await db.execute("UPDATE pets SET is_active=0 WHERE name IN ('Бим','Тишка')")
+
+
+    print("17. Лид: админ узнаёт сразу, как клиент оставил телефон")
+    LEAD = 3000
+    n0 = len(SENT)
+    await say(LEAD, "/start")
+    await click(LEAD, "Согласен")
+    await click(LEAD, "Заказать")
+    await say(LEAD, "Ольга Петрова")
+    r = await contact(LEAD, "79161112233")
+    ok(any(m["to"] == ADMIN and "Новый лид" in m["text"] and "+79161112233" in m["text"] and "Ольга Петрова" in m["text"] for m in r),
+       "админ получил лид сразу после телефона: имя и номер")
+    ok(any(m["to"] == ADMIN and "Новый лид" in m["text"] and "tg://user?id=3000" in m["text"] for m in r), "в лиде есть ссылка на Telegram клиента")
+    n_leads = sum(1 for m in SENT[n0:] if m["to"] == ADMIN and "Новый лид" in m["text"])
+    r = await say(LEAD, "квартира 46")
+    ok("номер квартиры" in last_text(r).lower() and not any(m["to"] == ADMIN for m in r), "«квартира 46» вместо адреса: просит улицу и дом, поиск не запускается")
+    r = await say(LEAD, "ул. Ленина, 1")
+    ok(len(_buttons(r[-1])) >= 3, "адрес найден: варианты")
+    r = await say(LEAD, "кв 46")
+    ok("кв. 46" in str(_buttons(r[-1])) and "46" in last_text(r), "номер квартиры после вариантов добавлен к вариантам")
+    r = await click(LEAD, "Ленина, 1, Москва")
+    ok(any(m["to"] == ADMIN and "Адрес" in m["text"] and "кв. 46" in m["text"] for m in r), "админ получил адрес лида сразу")
+    r = await say(LEAD, "Бублик")
+    r = await say(LEAD, "кошка")
+    ok("Порода" in last_text(r), "вид питомца словом «кошка» понятен без кнопки")
+    ok(sum(1 for m in SENT[n0:] if m["to"] == ADMIN and "Новый лид" in m["text"]) == n_leads, "лид по одному клиенту приходит один раз")
+
+    print("18. Политика обработки ПДн")
+    POL = 3100
+    r = await say(POL, "/start")
+    ok("Политика" in str(_buttons(r[0])) or "Политика" in str([_buttons(m) for m in r]), "на экране согласия есть кнопка политики")
+    r = await say(POL, "/policy")
+    t = "".join(m["text"] for m in r)
+    ok("Политика обработки персональных данных" in t and "152-ФЗ" in t, "/policy присылает текст политики даже до согласия")
+    r = await click(POL, "Политика")
+    ok("Политика обработки персональных данных" in "".join(m["text"] for m in r), "кнопка политики без сайта показывает текст в чате")
+    ok(all(len(m["text"]) <= 4096 for m in r), "куски политики помещаются в сообщение Telegram")
 
     print("\nВСЕ ПРОВЕРКИ ПРОЙДЕНЫ")
 

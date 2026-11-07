@@ -65,10 +65,10 @@ async def get_pet(pet_id: int | None) -> dict | None:
 
 
 async def add_pet(user_id: int, name: str, species: str, breed: str | None,
-                  size: str, notes: str | None) -> int:
+                  size: str, notes: str | None, traits: str | None = None) -> int:
     return await db.execute(
-        "INSERT INTO pets (user_id, name, species, breed, size, notes) VALUES (?,?,?,?,?,?)",
-        (user_id, name, species, breed, size, notes),
+        "INSERT INTO pets (user_id, name, species, breed, size, notes, traits) VALUES (?,?,?,?,?,?,?)",
+        (user_id, name, species, breed, size, notes, traits or None),
     )
 
 
