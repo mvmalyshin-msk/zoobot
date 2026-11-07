@@ -8,6 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("BOT_TOKEN", "1:x")
+os.environ.setdefault("ADMIN_IDS", "111")
 _TMP = tempfile.mkdtemp()
 os.environ["DB_PATH"] = os.path.join(_TMP, "erase.db")
 

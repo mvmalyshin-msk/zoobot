@@ -128,6 +128,8 @@ async def notify(bot: Bot, tg_id: int, text: str, reply_markup=None) -> bool:
 
 def chat_url(username: str | None, tg_id: int) -> str:
     """Ссылка «открыть чат с клиентом»: по username, а без него — по Telegram ID."""
+    if tg_id < 0:  # клиент из браузера: чат идёт через бота, кнопка превращается в «ответить» (wc:)
+        return f"web:{tg_id}"
     return f"https://t.me/{username}" if username else f"tg://user?id={tg_id}"
 
 

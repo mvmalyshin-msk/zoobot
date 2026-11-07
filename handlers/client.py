@@ -1304,6 +1304,11 @@ async def fallback_any(m: Message, state: FSMContext) -> None:
     cur = await state.get_state()
     if cur:
         await m.answer(STATE_HINTS.get(cur, texts.FINISH_QUESTION))
+    elif m.text and m.from_user.id < 0:  # клиент из браузера: Telegram-чата нет, пишем админу через бота
+        await orders.notify_admins(m.bot, f"✉️ Сообщение от клиента из браузера:\n{m.text}",
+                                   kb.chat_button(orders.chat_url(None, m.from_user.id)))
+        await m.answer("✉️ Передали администратору, ответ придёт сюда.")
+        await show_menu(m, m.from_user)
     elif m.text:  # стикеры и файлы вне диалога молча игнорируем
         await show_menu(m, m.from_user)
 

@@ -54,6 +54,42 @@ MIGRATIONS: dict[int, str] = {
         updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
     );
     """,
+    # 9: веб-версия бота (/chat): лента событий для браузера, сессии, одноразовые ссылки входа админа, файлы
+    9: """
+    CREATE TABLE IF NOT EXISTS web_sessions (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        token_hash TEXT NOT NULL UNIQUE,
+        uid        INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS web_events (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        uid        INTEGER NOT NULL,
+        op         TEXT NOT NULL,
+        mid        INTEGER,
+        payload    TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_web_events_uid ON web_events(uid, id);
+    CREATE TABLE IF NOT EXISTS web_login (
+        token_hash TEXT PRIMARY KEY,
+        tg_id      INTEGER NOT NULL,
+        used       INTEGER NOT NULL DEFAULT 0,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS web_files (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        uid        INTEGER NOT NULL,
+        name       TEXT NOT NULL,
+        data       BLOB NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    """,
     # 4: повадки питомца (анкета для выгульщика): коды через запятую, см. traits.py
     4: "ALTER TABLE pets ADD COLUMN traits TEXT;",
     3: """

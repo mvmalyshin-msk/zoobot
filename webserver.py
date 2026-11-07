@@ -10,6 +10,7 @@ from pathlib import Path
 from aiohttp import web
 
 import policy
+import webchat
 import webform
 
 log = logging.getLogger(__name__)
@@ -37,12 +38,14 @@ def make_app() -> web.Application:
     app.router.add_get("/policy", _policy)
     app.router.add_get("/request", webform.get_form)
     app.router.add_post("/request", webform.post_form)
+    webchat.setup(app)
     app.router.add_static("/vendor/", WEBAPP_DIR / "vendor", follow_symlinks=False)  # add_static не выходит из папки
     return app
 
 
-async def start(port: int, bot=None) -> web.AppRunner:
+async def start(port: int, bot=None, dp=None) -> web.AppRunner:
     app = make_app()
+    app["dp"] = dp
     app["bot"] = bot  # веб-заявки уведомляют админа через бота
     runner = web.AppRunner(app)
     await runner.setup()

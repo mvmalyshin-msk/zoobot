@@ -246,7 +246,7 @@ def erase_blocked(cancellable_ids: list[int], has_paid: bool) -> InlineKeyboardM
 def admin_new_order(order_id: int, chat_url: str) -> InlineKeyboardMarkup:
     return _kb([[Btn(text="✅ Подтвердить", callback_data=f"ap:ok:{order_id}"),
                  Btn(text="❌ Отклонить", callback_data=f"ap:no:{order_id}")],
-                [Btn(text="💬 Чат с клиентом", url=chat_url)]])
+                [_chat_btn(chat_url)]])
 
 
 def pay_options(order_id: int, link: str | None, *, sbp: bool, card: bool) -> InlineKeyboardMarkup:
@@ -264,14 +264,14 @@ def pay_options(order_id: int, link: str | None, *, sbp: bool, card: bool) -> In
 def admin_paid_check(order_id: int, chat_url: str) -> InlineKeyboardMarkup:
     return _kb([[Btn(text="✅ Оплата пришла", callback_data=f"ap:paid:{order_id}"),
                  Btn(text="❌ Не вижу", callback_data=f"ap:nopay:{order_id}")],
-                [Btn(text="💬 Чат с клиентом", url=chat_url)]])
+                [_chat_btn(chat_url)]])
 
 
 def admin_after_confirm(order_id: int, chat_url: str, *, methods: bool) -> InlineKeyboardMarkup:
     rows = []
     if methods:
         rows.append([Btn(text="📲 Отправить способы оплаты", callback_data=f"ap:methods:{order_id}")])
-    rows.append([Btn(text="💬 Чат с клиентом", url=chat_url)])
+    rows.append([_chat_btn(chat_url)])
     return _kb(rows)
 
 
@@ -308,5 +308,16 @@ def rules_panel(rules: list[dict]) -> InlineKeyboardMarkup:
     return _kb(rows)
 
 
+def _chat_btn(url: str) -> Btn:
+    """Кнопка «Чат с клиентом»: для Telegram — ссылка, для клиента из браузера — ответ через бота."""
+    if url.startswith("web:"):
+        return Btn(text="💬 Ответить клиенту", callback_data=f"wc:{url[4:]}")
+    return Btn(text="💬 Чат с клиентом", url=url)
+
+
+def relay_end() -> InlineKeyboardMarkup:
+    return _kb([[Btn(text="✖️ Закончить чат", callback_data="wcx")]])
+
+
 def chat_button(url: str) -> InlineKeyboardMarkup:
-    return _kb([[Btn(text="💬 Чат с клиентом", url=url)]])
+    return _kb([[_chat_btn(url)]])

@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("BOT_TOKEN", "1:x")
+os.environ.setdefault("ADMIN_IDS", "111")
 
 import geo  # noqa: E402
 import webserver  # noqa: E402
