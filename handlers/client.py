@@ -1066,7 +1066,7 @@ async def _service_of(state: FSMContext) -> dict:
 def too_soon_text(service) -> str:
     if service["category"] == "taxi":
         return texts.PAST_WHEN
-    earliest = to_local(now_utc()) + min_ahead(service)
+    earliest = datepicker.first_allowed(to_local(now_utc()) + min_ahead(service))  # ночь — на утро
     return texts.TOO_SOON.format(earliest=earliest.strftime("%d.%m.%Y %H:%M"))
 
 
@@ -1088,8 +1088,11 @@ async def _accept_when(msg: Message, state: FSMContext, tg_user, dt) -> bool:
     now = to_local(now_utc())
     data = await state.get_data()
     service = await db.fetch_one("SELECT * FROM services WHERE id=?", (data["service_id"],))
-    if dt < now + min_ahead(service):
+    if dt < now + min_ahead(service):  # сначала «слишком рано»: ответ называет самое раннее время в рабочие часы
         await msg.answer(too_soon_text(service))
+        return False
+    if not datepicker.in_work_hours(dt):  # текстом тоже нельзя обойти рабочие часы
+        await msg.answer(texts.OUT_OF_HOURS)
         return False
     if dt > now + timedelta(days=366):
         await msg.answer(texts.FAR_WHEN)
@@ -1156,8 +1159,9 @@ async def cb_calendar(cb: CallbackQuery, state: FSMContext) -> None:
         await _edit(cb.message, texts.PICK_MINUTES.format(day=value.strftime("%d.%m.%Y")),
                     datepicker.minutes_markup(value, hour, now, ahead))
     else:  # "t": время выбрано целиком
-        if not (now + ahead <= value <= now + timedelta(days=366)):
-            await cb.answer(too_soon_text(service), show_alert=True)  # пока выбирали, время ушло
+        if not datepicker.allowed(value, now, ahead):
+            why = texts.OUT_OF_HOURS if not datepicker.in_work_hours(value) else too_soon_text(service)
+            await cb.answer(why, show_alert=True)  # пока выбирали, время ушло (или кнопка подделана)
             await _edit(cb.message, texts.PICK_DATE, datepicker.month_markup(now.year, now.month, now, ahead))
             return
         await cb.answer()
