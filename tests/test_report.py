@@ -23,7 +23,7 @@ DAY = date(2026, 11, 7)  # по Москве: 07.11 00:00 = 06.11 21:00 UTC
 
 async def reset():
     await db.init_db()
-    for t in ("reviews", "reminders", "order_statuses_log", "payments", "orders", "pets", "consents", "users"):
+    for t in ("reviews", "reminders", "order_statuses_log", "payments", "executor_payouts", "orders", "pets", "consents", "users"):
         await db.execute(f"DELETE FROM {t}")
 
 

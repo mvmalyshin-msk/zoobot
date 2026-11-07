@@ -15,7 +15,6 @@ import secrets
 import time
 from datetime import datetime
 
-from aiogram import Bot
 from aiogram.client.session.base import BaseSession
 from aiogram.methods import (AnswerCallbackQuery, DeleteMessage, EditMessageReplyMarkup, EditMessageText,
                              SendDocument, SendMessage, SendPhoto)
@@ -35,6 +34,7 @@ SEND_LIMIT = 60          # действий в минуту с одной сес
 _hits: dict[int, list[float]] = {}
 _locks: dict[int, asyncio.Lock] = {}
 _linked_cache: dict[int, tuple[float, bool]] = {}
+_tg_cache: dict[int, tuple[float, int | None]] = {}
 
 
 def _hash(token: str) -> str:
@@ -98,6 +98,40 @@ async def _is_linked_admin(uid: int) -> bool:
     return bool(row)
 
 
+async def _verified_tg(uid: int) -> int | None:
+    cached = _tg_cache.get(uid)
+    if cached and time.time() - cached[0] < 30:
+        return cached[1]
+    row = await db.fetch_one("SELECT verified_tg_id FROM users WHERE tg_id=?", (uid,))
+    tg = row["verified_tg_id"] if row else None
+    _tg_cache[uid] = (time.time(), tg)
+    return tg
+
+
+async def make_tg_link(web_uid: int) -> str:
+    """Одноразовая ссылка (сутки): клиент с сайта открывает её в Telegram — и мы знаем, что он настоящий."""
+    token = secrets.token_urlsafe(24)
+    await db.execute("INSERT INTO web_links (token_hash, web_uid, expires_at) VALUES (?, ?, datetime('now', '+1 day'))",
+                     (_hash(token), web_uid))
+    return f"https://t.me/{config.bot_username}?start=wl_{token}"
+
+
+async def claim_tg_link(token: str, tg_id: int) -> int | None:
+    """Привязывает веб-клиента к Telegram. Возвращает id веб-клиента или None (ссылка чужая, старая или уже использована)."""
+    h = _hash(token)
+    async with db.transaction() as conn:
+        cur = await conn.execute(
+            f"UPDATE web_links SET used=1, tg_id=?, {db.touch()} WHERE token_hash=? AND used=0 AND expires_at > datetime('now')",
+            (tg_id, h))
+        if cur.rowcount != 1:
+            return None
+        cur = await conn.execute("SELECT web_uid FROM web_links WHERE token_hash=?", (h,))
+        web_uid = (await cur.fetchone())[0]
+        await conn.execute(f"UPDATE users SET verified_tg_id=?, {db.touch()} WHERE tg_id=?", (tg_id, web_uid))
+    _tg_cache.pop(web_uid, None)
+    return web_uid
+
+
 class WebRouterSession(BaseSession):
     """Обычная сессия aiogram, которая сообщения для браузера кладёт в web_events, а остальное шлёт в Telegram."""
 
@@ -125,7 +159,14 @@ class WebRouterSession(BaseSession):
         origin = ORIGIN.get()
         sending = isinstance(method, (SendMessage, SendPhoto, SendDocument))
         if cid < 0 or origin == cid:
-            return await self._web(cid, method)
+            result = await self._web(cid, method)
+            if cid < 0 and origin != cid and sending:  # уведомление клиенту с сайта, подтвердившему Telegram
+                tg = await _verified_tg(cid)
+                if tg:
+                    copy = SendMessage(chat_id=tg, text=getattr(method, "text", None) or getattr(method, "caption", None)
+                                       or "Новое сообщение в чате на сайте")
+                    asyncio.create_task(self._telegram_quietly(bot, copy, timeout))
+            return result
         if sending and await _is_linked_admin(cid):  # уведомление админу: и в Telegram, и в браузер
             result = await self._web(cid, method)
             asyncio.create_task(self._telegram_quietly(bot, method, timeout))
@@ -199,12 +240,12 @@ def _set_cookie(request: web.Request, resp: web.StreamResponse, token: str) -> N
     resp.set_cookie(COOKIE, token, max_age=60 * 60 * 24 * 90, httponly=True, secure=secure, samesite="Lax", path="/")
 
 
-async def make_login_link(tg_id: int) -> str:
+async def make_login_link(tg_id: int, nxt: str = "chat") -> str:
     """Одноразовая ссылка для админа на 10 минут; вход подтверждается кнопкой, чтобы предпросмотр ссылки её не сжёг."""
     token = secrets.token_urlsafe(24)
     await db.execute("INSERT INTO web_login (token_hash, tg_id, expires_at) VALUES (?, ?, datetime('now', '+10 minutes'))",
                      (_hash(token), tg_id))
-    return f"{config.webapp_url}/chat/login?t={token}"
+    return f"{config.webapp_url}/chat/login?t={token}" + ("&n=portal" if nxt == "portal" else "")
 
 
 def _ui(name: str) -> str:
@@ -227,11 +268,14 @@ async def page_chat(request: web.Request) -> web.Response:
 async def page_login(request: web.Request) -> web.Response:
     import html as _h
     t = _h.escape(request.query.get("t", ""), quote=True)
+    n = "portal" if request.query.get("n") == "portal" else "chat"
+    import brand
     page = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-            "<title>Вход</title><body style='font:18px system-ui;max-width:420px;margin:12vh auto;padding:16px'>"
-            "<h2>Вход администратора</h2><p>Нажмите кнопку, чтобы открыть бота в браузере под своим аккаунтом администратора.</p>"
-            f"<form method=post action=/chat/login><input type=hidden name=t value='{t}'>"
-            "<button style='font:inherit;padding:14px;width:100%'>Войти</button></form></body>")
+            f"<title>{brand.NAME} — вход</title>{brand.HEAD}<body style='max-width:420px;margin:10vh auto;padding:16px'>"
+            f"<div style='text-align:center;font-size:26px'>{brand.LOGO}</div>"
+            "<h2 style='text-align:center'>Вход администратора</h2><p>Нажмите кнопку, чтобы войти под своим аккаунтом администратора.</p>"
+            f"<form method=post action=/chat/login><input type=hidden name=t value='{t}'><input type=hidden name=n value='{n}'>"
+            "<button class='btn' style='width:100%'>Войти</button></form></body>")
     return web.Response(text=page, content_type="text/html",
                         headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
@@ -245,7 +289,7 @@ async def post_login(request: web.Request) -> web.Response:
         return web.Response(status=403, text="Ссылка не действует. Запросите новую командой /webadmin в Telegram.")
     await db.execute(f"UPDATE web_login SET used=1, {db.touch()} WHERE token_hash=?", (h,))
     token = await new_session(row["tg_id"])
-    resp = web.Response(status=302, headers={"Location": "/chat"})
+    resp = web.Response(status=302, headers={"Location": "/portal" if form.get("n") == "portal" else "/chat"})
     _set_cookie(request, resp, token)
     return resp
 

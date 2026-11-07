@@ -71,6 +71,8 @@ def order_card(o: dict, *, for_staff: bool = False) -> str:
         lines.append(f"Адрес: {o['address']}")
     if o["outside_mkad"]:
         lines.append("За МКАД: да")
+    if o.get("rider_name"):
+        lines.append(f"Поедет: {o['rider_name']}, {o['rider_phone']}")
     if o.get("comment"):
         lines.append(f"Комментарий: {o['comment']}")
     if for_staff and o.get("address_unverified"):
@@ -149,21 +151,6 @@ async def notify_admins(bot: Bot, text: str, reply_markup=None) -> None:
             log.error("Не удалось отправить уведомление админу %s (он нажал /start у бота?)", admin_id)
 
 
-async def notify_lead(bot: Bot, tg_user, stage: int, *, name: str, phone: str, address: str | None = None) -> None:
-    """Лид — админу мгновенно: на телефоне и на адресе. Каждая стадия шлётся один раз на клиента."""
-    row = await db.fetch_one("SELECT lead_stage FROM users WHERE tg_id=?", (tg_user.id,))
-    if row is None or row["lead_stage"] >= stage:
-        return
-    await db.execute(f"UPDATE users SET lead_stage=?, {db.touch()} WHERE tg_id=?", (stage, tg_user.id))
-    handle = f"@{tg_user.username}" if tg_user.username else "без username"
-    head = "🔔 Новый лид" if stage == 1 else "📍 Лид оставил адрес"
-    lines = [head, f"Имя: {name}", f"Телефон: {phone}"]
-    if address:
-        lines.append(f"Адрес: {address}")
-    lines.append(f"Telegram: {handle}, tg://user?id={tg_user.id}")
-    await notify_admins(bot, "\n".join(lines), kb.chat_button(chat_url(tg_user.username, tg_user.id)))
-
-
 # ---------- Создание заказа ----------
 
 async def create_order(data: dict, total: int, breakdown: list, actor: str) -> int:
@@ -174,14 +161,14 @@ async def create_order(data: dict, total: int, breakdown: list, actor: str) -> i
         cur = await conn.execute(
             """INSERT INTO orders (user_id, pet_id, service_id, status, start_at, end_at, quantity,
                                    address, address_to, is_urgent, outside_mkad, params_json,
-                                   price_total, price_breakdown, address_unverified, comment)
-               VALUES (?,?,?,'created',?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                   price_total, price_breakdown, address_unverified, comment, rider_name, rider_phone)
+               VALUES (?,?,?,'created',?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (data["user_id"], data["pet_id"], data["service_id"], to_db(data["start_at"]),
              to_db(data["end_at"]) if data.get("end_at") else None, data["quantity"],
              data["address"], data.get("address_to"), int(data["is_urgent"]),
              int(data["outside_mkad"]), json.dumps(params, ensure_ascii=False), total,
              json.dumps(breakdown, ensure_ascii=False), int(data.get("address_unverified", False)),
-             (data.get("comment") or None)),
+             (data.get("comment") or None), data.get("rider_name"), data.get("rider_phone")),
         )
         order_id = cur.lastrowid
         await conn.execute(
@@ -263,7 +250,7 @@ async def _after_transition(bot: Bot, order_id: int, old: str, new: str, actor: 
     delivered = await notify(bot, o["client_tg_id"], text, markup)
 
     # --- админам: если статус поменял не админ (клиент отменил, исполнитель начал/завершил) ---
-    if not actor.startswith("admin"):
+    if not actor.startswith(("admin", "portal")):  # сам админ (в боте или в портале) знает, что сделал
         await notify_admins(bot, f"ℹ️ Заказ №{order_id}: {texts.STATUS_LABELS[old]} → "
                                  f"{texts.STATUS_LABELS[new]} ({actor})")
     return delivered

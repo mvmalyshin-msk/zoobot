@@ -90,6 +90,57 @@ MIGRATIONS: dict[int, str] = {
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     """,
+    # 10: зоотакси можно заказать для другого человека: его имя и телефон для связи
+    10: """
+    ALTER TABLE orders ADD COLUMN rider_name TEXT;
+    ALTER TABLE orders ADD COLUMN rider_phone TEXT;
+    """,
+    # 11: портал администратора: переписка с клиентами и исполнителями, общий чат по заказу,
+    #     коды входа (Telegram/почта), привязка веб-клиента к Telegram для проверки
+    11: """
+    CREATE TABLE IF NOT EXISTS messages (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        party_tg_id INTEGER NOT NULL,
+        party_kind  TEXT NOT NULL,
+        direction   TEXT NOT NULL,
+        text        TEXT NOT NULL,
+        order_id    INTEGER,
+        author      TEXT,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_messages_party ON messages(party_tg_id, id);
+    CREATE TABLE IF NOT EXISTS rooms (
+        order_id       INTEGER PRIMARY KEY,
+        client_tg_id   INTEGER NOT NULL,
+        executor_tg_id INTEGER NOT NULL,
+        open           INTEGER NOT NULL DEFAULT 1,
+        created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS login_codes (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        tg_id      INTEGER NOT NULL,
+        code_hash  TEXT NOT NULL,
+        via        TEXT NOT NULL,
+        attempts   INTEGER NOT NULL DEFAULT 0,
+        used       INTEGER NOT NULL DEFAULT 0,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS web_links (
+        token_hash TEXT PRIMARY KEY,
+        web_uid    INTEGER NOT NULL,
+        tg_id      INTEGER,
+        used       INTEGER NOT NULL DEFAULT 0,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    ALTER TABLE users ADD COLUMN verified_tg_id INTEGER;
+    ALTER TABLE web_requests ADD COLUMN admin_note TEXT;
+    """,
     # 4: повадки питомца (анкета для выгульщика): коды через запятую, см. traits.py
     4: "ALTER TABLE pets ADD COLUMN traits TEXT;",
     3: """

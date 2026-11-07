@@ -10,6 +10,7 @@ from pathlib import Path
 from aiohttp import web
 
 import policy
+import portal
 import webchat
 import webform
 
@@ -31,6 +32,19 @@ async def _policy(request: web.Request) -> web.Response:
     return web.Response(text=html, content_type="text/html", headers={"Cache-Control": "no-cache"})
 
 
+async def _brand_css(request: web.Request) -> web.Response:
+    return web.FileResponse(WEBAPP_DIR / "brand.css", headers={"Cache-Control": "no-cache", "Content-Type": "text/css"})
+
+
+async def _manifest(request: web.Request) -> web.Response:
+    return web.FileResponse(WEBAPP_DIR / "manifest.webmanifest",
+                            headers={"Cache-Control": "no-cache", "Content-Type": "application/manifest+json"})
+
+
+async def _touch_icon(request: web.Request) -> web.Response:
+    return web.FileResponse(WEBAPP_DIR / "icons" / "apple-touch-icon.png")
+
+
 def make_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/", _index)
@@ -39,7 +53,13 @@ def make_app() -> web.Application:
     app.router.add_get("/request", webform.get_form)
     app.router.add_post("/request", webform.post_form)
     webchat.setup(app)
-    app.router.add_static("/vendor/", WEBAPP_DIR / "vendor", follow_symlinks=False)  # add_static не выходит из папки
+    portal.setup(app)
+    app.router.add_static("/vendor/", WEBAPP_DIR / "vendor", follow_symlinks=False)
+    app.router.add_static("/fonts/", WEBAPP_DIR / "fonts", follow_symlinks=False)
+    app.router.add_static("/icons/", WEBAPP_DIR / "icons", follow_symlinks=False)
+    app.router.add_get("/brand.css", _brand_css)
+    app.router.add_get("/manifest.webmanifest", _manifest)
+    app.router.add_get("/apple-touch-icon.png", _touch_icon)  # iOS ищет иконку и по этому адресу  # add_static не выходит из папки
     return app
 
 

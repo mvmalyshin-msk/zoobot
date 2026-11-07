@@ -61,7 +61,7 @@ async def main():
         page.on("dialog", lambda d: asyncio.ensure_future(d.accept("+7 900 111-22-33")))
         await page.goto(base + "/chat")
         await page.wait_for_selector(".m.bot", timeout=8000)
-        check("Зоо-консьерж" in await page.inner_text("header"), "заголовок есть")
+        check("КОНСЬЕРЖ" in await page.inner_text("header"), "фирменный заголовок есть")
         check("согласие" in (await page.inner_text("#log")).lower(), "бот показал экран согласия")
         await page.click(".kb button >> nth=0")  # «Согласен» (первая кнопка)
         await page.wait_for_function("document.querySelectorAll('.m.bot').length>1", timeout=8000)

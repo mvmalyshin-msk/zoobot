@@ -74,6 +74,27 @@ async def add_pet(user_id: int, name: str, species: str, breed: str | None,
     )
 
 
+async def update_pet(pet_id: int, user_id: int, name: str, species: str, breed: str | None,
+                     size: str, notes: str | None, traits: str | None = None) -> bool:
+    """Меняет питомца только если он принадлежит этому клиенту."""
+    cur = await db.fetch_one("SELECT id FROM pets WHERE id=? AND user_id=? AND is_active=1", (pet_id, user_id))
+    if not cur:
+        return False
+    await db.execute(
+        f"UPDATE pets SET name=?, species=?, breed=?, size=?, notes=?, traits=?, {db.touch()} WHERE id=?",
+        (name, species, breed, size, notes, traits or None, pet_id))
+    return True
+
+
+async def deactivate_pet(pet_id: int, user_id: int) -> bool:
+    """Убирает питомца из списка клиента (в старых заказах он остаётся)."""
+    cur = await db.fetch_one("SELECT id FROM pets WHERE id=? AND user_id=? AND is_active=1", (pet_id, user_id))
+    if not cur:
+        return False
+    await db.execute(f"UPDATE pets SET is_active=0, {db.touch()} WHERE id=?", (pet_id,))
+    return True
+
+
 _VISIBLE = "(o.user_id=? AND o.created_at > COALESCE((SELECT erased_at FROM users WHERE id=o.user_id), ''))"
 
 

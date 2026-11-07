@@ -262,6 +262,79 @@ class ChatRelayTest(unittest.TestCase):
         run(t)
 
 
+class TelegramVerifyTest(unittest.TestCase):
+    """П.4: клиент с сайта подтверждает себя через Telegram — по одноразовой ссылке t.me/бот?start=wl_…"""
+
+    def test_link_verifies_and_duplicates_notifications(self):
+        async def t(c, bot):
+            await c.get("/chat")
+            await c.post("/chat/api/send", json={"text": "/start"}, headers=H)
+            uid = (await db.fetch_one("SELECT uid FROM web_sessions ORDER BY id DESC"))["uid"]
+            url = await webchat.make_tg_link(uid)
+            self.assertTrue(url.startswith(f"https://t.me/{config.bot_username}?start=wl_"), url)
+            payload = url.split("start=", 1)[1]
+            self.assertLessEqual(len(payload), 64, "Telegram принимает не больше 64 знаков")
+            TG.clear()
+            await DP.feed_raw_update(bot, _tg_update(9001, f"/start {payload}"))
+            row = await db.fetch_one("SELECT verified_tg_id FROM users WHERE tg_id=?", (uid,))
+            self.assertEqual(row["verified_tg_id"], 9001)
+            self.assertTrue(any(isinstance(m, SendMessage) and m.chat_id == 9001 and "подтвержд" in m.text.lower() for m in TG))
+            self.assertTrue(any("подтвержд" in (m.get("text") or "").lower() for m in (await history(c))["messages"]),
+                            "в чате на сайте тоже видно, что подтверждено")
+            TG.clear()
+            await orders.notify(bot, uid, "Заказ №5 подтверждён")
+            await asyncio.sleep(0.05)
+            self.assertTrue(any(isinstance(m, SendMessage) and m.chat_id == 9001 and "Заказ №5" in m.text for m in TG),
+                            "уведомления теперь дублируются в Telegram")
+            TG.clear()
+            await DP.feed_raw_update(bot, _tg_update(9002, f"/start {payload}"))
+            self.assertEqual((await db.fetch_one("SELECT verified_tg_id FROM users WHERE tg_id=?", (uid,)))["verified_tg_id"], 9001,
+                             "ссылка одноразовая: чужой не перепривяжет")
+        run(t)
+
+    def test_expired_link(self):
+        async def t(c, bot):
+            await c.get("/chat")
+            await c.post("/chat/api/send", json={"text": "/start"}, headers=H)
+            uid = (await db.fetch_one("SELECT uid FROM web_sessions ORDER BY id DESC"))["uid"]
+            url = await webchat.make_tg_link(uid)
+            await db.execute("UPDATE web_links SET expires_at=datetime('now','-1 minutes')")
+            await DP.feed_raw_update(bot, _tg_update(9003, "/start " + url.split("start=", 1)[1]))
+            self.assertIsNone((await db.fetch_one("SELECT verified_tg_id FROM users WHERE tg_id=?", (uid,)))["verified_tg_id"])
+        run(t)
+
+    def test_web_registration_offers_telegram_confirmation(self):
+        async def t(c, bot):
+            await c.get("/chat")
+            await c.post("/chat/api/send", json={"text": "/start"}, headers=H)
+            await c.post("/chat/api/send", json={"cb": "pdn:agree", "mid": 1}, headers=H)
+            for step in ("menu:order",):
+                await c.post("/chat/api/send", json={"cb": step, "mid": 1}, headers=H)
+            for text in ("Вера", "+7 900 222-33-44"):
+                await c.post("/chat/api/send", json={"text": text}, headers=H)
+            uid = (await db.fetch_one("SELECT uid FROM web_sessions ORDER BY id DESC"))["uid"]
+            await db.execute("UPDATE users SET address='Мира 1', address_verified=1 WHERE tg_id=?", (uid,))
+            import handlers.client as hc
+            from aiogram.fsm.context import FSMContext
+            from aiogram.fsm.storage.base import StorageKey
+            st = FSMContext(DP.storage, StorageKey(bot_id=bot.id, chat_id=uid, user_id=uid))
+            await st.update_data(name="Вера", phone="+79002223344")
+            msg = Message(message_id=1, date=datetime.now(), chat=Chat(id=uid, type="private")).as_(bot)
+            from aiogram.types import User
+            await hc.finish_profile(msg, st, User(id=uid, is_bot=False, first_name="Вера"))
+            h = await history(c)
+            urls = [b.get("url") for m in h["messages"] for row in m.get("inline", []) for b in row if b.get("url")]
+            self.assertTrue(any(u.startswith(f"https://t.me/{config.bot_username}?start=wl_") for u in urls), urls)
+        run(t)
+
+
+def _tg_update(uid, text):
+    return {"update_id": abs(uid) + int(datetime.now().timestamp()) % 100000, "message": {
+        "message_id": 1, "date": int(datetime.now().timestamp()), "chat": {"id": uid, "type": "private"},
+        "from": {"id": uid, "is_bot": False, "first_name": "Тест"}, "text": text,
+        "entities": [{"type": "bot_command", "offset": 0, "length": 6}]}}
+
+
 class UrlTest(unittest.TestCase):
     def test_chat_url_for_web_client_is_relay_marker(self):
         self.assertEqual(orders.chat_url(None, -5), "web:-5")

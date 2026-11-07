@@ -37,6 +37,16 @@ def main_menu(has_orders: bool, last_name: str | None = None) -> InlineKeyboardM
     return _kb(rows)
 
 
+def confirm_via_tg(url: str) -> InlineKeyboardMarkup:
+    return _kb([[Btn(text="✅ Подтвердить через Telegram", url=url)]])
+
+
+def offer_order() -> InlineKeyboardMarkup:
+    """Бот сам предлагает следующий шаг: оформить заявку."""
+    return _kb([[Btn(text="🐾 Заказать услугу", callback_data="menu:order")],
+                [Btn(text="⬅️ В меню", callback_data="menu:home")]])
+
+
 def back_to_menu() -> InlineKeyboardMarkup:
     return _kb([[Btn(text="⬅️ В меню", callback_data="menu:home")]])
 
@@ -77,16 +87,45 @@ def no_notes() -> InlineKeyboardMarkup:
     return _kb([[Btn(text="Ничего особенного", callback_data="pn:none")]])
 
 
-def profile(marketing_on: bool) -> InlineKeyboardMarkup:
-    mk = "🔕 Отключить акции и новости" if marketing_on else "📣 Получать акции и новости"
+def profile() -> InlineKeyboardMarkup:
+    """Главный экран профиля: только главное, остальное в подменю."""
     return _kb([
         [Btn(text="✏️ Изменить данные", callback_data="profile:edit")],
-        [Btn(text="➕ Добавить питомца", callback_data="profile:addpet")],
+        [Btn(text="🐾 Питомцы", callback_data="pets:list")],
+        [Btn(text="⚙️ Настройки", callback_data="settings")],
+        [Btn(text="⬅️ В меню", callback_data="menu:home")],
+    ])
+
+
+def settings(marketing_on: bool, tg_url: str | None = None) -> InlineKeyboardMarkup:
+    mk = "🔕 Отключить акции и новости" if marketing_on else "📣 Получать акции и новости"
+    top = [[Btn(text="✅ Подтвердить через Telegram", url=tg_url)]] if tg_url else []
+    return _kb(top + [
         [Btn(text="📞 Способ связи", callback_data="cp:menu")],
         [Btn(text=mk, callback_data="mk:off" if marketing_on else "mk:on")],
         [Btn(text="🗑 Удалить мои данные", callback_data="del:ask")],
-        [Btn(text="⬅️ В меню", callback_data="menu:home")],
+        [Btn(text="⬅️ Профиль", callback_data="menu:profile")],
     ])
+
+
+def pets_list(pets: list[dict]) -> InlineKeyboardMarkup:
+    rows = [[Btn(text=f"🐾 {p['name']}", callback_data=f"pet:{p['id']}")] for p in pets]
+    rows.append([Btn(text="➕ Добавить питомца", callback_data="profile:addpet")])
+    rows.append([Btn(text="⬅️ Профиль", callback_data="menu:profile")])
+    return _kb(rows)
+
+
+def pet_card(pet_id: int) -> InlineKeyboardMarkup:
+    return _kb([
+        [Btn(text="✏️ Изменить", callback_data=f"pet:edit:{pet_id}"),
+         Btn(text="🗑 Убрать", callback_data=f"pet:del:{pet_id}")],
+        [Btn(text="⬅️ Питомцы", callback_data="pets:list")],
+    ])
+
+
+def pet_del_confirm(pet_id: int) -> InlineKeyboardMarkup:
+    return _kb([[Btn(text="Да, убрать", callback_data=f"pet:delyes:{pet_id}"),
+                 Btn(text="Нет", callback_data=f"pet:{pet_id}")]])
 
 
 # ---------- Заказ ----------
@@ -118,6 +157,22 @@ def category_variants(items: list[dict], category: str) -> InlineKeyboardMarkup:
                  callback_data=f"svc:{s['id']}")] for s in items if s["category"] == category]
     rows.append([Btn(text="⬅️ Назад", callback_data="menu:order")])
     return _kb(rows)
+
+
+def taxi_pets(pets: list[dict]) -> InlineKeyboardMarkup:
+    rows = [[Btn(text=f"🐾 {p['name']}", callback_data=f"tp:{p['id']}")] for p in pets]
+    rows.append([Btn(text="➕ Другой питомец", callback_data="tp:new")])
+    rows.append([Btn(text="⬅️ В меню", callback_data="menu:home")])
+    return _kb(rows)
+
+
+def taxi_warn() -> InlineKeyboardMarkup:
+    return _kb([[Btn(text="✅ Понял(а), возьму", callback_data="tw:ok")]])
+
+
+def taxi_for() -> InlineKeyboardMarkup:
+    return _kb([[Btn(text="👤 Для меня", callback_data="tf:me"),
+                 Btn(text="👥 Для другого человека", callback_data="tf:other")]])
 
 
 def quantity(values: list[int], other: bool = False) -> InlineKeyboardMarkup:
@@ -244,9 +299,12 @@ def erase_blocked(cancellable_ids: list[int], has_paid: bool) -> InlineKeyboardM
 
 
 def admin_new_order(order_id: int, chat_url: str) -> InlineKeyboardMarkup:
-    return _kb([[Btn(text="✅ Подтвердить", callback_data=f"ap:ok:{order_id}"),
-                 Btn(text="❌ Отклонить", callback_data=f"ap:no:{order_id}")],
-                [_chat_btn(chat_url)]])
+    rows = [[Btn(text="✅ Подтвердить", callback_data=f"ap:ok:{order_id}"),
+             Btn(text="❌ Отклонить", callback_data=f"ap:no:{order_id}")],
+            [_chat_btn(chat_url)]]
+    if config.webapp_url:
+        rows.append([Btn(text="🖥 Открыть в портале", url=f"{config.webapp_url}/portal/order/{order_id}")])
+    return _kb(rows)
 
 
 def pay_options(order_id: int, link: str | None, *, sbp: bool, card: bool) -> InlineKeyboardMarkup:
@@ -282,6 +340,7 @@ def admin_assign(order_id: int, executors: list[dict]) -> InlineKeyboardMarkup:
 
 def admin_menu() -> InlineKeyboardMarkup:
     return _kb([
+        *([[Btn(text="🖥 Портал администратора", url=f"{config.webapp_url}/portal")]] if config.webapp_url else []),
         [Btn(text="📋 Активные заказы", callback_data="adm:orders")],
         [Btn(text="📊 Отчёт за сегодня", callback_data="adm:report")],
         [Btn(text="💰 Услуги и цены", callback_data="adm:services")],
@@ -313,6 +372,14 @@ def _chat_btn(url: str) -> Btn:
     if url.startswith("web:"):
         return Btn(text="💬 Ответить клиенту", callback_data=f"wc:{url[4:]}")
     return Btn(text="💬 Чат с клиентом", url=url)
+
+
+def reply_party(tg_id: int, portal: str | None) -> InlineKeyboardMarkup:
+    """Под сообщением клиента или исполнителя: ответить через бота и открыть переписку в портале."""
+    rows = [[Btn(text="💬 Ответить", callback_data=f"wc:{tg_id}")]]
+    if portal:
+        rows.append([Btn(text="🖥 Открыть в портале", url=f"{portal}/chat/{tg_id}")])
+    return _kb(rows)
 
 
 def relay_end() -> InlineKeyboardMarkup:
