@@ -145,6 +145,19 @@ MIGRATIONS: dict[int, str] = {
     12: "ALTER TABLE users ADD COLUMN phone_verified TEXT;",
     # 13: журнал заказа хранит формулу цены на момент создания (см. orders.price_note)
     13: "ALTER TABLE order_statuses_log ADD COLUMN note TEXT;",
+    # 15: подписки браузеров на уведомления (Web Push, см. webpush.py)
+    15: """
+    CREATE TABLE IF NOT EXISTS push_subs (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        uid        INTEGER NOT NULL,
+        endpoint   TEXT NOT NULL UNIQUE,
+        p256dh     TEXT NOT NULL,
+        auth       TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_push_subs_uid ON push_subs(uid);
+    """,
     # 14: шаги диалога (FSM) — в базе, чтобы переживать перезапуск бота (см. fsm_store.py)
     14: """
     CREATE TABLE IF NOT EXISTS fsm (

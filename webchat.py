@@ -107,7 +107,19 @@ async def push(uid: int, op: str, *, mid: int | None = None, **payload) -> int:
         if mid is None:
             await conn.execute("UPDATE web_events SET mid=? WHERE id=?", (eid, eid))
         await conn.execute("DELETE FROM web_events WHERE uid=? AND id<?", (uid, eid - KEEP_EVENTS))
+    if op == "send" and payload.get("who") == "bot" and ORIGIN.get() != uid:
+        # новое сообщение не в ответ на действие человека в этом браузере — уведомление (Web Push)
+        text = payload.get("text") or ("📎 " + payload["file"]["name"] if payload.get("file") else "Новое сообщение")
+        asyncio.create_task(_notify(uid, text))
     return eid
+
+
+async def _notify(uid: int, text: str) -> None:
+    import webpush
+    try:
+        await webpush.notify(uid, text)
+    except Exception:
+        log.exception("Web Push: не удалось отправить уведомление")
 
 
 async def _is_linked_admin(uid: int) -> bool:
@@ -549,6 +561,23 @@ async def api_file(request: web.Request, uid: int) -> web.Response:
                         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(row['name'])}"})
 
 
+async def api_push_key(request: web.Request, uid: int) -> web.Response:
+    import webpush
+    return web.json_response({"key": await webpush.public_key_b64()})
+
+
+async def api_push_subscribe(request: web.Request, uid: int) -> web.Response:
+    import webpush
+    try:
+        sub = await request.json()
+    except (ValueError, UnicodeDecodeError):
+        return web.json_response({"error": "json"}, status=400)
+    if not webpush.valid_subscription(sub):
+        return web.json_response({"error": "subscription"}, status=400)
+    await webpush.save_subscription(uid, sub)
+    return web.json_response({"ok": True})
+
+
 def setup(app: web.Application) -> None:
     app.router.add_get("/chat", page_chat)
     app.router.add_get("/chat/login", page_login)
@@ -558,6 +587,10 @@ def setup(app: web.Application) -> None:
     app.router.add_get("/chat/api/poll", api_poll)
     app.router.add_post("/chat/api/send", api_send)
     app.router.add_get("/chat/file/{fid}", api_file)
+    app.router.add_get("/chat/api/push/key", _need_uid(api_push_key))
+    app.router.add_post("/chat/api/push/subscribe", _need_uid(api_push_subscribe))
+    app.router.add_get("/portal/bot/api/push/key", _need_uid(api_push_key, admin=True))
+    app.router.add_post("/portal/bot/api/push/subscribe", _need_uid(api_push_subscribe, admin=True))
     # чат администратора с ботом — в портале, на админской cookie
     app.router.add_get("/portal/bot", page_admin_chat)
     app.router.add_get("/portal/bot/api/history", _need_uid(api_history.raw, admin=True))
