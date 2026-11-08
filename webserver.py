@@ -14,6 +14,7 @@ import policy
 import portal
 import webchat
 import webform
+import siteleads
 
 log = logging.getLogger(__name__)
 WEBAPP_DIR = Path(__file__).parent / "webapp"
@@ -65,6 +66,7 @@ def make_app() -> web.Application:
     app.router.add_get("/policy", _policy)
     app.router.add_get("/request", webform.get_form)
     app.router.add_post("/request", webform.post_form)
+    app.router.add_post("/api/site-lead", siteleads.post_lead)
     webchat.setup(app)
     cabinet.setup(app)
     portal.setup(app)
