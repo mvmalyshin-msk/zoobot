@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Zo Concierge — зооконсьерж</title>
+<meta name="description" content="Подберём специалиста для вашего питомца: выгул, зооняня, передержка, зоотакси.">
+<meta name="theme-color" content="#FC6751">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Зооконсьерж">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="stylesheet" href="/brand.css">
+<script>
+// Старые кнопки «Найти на карте» в уже отправленных сообщениях бота открывают «/»: Telegram добавляет к адресу tgWebAppData.
+if (location.hash.indexOf("tgWebAppData") > -1) location.replace("/map" + location.hash);
+</script>
+<style>
+main{max-width:560px;margin:0 auto;padding:22px 16px 40px}
+.logo{display:flex;justify-content:center;font-size:1.9rem;margin:6px 0 4px}
+.tag{text-align:center;color:var(--mute);margin:0 0 14px}
+h1{font-size:1.35rem;text-align:center;margin:.2em 0 .5em}
+.lead{margin:0 0 18px}
+h2{font-size:1.15rem;margin:26px 0 10px}
+.svc{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.svc div{padding:12px 14px}.svc b{display:block;margin-bottom:2px}.svc span{color:var(--mute);font-size:.93rem}
+.svc .walk{border-top:4px solid var(--walk)}.svc .nanny{border-top:4px solid var(--nanny)}
+.svc .boarding{border-top:4px solid var(--boarding)}.svc .taxi{border-top:4px solid var(--taxi)}
+.choice{text-align:center;margin:12px 0 0}
+.entries{display:grid;gap:12px}
+.entry{display:block;text-decoration:none;color:var(--ink);padding:16px 18px}
+.entry b{display:block;font-size:1.08rem;margin-bottom:4px}.entry span{display:block;color:var(--mute);margin-bottom:12px}
+.entry em{font-style:normal;display:inline-block;background:var(--coral);color:#fff;font-weight:700;border-radius:var(--pill);padding:.6em 1.2em}
+.entry:active{opacity:.8}
+.enter{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);text-align:center}
+.enter p{color:var(--mute);font-size:.9rem;margin:0 0 10px}
+.login{display:inline-block;margin:4px;padding:.55em 1.1em;border-radius:var(--pill);color:#fff;font-weight:700;font-size:.92rem;text-decoration:none}
+.login.client{background:#1d6fd6}.login.admin{background:#d62b2b}
+.foot{text-align:center;margin-top:18px;font-size:.85rem}.foot a{color:var(--mute)}
+</style>
+</head>
+<body>
+<main>
+<div class="logo"><span class="brand"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</span></div>
+<p class="tag">Zo Concierge · забота о питомцах</p>
+<h1>Zo Concierge</h1>
+<p class="lead">Zo Concierge — портал, который подберёт подходящего специалиста для заботы о вашем питомце.
+Мы помогаем найти выгул, зооняню, передержку, помощь дома или зоотакси — и предлагаем несколько вариантов по стоимости и уровню сервиса, чтобы вам было легко выбрать.</p>
+
+<h2>Как оставить заявку</h2>
+<div class="entries">
+<a class="entry card" href="https://t.me/__BOT__"><b>Оставить заявку через Telegram</b><span>Быстро напишите нам в Telegram — бот поможет выбрать услугу и отправить заявку.</span><em>Открыть Telegram-бот</em></a>
+<a class="entry card" href="/chat"><b>Оставить заявку на сайте</b><span>Выберите услугу, укажите детали и отправьте заявку прямо здесь.</span><em>Оставить заявку на сайте</em></a>
+<a class="entry card" href="/request"><b>Быстрая заявка</b><span>Заполните короткую форму — мы свяжемся с вами и подберём специалиста.</span><em>Заполнить форму</em></a>
+</div>
+
+<h2>Что мы делаем</h2>
+<div class="svc">
+<div class="card walk"><b>Выгул</b><span>Организуем прогулку с вашим питомцем в удобное время.</span></div>
+<div class="card nanny"><b>Зооняня</b><span>Найдём специалиста, который придёт покормить питомца, поиграть с ним или остаться с ним на ночь.</span></div>
+<div class="card boarding"><b>Передержка</b><span>Подберём зоотель или частного исполнителя для временного проживания питомца.</span></div>
+<div class="card taxi"><b>Зоотакси</b><span>Поможем организовать безопасную перевозку питомца из точки А в точку Б.</span></div>
+</div>
+<p class="choice">Мы подберём несколько вариантов по цене и уровню исполнения, чтобы вы могли выбрать наиболее подходящий.</p>
+
+<div class="enter">
+<p>Вход</p>
+<a class="login client" href="/chat/login">Войти как клиент</a>
+<a class="login admin" href="/portal">Войти как администратор</a>
+</div>
+<p class="foot"><a href="/policy">Политика конфиденциальности</a></p>
+</main>
+</body>
+</html>

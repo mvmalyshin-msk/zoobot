@@ -81,7 +81,7 @@ async def main():
         await page.wait_for_timeout(1200)
         uid = (await db.fetch_one("SELECT uid FROM web_sessions ORDER BY id DESC LIMIT 1"))["uid"]
         await webchat.push(uid, "send", who="bot", text="Адрес, куда ехать?",
-                           reply=[[{"t": "🗺 Найти на карте", "map": base + "/"}, {"t": "📍 Отправить геопозицию", "loc": True}]])
+                           reply=[[{"t": "🗺 Найти на карте", "map": base + "/map"}, {"t": "📍 Отправить геопозицию", "loc": True}]])
         await page.wait_for_timeout(1500)
         buttons = await page.eval_on_selector_all("#rk button", "bs => bs.map(b => b.textContent)")
         check("🗺 Найти на карте" in buttons and "📍 Отправить геопозицию" in buttons, "кнопки карты и геопозиции видны в чате")
@@ -91,7 +91,7 @@ async def main():
         check("📍 Геопозиция отправлена" in await events_text(uid), "геопозиция из браузера дошла до бота")
 
         await page.click("text=🗺 Найти на карте")
-        await page.wait_for_url(base + "/", timeout=8000)
+        await page.wait_for_url(base + "/map", timeout=8000)
         rib = await page.evaluate("""() => { const r = document.querySelector('.role-ribbon'); if (!r) return null;
             const b = r.getBoundingClientRect(); const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
             return {h: b.height, top: b.top, visible: !!top && (top === r || r.contains(top))}; }""")
@@ -117,7 +117,7 @@ async def main():
             await gp.wait_for_timeout(1200)
             guid = (await db.fetch_one("SELECT uid FROM web_sessions ORDER BY id DESC LIMIT 1"))["uid"]
             await webchat.push(guid, "send", who="bot", text="Адрес?",
-                               reply=[[{"t": "🗺 Найти на карте", "map": base + "/"}, {"t": "📍 Отправить геопозицию", "loc": True}]])
+                               reply=[[{"t": "🗺 Найти на карте", "map": base + "/map"}, {"t": "📍 Отправить геопозицию", "loc": True}]])
             await gp.wait_for_selector("text=📍 Отправить геопозицию", timeout=5000)
             await gp.click("text=📍 Отправить геопозицию")
             await gp.wait_for_timeout(1500)
@@ -140,14 +140,14 @@ async def main():
         ctx2 = await br.new_context(viewport={"width": 390, "height": 780})
         await _fake_tg(ctx2, TG_INSIDE)
         page2 = await ctx2.new_page()
-        await page2.goto(base + "/")
+        await page2.goto(base + "/map")
         await page2.evaluate("() => window.__test.setPoint(55.9, 37.4, '', null)")
         await page2.fill("#label", "Химки, Железнодорожная, 33")
         await page2.click("#ok")
         await page2.wait_for_timeout(800)
         sent = await page2.evaluate("() => window.__sentToTelegram || null")
         check(bool(sent) and "Железнодорожная" in str(sent), "в Telegram адрес уходит через sendData")
-        check(page2.url == base + "/", "в Telegram страница не уходит на сайт")
+        check(page2.url == base + "/map", "в Telegram страница не уходит на сайт")
         await br.close()
     await runner.cleanup()
     print("\nИТОГ: " + ("ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ" if not FAILS else f"НЕ ПРОЙДЕНО: {len(FAILS)}"))

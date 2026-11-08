@@ -62,7 +62,7 @@ class MarkupForWebTest(unittest.TestCase):
         with mock.patch.object(kb, "config", type("C", (), {"webapp_url": "https://zoo.test"})()):
             markup = kb.address_ask()
         flat = [b for row in webchat.serialize_markup(markup)["reply"] for b in row]
-        self.assertIn({"t": "🗺 Найти на карте", "map": "https://zoo.test"}, flat)
+        self.assertIn({"t": "🗺 Найти на карте", "map": "https://zoo.test/map"}, flat)
         self.assertIn({"t": "📍 Отправить геопозицию", "loc": True}, flat)
 
 

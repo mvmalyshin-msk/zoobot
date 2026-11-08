@@ -275,7 +275,7 @@ def address_ask() -> ReplyKeyboardMarkup:
     """Кнопка «отправить геопозицию» под строкой ввода (один раз)."""
     rows = []
     if config.webapp_url:  # мини-приложение с картой и подсказками адреса
-        rows.append([KeyboardButton(text="🗺 Найти на карте", web_app=WebAppInfo(url=config.webapp_url))])
+        rows.append([KeyboardButton(text="🗺 Найти на карте", web_app=WebAppInfo(url=config.webapp_url.rstrip("/") + "/map"))])
     rows.append([KeyboardButton(text="📍 Отправить геопозицию", request_location=True)])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True, one_time_keyboard=True)
 
