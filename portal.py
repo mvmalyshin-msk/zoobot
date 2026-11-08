@@ -49,6 +49,20 @@ STATUS_COLOR = {"created": "var(--coral)", "confirmed": "var(--taxi)", "paid": "
                 "cancelled": "#b9b0a6"}
 
 
+# Цвет заявки: новая — белая, ждёт оплаты — светло-жёлтая, в работе (подтверждена с обеих сторон) — зелёная,
+# выполнена — тёмно-серая с ярко-зелёной галочкой, отменена — приглушённая
+STATUS_CLASS = {"created": "st-new", "confirmed": "st-wait", "paid": "st-work", "assigned": "st-work",
+                "in_progress": "st-work", "completed": "st-done", "cancelled": "st-cancelled"}
+REQ_CLASS = {"new": "st-new", "work": "st-work", "done": "st-done", "rejected": "st-cancelled"}
+TICK = '<i class="tick">✓</i>'
+
+
+def cancel_label(actor: str | None) -> str:
+    """Кто отменил: «Отменил клиент» / «Отменил администратор» / просто «Отменён»."""
+    a = actor or ""
+    return "Отменил клиент" if a.startswith("client") else "Отменил администратор" if a.startswith(("admin", "portal")) else "Отменён"
+
+
 def _e(v) -> str:
     return _html.escape("" if v is None else str(v), quote=True)
 
@@ -169,6 +183,18 @@ h3.day{margin:16px 4px 2px;font-size:13px;letter-spacing:.05em;text-transform:up
 .pager{display:flex;gap:6px;margin:0 0 12px}
 .pager a,.pager .off{flex:1;text-align:center;padding:9px 6px;border-radius:999px;background:var(--card);border:1.5px solid var(--line);color:var(--ink);text-decoration:none;font-weight:700;font-size:15px}
 .pager .off{opacity:.4}
+.item.ord.st-new{background:#fff}
+.item.ord.st-wait{background:#fff6dc;box-shadow:inset 5px 0 0 #e8b931}
+.item.ord.st-work{background:#e1f5e6;box-shadow:inset 5px 0 0 #2e9e5b}
+.item.ord.st-done{background:#45454a;color:#f1f1f3;box-shadow:inset 5px 0 0 #22e06b}
+.item.ord.st-done .sub,.item.ord.st-done .stamp span{color:#c9c9d0}.item.ord.st-done .src{background:#5d5d64;color:#eee}
+.item.ord.st-done .stamp{background:#35353a;color:#fff}
+.item.ord.st-cancelled{background:#efe9e4;color:#7a7168;box-shadow:inset 5px 0 0 #c9473a}.item.ord.st-cancelled .who{text-decoration:line-through}
+.stt{display:inline-flex;align-items:center;gap:6px}
+.tick{font-style:normal;font-weight:900;font-size:22px;line-height:1;color:#22e06b}
+.stbar{display:flex;align-items:center;gap:10px;border-radius:16px;padding:12px 16px;margin:0 0 12px;font-weight:800;font-size:1.1rem}
+.stbar.st-new{background:#fff;border:1.5px solid var(--line)}.stbar.st-wait{background:#fff6dc}.stbar.st-work{background:#e1f5e6;color:#17683a}
+.stbar.st-done{background:#45454a;color:#f1f1f3}.stbar.st-cancelled{background:#f6dcd8;color:#a3342a}
 .others{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}.others a{text-decoration:none;color:var(--ink)}
 label{font-weight:700;display:block;margin:10px 0 4px}
 input,select,textarea{max-width:100%}
@@ -185,9 +211,18 @@ function tick(){fetch('/portal/api/summary',{credentials:'same-origin'}).then(fu
    document.title='🔔 '+base;var b=document.getElementById('newbar');if(b){b.style.display='block';b.firstChild.textContent=what+' — обновить'}
    try{if(window.Notification&&Notification.permission==='granted')new Notification('Зооконсьерж',{body:what})}catch(e){}
  }
+ if(prev&&j.last_status>(prev.last_status||0)){
+   // статус заказа сменился (клиент отменил, исполнитель начал и т. д.): сообщаем сразу и сами обновляем список или страницу этого заказа
+   document.title='🔔 '+base;var b2=document.getElementById('newbar');if(b2){b2.style.display='block';b2.firstChild.textContent=j.status_text+' — обновить'}
+   try{if(window.Notification&&Notification.permission==='granted')new Notification('Зооконсьерж',{body:j.status_text})}catch(e){}
+   save(j);
+   var p=location.pathname;
+   if((/^\\/portal\\/?$/.test(p)||p==='/portal/order/'+j.status_order)&&!document.querySelector('input:focus,textarea:focus,select:focus'))location.reload();
+   return;
+ }
  save(j);
 }).catch(function(){})}
-tick();setInterval(tick,20000);
+tick();setInterval(tick,5000);
 try{if(navigator.clearAppBadge)navigator.clearAppBadge()}catch(e){}
 // Уведомления, которые приходят при закрытом приложении (Web Push). Подписка хранится в браузере/приложении,
 // поэтому её нужно создать там, где человек пользуется порталом: на iPhone — в приложении с экрана «Домой».
@@ -467,11 +502,17 @@ async def all_requests(flt: str, src: str) -> list[dict]:
     if statuses:
         where = f"WHERE o.status IN ({','.join('?' * len(statuses))})"
         params = list(statuses)
+        if flt == "active":  # отменённые и выполненные за последние сутки не пропадают сразу: админ видит, что случилось
+            where = ("WHERE (" + where[6:] + " OR o.id IN (SELECT order_id FROM order_statuses_log WHERE to_status IN "
+                     "('cancelled','completed') AND created_at > datetime('now','-1 day')))")
     rows = []
     if src in ("all", "tg", "web"):
         for o in await db.fetch_all(
                 f"""SELECT o.id, o.status, o.start_at, o.created_at, o.price_total, s.name AS service, s.category,
-                           u.name, u.phone, u.tg_id FROM orders o JOIN services s ON s.id=o.service_id
+                           u.name, u.phone, u.tg_id,
+                           (SELECT actor FROM order_statuses_log l WHERE l.order_id=o.id AND l.to_status='cancelled'
+                            ORDER BY l.id DESC LIMIT 1) AS cancel_actor
+                    FROM orders o JOIN services s ON s.id=o.service_id
                     JOIN users u ON u.id=o.user_id {where} ORDER BY o.id DESC LIMIT 300""", tuple(params)):
             if src != "all" and _source(o["tg_id"]) != src:
                 continue
@@ -515,17 +556,22 @@ def _row_html(r: dict) -> str:
     chip = f'<span class="chip {CHIP.get(r.get("category"), "walk")}">{_e(r.get("service") or "Услуга")}</span>'
     src = f'<span class="src">{SOURCES[r["source"]]}</span>'
     if r["kind"] == "order":
-        st = f'<span class="badge" style="background:{STATUS_COLOR[r["status"]]}">{_e(texts.STATUS_LABELS[r["status"]])}</span>'
+        label = cancel_label(r.get("cancel_actor")) if r["status"] == "cancelled" else texts.STATUS_LABELS[r["status"]]
+        st = f'<span class="badge" style="background:{STATUS_COLOR[r["status"]]}">{_e(label)}</span>'
+        if r["status"] == "completed":
+            st = TICK + st
         fresh = r["status"] == "created"
-        return (f'<a class="item card ord" href="/portal/order/{r["id"]}">{stamp_html(r["created_at"], fresh)}<div class="main">'
-                f'<div class="row"><span class="who">№{r["id"]} · {_e(r["name"] or "—")}</span>{st}</div>'
+        return (f'<a class="item card ord {STATUS_CLASS[r["status"]]}" href="/portal/order/{r["id"]}">{stamp_html(r["created_at"], fresh)}<div class="main">'
+                f'<div class="row"><span class="who">№{r["id"]} · {_e(r["name"] or "—")}</span><span class="stt">{st}</span></div>'
                 f'<div class="row" style="margin-top:6px">{chip}{src}</div>'
                 f'<div class="sub">На {_e(fmt_local(r["start_at"]))} · {_e(r["phone"] or "—")} · {rub(r["price_total"])}</div></div></a>')
     st = f'<span class="badge" style="background:{"var(--coral)" if r["status"] == "new" else "#8a8178"}">{REQ_STATUSES.get(r["status"], r["status"])}</span>'
+    if r["status"] == "done":
+        st = TICK + st
     if str(r.get("address") or "").startswith("Сайт "):  # заявка с сайта конструктора: показываем, с какого
         src = f'<span class="src">{_e(r["address"])}</span>'
-    return (f'<a class="item card ord" href="/portal/request/{r["id"]}">{stamp_html(r["created_at"], r["status"] == "new")}<div class="main">'
-            f'<div class="row"><span class="who">Заявка с сайта №{r["id"]} · {_e(r["name"])}</span>{st}</div>'
+    return (f'<a class="item card ord {REQ_CLASS.get(r["status"], "st-new")}" href="/portal/request/{r["id"]}">{stamp_html(r["created_at"], r["status"] == "new")}<div class="main">'
+            f'<div class="row"><span class="who">Заявка с сайта №{r["id"]} · {_e(r["name"])}</span><span class="stt">{st}</span></div>'
             f'<div class="row" style="margin-top:6px">{chip}{src}</div>'
             f'<div class="sub">{_e(r["when_text"] or "время не указано")} · {_e(r["phone"])}</div></div></a>')
 
@@ -645,8 +691,11 @@ async def order_page(request: web.Request, uid: int) -> web.Response:
         links.append(f'<a class="btn small ghost" href="/portal/chat/{o["executor_tg_id"]}">💬 Написать исполнителю</a>')
     nav_html = await _order_nav(o)
     reg = reg_html(o["created_at"], f"Заявка №{o['id']} зарегистрирована")
+    who_cancel = next((h["actor"] for h in reversed(hist) if h["to_status"] == "cancelled"), None)
+    st_text = cancel_label(who_cancel) if o["status"] == "cancelled" else texts.STATUS_LABELS[o["status"]]
+    stbar = f'<div class="stbar {STATUS_CLASS[o["status"]]}">{TICK if o["status"] == "completed" else ""}<span>{_e(st_text)}</span></div>'
     body = (f'<h1>Заказ №{o["id"]} <span class="src">{SOURCES[_source(o["client_tg_id"])]}</span></h1>'
-            f'{reg}{nav_html}'
+            f'{stbar}{reg}{nav_html}'
             f'<div class="card pre">{_e(orders.order_card(o, for_staff=True))}</div>'
             f'{_actions(o, execs, room_open)}<div class="actions">{"".join(links)}</div>{room_html}'
             f'<h2>История</h2>{hist_html}')
@@ -864,6 +913,18 @@ async def api_chat(request: web.Request, uid: int) -> web.Response:
                                            for r in rows]})
 
 
+async def _last_status() -> dict:
+    """Последняя смена статуса любого заказа: по ней портал замечает, что клиент отменил заказ или исполнитель начал работу."""
+    h = await db.fetch_one("SELECT id, order_id, to_status, actor FROM order_statuses_log ORDER BY id DESC LIMIT 1")
+    if not h:
+        return {"last_status": 0, "status_order": 0, "status_text": ""}
+    label = texts.STATUS_LABELS.get(h["to_status"], h["to_status"])
+    if h["to_status"] == "cancelled":
+        label = ("Отменён клиентом" if h["actor"].startswith("client")
+                 else "Отменён администратором" if h["actor"].startswith(("admin", "portal")) else label)
+    return {"last_status": h["id"], "status_order": h["order_id"], "status_text": f"Заказ №{h['order_id']}: {label}"}
+
+
 @admin_page
 async def api_summary(request: web.Request, uid: int) -> web.Response:
     one = lambda sql: db.fetch_one(sql)  # noqa: E731
@@ -873,6 +934,7 @@ async def api_summary(request: web.Request, uid: int) -> web.Response:
         "last_order": (await one("SELECT COALESCE(MAX(id),0) AS n FROM orders"))["n"],
         "last_request": (await one("SELECT COALESCE(MAX(id),0) AS n FROM web_requests"))["n"],
         "last_in": (await one("SELECT COALESCE(MAX(id),0) AS n FROM messages WHERE direction='in'"))["n"],
+        **await _last_status(),
     })
 
 

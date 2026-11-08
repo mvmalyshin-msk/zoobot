@@ -23,7 +23,7 @@ import pricing  # noqa: E402
 BASE = {"walk30": 700, "walk60": 1000, "sitter_visit": 800, "sitter_live": 3000,
         "boarding_home": 1500, "boarding_hotel": 1600, "taxi": 189}
 FROM = {"walk30": 910, "walk60": 1300, "sitter_visit": 1040, "sitter_live": 3900,
-        "boarding_home": 1950, "boarding_hotel": 2080, "taxi": 246}
+        "boarding_home": 1950, "boarding_hotel": 2080, "taxi": 450}
 
 
 def run(coro):

@@ -80,6 +80,9 @@ CONDITIONS = {
 VALID_CONDITIONS = tuple(CONDITIONS)
 
 
+TAXI_MIN_FARE = 450  # ₽: дешевле короткую поездку с животным клиенту не считаем (владелец: «зоотакси от 450 ₽»)
+
+
 async def calculate_price(service_id: int, params: dict) -> tuple[int, list[tuple[str, int]]]:
     """Возвращает (итог в ₽, разбивка [(подпись, сумма), ...]).
 
@@ -136,6 +139,10 @@ async def calculate_price(service_id: int, params: dict) -> tuple[int, list[tupl
             total += add
             breakdown.append((name, add))
 
+    if service["category"] == "taxi" and total < TAXI_MIN_FARE:  # минимальная стоимость поездки
+        breakdown.append(("До минимальной стоимости поездки", TAXI_MIN_FARE - total))
+        total = TAXI_MIN_FARE
+
     log.info("Расчёт цены: услуга=%s кол-во=%s итог=%s разбивка=%s",
              service_id, qty, int(total), "; ".join(f"{n} = {a}" for n, a in breakdown))
     return int(total), breakdown
@@ -188,4 +195,8 @@ async def markup_percent() -> float:
 async def with_client_price(items: list[dict]) -> list[dict]:
     """Добавляет каждой услуге from_price — цена «от» для клиента: база + наценка сервиса (в каталоге, в форме)."""
     pct = await markup_percent()
-    return [{**dict(s), "from_price": round(s["base_price"] * (100 + pct) / 100)} for s in items]
+    out = [{**dict(s), "from_price": round(s["base_price"] * (100 + pct) / 100)} for s in items]
+    for s in out:
+        if s.get("category") == "taxi":
+            s["from_price"] = TAXI_MIN_FARE
+    return out
