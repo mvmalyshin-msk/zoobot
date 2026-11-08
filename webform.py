@@ -11,6 +11,7 @@ from aiohttp import web
 
 import db
 import orders
+import pricing
 import webchat
 import brand
 import ribbons
@@ -72,7 +73,7 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
             continue
         rows = "".join(
             f'<option value="{s["id"]}"{" selected" if str(s["id"]) == str(values.get("service_id")) else ""}>'
-            f'{_e(texts.variant_label(cat, s["name"]))} — от {rub(s["base_price"])}</option>' for s in opts)
+            f'{_e(texts.variant_label(cat, s["name"]))} — от {rub(s.get("from_price", s["base_price"]))}</option>' for s in opts)
         groups.append(f'<optgroup label="{_e(texts.CATEGORY_TITLES[cat])}">{rows}</optgroup>')
     checked = " checked" if values.get("consent") else ""
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
@@ -120,7 +121,7 @@ def _limited(ip: str) -> bool:
 
 
 async def _services() -> list[dict]:
-    return await db.fetch_all("SELECT * FROM services WHERE active=1 ORDER BY id")
+    return await pricing.with_client_price(await db.fetch_all("SELECT * FROM services WHERE active=1 ORDER BY id"))
 
 
 async def get_form(request: web.Request) -> web.Response:

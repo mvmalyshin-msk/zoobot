@@ -149,7 +149,7 @@ def pet_del_confirm(pet_id: int) -> InlineKeyboardMarkup:
 # ---------- Заказ ----------
 def services(items: list[dict]) -> InlineKeyboardMarkup:
     rows = [
-        [Btn(text=f"{s['name']} — от {rub(s['base_price'])}", callback_data=f"svc:{s['id']}")]
+        [Btn(text=f"{s['name']} — от {rub(s.get('from_price', s['base_price']))}", callback_data=f"svc:{s['id']}")]
         for s in items
     ]
     rows.append([Btn(text="⬅️ В меню", callback_data="menu:home")])
@@ -163,7 +163,7 @@ def service_categories(items: list[dict]) -> InlineKeyboardMarkup:
         variants = [s for s in items if s["category"] == cat]
         if not variants:
             continue
-        low = min(s["base_price"] for s in variants)
+        low = min(s.get("from_price", s["base_price"]) for s in variants)
         data = f"svc:{variants[0]['id']}" if len(variants) == 1 else f"cat:{cat}"
         rows.append([Btn(text=f"{texts.CATEGORY_TITLES[cat]} — от {rub(low)}", callback_data=data)])
     rows.append([Btn(text="⬅️ В меню", callback_data="menu:home")])
@@ -171,7 +171,7 @@ def service_categories(items: list[dict]) -> InlineKeyboardMarkup:
 
 
 def category_variants(items: list[dict], category: str) -> InlineKeyboardMarkup:
-    rows = [[Btn(text=f"{texts.variant_label(category, s['name'])} — от {rub(s['base_price'])}",
+    rows = [[Btn(text=f"{texts.variant_label(category, s['name'])} — от {rub(s.get('from_price', s['base_price']))}",
                  callback_data=f"svc:{s['id']}")] for s in items if s["category"] == category]
     rows.append([Btn(text="⬅️ Назад", callback_data="menu:order")])
     return _kb(rows)

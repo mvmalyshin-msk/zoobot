@@ -962,7 +962,7 @@ async def finish_profile(msg: Message, state: FSMContext, tg_user=None, pet_id: 
 # =====================================================================
 
 async def show_services(msg: Message) -> None:
-    items = await db.fetch_all("SELECT * FROM services WHERE active=1 ORDER BY id")
+    items = await pricing.with_client_price(await db.fetch_all("SELECT * FROM services WHERE active=1 ORDER BY id"))
     await msg.answer(texts.CHOOSE_SERVICE, reply_markup=kb.service_categories(items))
 
 
@@ -971,7 +971,8 @@ async def cb_category(cb: CallbackQuery) -> None:
     """Второй уровень: внутри услуги — время, уровень, приходящая или с проживанием и т. д."""
     await cb.answer()
     cat = cb.data[4:]
-    items = await db.fetch_all("SELECT * FROM services WHERE active=1 AND category=? ORDER BY id", (cat,))
+    items = await pricing.with_client_price(
+        await db.fetch_all("SELECT * FROM services WHERE active=1 AND category=? ORDER BY id", (cat,)))
     if cat not in texts.CATEGORY_TITLES or not items:
         await cb.message.answer("Эта услуга сейчас недоступна.")
         return

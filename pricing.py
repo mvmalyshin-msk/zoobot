@@ -175,3 +175,17 @@ def format_range_short(total: int) -> str:
 
 def format_range(total: int) -> str:
     return f"Ориентировочная стоимость: {format_range_short(total)}"
+
+
+async def markup_percent() -> float:
+    """Общая наценка сервиса, % (правило «always» на странице «Тарифы»)."""
+    row = await db.fetch_one(
+        "SELECT value FROM price_rules WHERE condition_type='always' AND effect_type='percent' "
+        "AND service_id IS NULL AND active=1 ORDER BY id LIMIT 1")
+    return float(row["value"]) if row else 0.0
+
+
+async def with_client_price(items: list[dict]) -> list[dict]:
+    """Добавляет каждой услуге from_price — цена «от» для клиента: база + наценка сервиса (в каталоге, в форме)."""
+    pct = await markup_percent()
+    return [{**dict(s), "from_price": round(s["base_price"] * (100 + pct) / 100)} for s in items]
