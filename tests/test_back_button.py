@@ -72,6 +72,11 @@ class BackButtonTest(unittest.IsolatedAsyncioTestCase):
         href, _ = await self.back_of("/portal")
         self.assertEqual(href, "/")
 
+    async def test_admin_can_reach_home_from_every_portal_page(self):
+        for path in ("/portal", "/portal/clients", "/portal/executors", "/portal/settings", "/portal/tariffs", "/portal/bot"):
+            _, t = await self.back_of(path, self.admin)
+            self.assertRegex(t, r'<a[^>]*href="/"[^>]*>[^<]*Главная', path)
+
     async def test_start_pages_have_no_back(self):
         for path, hdr in (("/", None), ("/portal", self.admin)):
             href, _ = await self.back_of(path, hdr)
@@ -80,3 +85,12 @@ class BackButtonTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HomeButtonTest(unittest.TestCase):
+    def test_backrow_has_back_and_home(self):
+        import brand
+        h = brand.backrow("/portal")
+        self.assertIn('href="/portal"', h)
+        self.assertIn('href="/" aria-label="Главная страница"', h)
+        self.assertIn("Главная страница</b>", h)

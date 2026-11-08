@@ -55,9 +55,17 @@ async def main():
             "protocol": "ctap2", "transport": "internal", "hasResidentKey": True, "hasUserVerification": True,
             "isUserVerified": True, "automaticPresenceSimulation": True}})
 
+        reqs = []
+        page.on("request", lambda r: reqs.append(r.url.replace(base, "")))
         await page.goto(base + "/portal/settings")
+        await page.wait_for_timeout(600)
+        check("/portal/api/passkey/options" in reqs, "параметры ключа подготовлены ещё до нажатия (иначе iPhone отказывает)")
+        n_before = reqs.count("/portal/api/passkey/options")
         check(await page.is_visible("#pkon"), "в «Вход и почта» есть кнопка «Включить вход по Face ID»")
         await page.click("#pkon")
+        await page.wait_for_timeout(300)
+        check(reqs.count("/portal/api/passkey/options") == n_before or "/portal/api/passkey/register" in reqs,
+              "нажатие сразу вызывает Face ID, а не ждёт ответа сервера")
         await page.wait_for_function("document.querySelectorAll('input[value=pk_revoke]').length === 1", timeout=15000)
         row = await db.fetch_one("SELECT uid, device FROM passkeys")
         check(row is not None and row["uid"] == 111, f"ключ создан и принят сервером: {row and dict(row)}")

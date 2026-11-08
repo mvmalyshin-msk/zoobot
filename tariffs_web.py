@@ -10,6 +10,7 @@ from aiohttp import web
 
 import db
 import portal
+import pricing
 import taxi
 
 log = logging.getLogger(__name__)
@@ -43,7 +44,8 @@ async def _body() -> str:
     services = await db.fetch_all("SELECT * FROM services ORDER BY id")
     rows = "".join(
         _form("price", f'<input type="hidden" name="id" value="{s["id"]}"><span class="tl">{e(s["name"])}'
-                       f'<small class="muted"> · за {e(s["unit"])}{"" if s["active"] else " · отключена"}</small></span>'
+                       f'<small class="muted"> · за {e(s["unit"])}{"" if s["active"] else " · отключена"} · '
+                       f'<a href="/portal/tariffs/{s["id"]}">настроить подробно</a></small></span>'
                        f'<span class="tin"><input name="price" inputmode="numeric" value="{s["base_price"]}" aria-label="Цена, ₽"> ₽</span>')
         for s in services)
     t = await taxi.get_tariff()
@@ -120,6 +122,108 @@ async def tariffs_action(request: web.Request, uid: int) -> web.Response:
     return portal._redirect(back)
 
 
+def _title(cond: str) -> str:
+    return CONDITION_TITLES.get(cond, cond)
+
+
+async def _service_body(s) -> str:
+    e = portal._e
+    rules = {r["condition_type"]: r for r in await db.fetch_all("SELECT * FROM price_rules WHERE service_id=?", (s["id"],))}
+    glob = {r["condition_type"]: r for r in await db.fetch_all("SELECT * FROM price_rules WHERE service_id IS NULL")}
+    sid = s["id"]
+    head = (f'<h1>{e(s["name"])}</h1><p class="muted">Здесь всё только для этой услуги. Своя надбавка заменяет общую с тем же '
+            f'условием; «Как у всех» возвращает общую.</p>'
+            f'<h2>Цена и доступность</h2><div class="card tcard"><form method="post" action="/portal/tariffs/{sid}" class="trow">'
+            f'<input type="hidden" name="step" value="svc"><span class="tl">Начальная стоимость за {e(s["unit"])}</span>'
+            f'<span class="tin"><input name="price" inputmode="numeric" value="{s["base_price"]}" aria-label="Цена, ₽"> ₽</span>'
+            f'<label class="on"><input type="checkbox" name="active" value="1"{" checked" if s["active"] else ""}> услуга включена</label>'
+            f'<button class="btn small">Сохранить</button></form></div>')
+    body = ""
+    for cond in pricing.CONDITIONS:
+        if cond == "night" and s["unit"] not in pricing.NIGHT_UNITS:
+            continue
+        r, g = rules.get(cond), glob.get(cond)
+        if r:
+            kind, val, on = r["effect_type"], r["value"], r["active"]
+            state = "своя"
+        else:
+            kind, val, on = (g["effect_type"], g["value"], g["active"]) if g else ("percent", 0, 0)
+            state = "как у всех" if g and g["active"] else "не действует"
+        reset = ('<button class="btn small ghost" name="step" value="sreset">Как у всех</button>' if r else "")
+        title = "Наценка (на любую цену)" if cond == "always" else _title(cond)
+        if cond == "night":
+            title = "Ночное время (22:00–07:00)"
+        body += (f'<form method="post" action="/portal/tariffs/{sid}" class="trow"><input type="hidden" name="condition" value="{cond}">'
+                 f'<span class="tl">{e(title[0].upper() + title[1:])}<small class="muted"> · {state}</small></span>'
+                 f'<select name="kind" aria-label="Тип"><option value="percent"{" selected" if kind == "percent" else ""}>%</option>'
+                 f'<option value="fixed"{" selected" if kind == "fixed" else ""}>₽</option></select>'
+                 f'<span class="tin"><input name="value" inputmode="decimal" value="{val:g}" aria-label="Размер"></span>'
+                 f'<label class="on"><input type="checkbox" name="active" value="1"{" checked" if on else ""}> действует</label>'
+                 f'<button class="btn small" name="step" value="srule">Сохранить</button>{reset}</form>')
+    return head + f'<h2>Наценка и надбавки</h2><div class="card tcard">{body}</div>'
+
+
+async def _service(request: web.Request):
+    m = re.fullmatch(r"\d{1,12}", request.match_info.get("sid", ""))
+    return await db.fetch_one("SELECT * FROM services WHERE id=?", (int(m.group()),)) if m else None
+
+
+@portal.admin_page
+async def service_page(request: web.Request, uid: int) -> web.Response:
+    s = await _service(request)
+    if s is None:
+        return portal._html_resp(portal.page("Нет такой услуги", "<h1>Услуга не найдена</h1>", "tariffs", back="/portal/tariffs"), 404)
+    page = portal.page(s["name"], await _service_body(s), "tariffs", request.query.get("m"), back="/portal/tariffs")
+    return portal._html_resp(page.replace("</style>", EXTRA_CSS + "</style>", 1))
+
+
+@portal.admin_page
+async def service_action(request: web.Request, uid: int) -> web.Response:
+    s = await _service(request)
+    if s is None:
+        return web.Response(status=404, text="Нет такой услуги")
+    form = await request.post()
+    step, back, sid = form.get("step"), f"/portal/tariffs/{s['id']}", s["id"]
+    if step == "svc":
+        price = _num(form.get("price", ""), 1, MAX_PRICE)
+        if price is None or price != int(price):
+            return portal._redirect(back, f"Цена: целое число рублей от 1 до {MAX_PRICE:,}.".replace(",", " "))
+        active = 1 if form.get("active") else 0
+        await db.execute(f"UPDATE services SET base_price=?, active=?, {db.touch()} WHERE id=?", (int(price), active, sid))
+        log.info("Тариф: админ %s услуга «%s»: %s ₽, включена=%s", uid, s["name"], int(price), active)
+        return portal._redirect(back, f"✅ {s['name']}: {int(price)} ₽" + ("" if active else ", услуга выключена"))
+    cond = str(form.get("condition", ""))
+    if cond not in pricing.CONDITIONS or (cond == "night" and s["unit"] not in pricing.NIGHT_UNITS):
+        return portal._redirect(back, "⚠️ Такого условия нет.")
+    if step == "sreset":
+        await db.execute("DELETE FROM price_rules WHERE service_id=? AND condition_type=?", (sid, cond))
+        log.info("Тариф: админ %s сбросил «%s» у «%s»", uid, cond, s["name"])
+        return portal._redirect(back, "✅ Снова как у всех.")
+    if step == "srule":
+        kind = form.get("kind")
+        if kind not in ("percent", "fixed"):
+            return portal._redirect(back, "⚠️ Выберите % или ₽.")
+        high = MAX_PERCENT if kind == "percent" else MAX_FIXED
+        value = _num(form.get("value", ""), 0, high)
+        if value is None:
+            return portal._redirect(back, f"Размер: число от 0 до {high}.")
+        active = 1 if form.get("active") else 0
+        have = await db.fetch_one("SELECT id FROM price_rules WHERE service_id=? AND condition_type=?", (sid, cond))
+        if have:
+            await db.execute(f"UPDATE price_rules SET effect_type=?, value=?, active=?, {db.touch()} WHERE id=?",
+                             (kind, value, active, have["id"]))
+        else:
+            g = await db.fetch_one("SELECT name FROM price_rules WHERE service_id IS NULL AND condition_type=? ORDER BY id LIMIT 1", (cond,))
+            name = g["name"] if g else ("Наценка" if cond == "always" else _title(cond).capitalize())
+            await db.execute("INSERT INTO price_rules (service_id, name, condition_type, effect_type, value, active) VALUES (?,?,?,?,?,?)",
+                             (sid, name, cond, kind, value, active))
+        log.info("Тариф: админ %s «%s»/%s = %s %s, действует=%s", uid, s["name"], cond, value, kind, active)
+        return portal._redirect(back, f"✅ Сохранено: {value:g}{'%' if kind == 'percent' else ' ₽'}" + ("" if active else " (выключено)"))
+    return portal._redirect(back)
+
+
 def setup(app: web.Application) -> None:
     app.router.add_get("/portal/tariffs", tariffs_page)
     app.router.add_post("/portal/tariffs", tariffs_action)
+    app.router.add_get("/portal/tariffs/{sid}", service_page)
+    app.router.add_post("/portal/tariffs/{sid}", service_action)

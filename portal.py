@@ -209,7 +209,7 @@ if(test)test.onclick=function(e){
 
 def page(title: str, body: str, active: str = "", flash: str | None = None, back: str | None = "/portal") -> str:
     nav = "".join(f'<a href="{href}" class="{"on" if key == active else ""}">{label}</a>' for key, href, label in (
-        ("orders", "/portal", "Заявки"), ("clients", "/portal/clients", "Клиенты"),
+        ("home", "/", "🏠 Главная страница"), ("orders", "/portal", "Заявки"), ("clients", "/portal/clients", "Клиенты"),
         ("executors", "/portal/executors", "Исполнители"), ("tariffs", "/portal/tariffs", "Тарифы"), ("settings", "/portal/settings", "Вход и почта"),
         ("bot", "/portal/bot", "Бот")))
     fl = f'<div class="flash">{_e(flash)}</div>' if flash else ""
@@ -218,7 +218,7 @@ def page(title: str, body: str, active: str = "", flash: str | None = None, back
             f'<title>{brand.NAME} — {_e(title)}</title>{brand.HEAD_ADMIN}<style>{CSS}</style></head><body>{ribbons.html(ribbons.ADMIN)}'
             f'<div class="top"><a href="/portal" class="brand" style="text-decoration:none"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</a>'
             f'<nav>{nav}<a href="#" id="perm" hidden>🔔 Уведомления</a><a href="/portal/logout">Выйти</a></nav></div>'
-            f'<main>{("<div class=backrow>" + brand.back(back) + "</div>") if back else ""}{fl}{body}</main><a id="newbar" class="btn" href="">.</a>{NOTIFY_JS}</body></html>')
+            f'<main>{brand.backrow(back) if back else ""}{fl}{body}</main><a id="newbar" class="btn" href="">.</a>{NOTIFY_JS}</body></html>')
 
 
 # ---------- Вход ----------
@@ -262,49 +262,70 @@ var H={'X-Zc':'1','Content-Type':'application/json'};
 function say(t){var s=document.getElementById('pkst');if(s)s.textContent=t}
 """
 
+# Общее для обеих кнопок. Главное для iPhone: Face ID вызывается СРАЗУ в нажатии (параметры подготовлены заранее),
+# иначе Safari считает, что человек ничего не нажимал, и молча отказывает. Причину отказа показываем словами.
+_PK_JS_COMMON += r"""
+function why(err){var n=(err&&err.name)||'';
+  if(n==='NotAllowedError')return 'Face ID не подтверждён или отменён. Нажмите кнопку ещё раз и посмотрите на телефон.';
+  if(n==='InvalidStateError')return 'На этом устройстве ключ уже создан.';
+  if(n==='SecurityError')return 'Браузер не разрешил ключ для этого адреса. Откройте портал по адресу https://… без переходов.';
+  if(n==='NotSupportedError')return 'На этом устройстве нет Face ID для сайтов. В «Настройках» iPhone включите Face ID и код-пароль.';
+  return 'Не получилось ('+(n||'ошибка')+'). Войдите по коду.'}
+function report(where,err){try{fetch('/portal/passkey/err',{method:'POST',headers:H,credentials:'same-origin',
+  body:JSON.stringify({where:where,name:(err&&err.name)||String(err||'')})})}catch(x){}}
+function prep(url,fix){var box={pk:null};
+  function load(){return fetch(url,{method:'POST',headers:H,credentials:'same-origin'}).then(function(r){return r.json()}).then(function(o){
+    var pk=o.publicKey;pk.challenge=d(pk.challenge);if(fix)fix(pk);box.pk=pk;box.at=Date.now()}).catch(function(){box.pk=null})}
+  box.load=load;box.take=function(){var pk=box.pk;box.pk=null;return(pk&&Date.now()-box.at<240000)?pk:null};
+  load();setInterval(function(){if(!box.pk||Date.now()-box.at>200000)load()},30000);return box}
+"""
+
 # Кнопка на странице входа: вход по ключу, созданному в «Вход и почта». Показывается там, где браузер умеет ключи доступа.
-LOGIN_PASSKEY_JS = ("<script>(function(){" + _PK_JS_COMMON + """
+LOGIN_PASSKEY_JS = ("<script>(function(){" + _PK_JS_COMMON + r"""
 var b=document.getElementById('pklogin');
 if(!b||!window.PublicKeyCredential||!navigator.credentials)return;
 b.hidden=false;
 var has=false;try{has=!!localStorage.getItem('zc_passkey')}catch(x){}
 if(!has)b.textContent='Войти по Face ID (если включён на этом устройстве)';
+var box=prep('/portal/passkey/options');
 b.onclick=function(ev){
-  ev.preventDefault();say('Подтвердите Face ID или отпечаток…');
-  fetch('/portal/passkey/options',{method:'POST',headers:H,credentials:'same-origin'}).then(function(r){return r.json()}).then(function(o){
-    var pk=o.publicKey;pk.challenge=d(pk.challenge);
-    return navigator.credentials.get({publicKey:pk});
-  }).then(function(c){
+  ev.preventDefault();
+  var pk=box.take();
+  if(!pk){say('Готовлю вход… нажмите ещё раз через секунду.');box.load();return}
+  say('Подтвердите Face ID или отпечаток…');
+  navigator.credentials.get({publicKey:pk}).then(function(c){
     var r=c.response;
     return fetch('/portal/passkey/login',{method:'POST',headers:H,credentials:'same-origin',body:JSON.stringify({id:e(c.rawId),
       response:{clientDataJSON:e(r.clientDataJSON),authenticatorData:e(r.authenticatorData),signature:e(r.signature)}})});
   }).then(function(r){
     if(r.ok){location.href='/portal';return}
-    say(r.status===429?'Слишком много попыток. Попробуйте позже или войдите по коду.':'Не получилось войти по Face ID. Войдите по коду.');
-  }).catch(function(){say('Вход по Face ID отменён. Можно войти по коду.')});
+    box.load();
+    say(r.status===429?'Слишком много попыток. Попробуйте позже или войдите по коду.':'Этот ключ не подошёл. Войдите по коду и включите Face ID заново в «Вход и почта».');
+  }).catch(function(err){box.load();report('login',err);
+    say(has?why(err):'На этом устройстве Face ID для портала ещё не включён: войдите по коду и включите в «Вход и почта».')});
 };
 })();</script>""")
 
 # Карточка в «Вход и почта»: создать ключ на этом устройстве.
-PASSKEY_JS = ("<script>(function(){" + _PK_JS_COMMON + """
+PASSKEY_JS = ("<script>(function(){" + _PK_JS_COMMON + r"""
 var b=document.getElementById('pkon');
 if(!b)return;
 if(!window.PublicKeyCredential||!navigator.credentials){b.hidden=true;say('Этот браузер не умеет Face ID для сайтов. На iPhone откройте портал в Safari или в приложении с экрана «Домой».');return}
+var box=prep('/portal/api/passkey/options',function(pk){pk.user.id=d(pk.user.id);(pk.excludeCredentials||[]).forEach(function(c){c.id=d(c.id)})});
 b.onclick=function(ev){
-  ev.preventDefault();say('Подтвердите Face ID или отпечаток…');
-  fetch('/portal/api/passkey/options',{method:'POST',headers:H,credentials:'same-origin'}).then(function(r){return r.json()}).then(function(o){
-    var pk=o.publicKey;pk.challenge=d(pk.challenge);pk.user.id=d(pk.user.id);
-    (pk.excludeCredentials||[]).forEach(function(c){c.id=d(c.id)});
-    return navigator.credentials.create({publicKey:pk});
-  }).then(function(c){
+  ev.preventDefault();
+  var pk=box.take();
+  if(!pk){say('Готовлю ключ… нажмите ещё раз через секунду.');box.load();return}
+  say('Подтвердите Face ID или отпечаток…');
+  navigator.credentials.create({publicKey:pk}).then(function(c){
     var r=c.response;
     return fetch('/portal/api/passkey/register',{method:'POST',headers:H,credentials:'same-origin',body:JSON.stringify({id:e(c.rawId),
       response:{clientDataJSON:e(r.clientDataJSON),attestationObject:e(r.attestationObject)}})});
   }).then(function(r){
-    if(!r.ok){say('Не получилось включить Face ID. Попробуйте ещё раз.');return}
+    if(!r.ok){box.load();say('Сервер не принял ключ. Нажмите кнопку ещё раз.');return}
     try{localStorage.setItem('zc_passkey','1')}catch(x){}
     say('Face ID включён на этом устройстве ✅');setTimeout(function(){location.reload()},900);
-  }).catch(function(){say('Включение Face ID отменено.')});
+  }).catch(function(err){box.load();report('register',err);say(why(err))});
 };
 })();</script>""")
 
@@ -319,7 +340,7 @@ def login_page(msg: str | None = None, code_form: bool = False) -> str:
     return (f'<!doctype html><html lang="ru"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{brand.NAME} — вход</title>'
             f'{brand.HEAD_ADMIN}<style>{CSS}</style></head><body>{ribbons.html(ribbons.ADMIN)}<main style="max-width:460px">'
-            f'<div class="backrow">{brand.back("/")}</div>'
+            f'{brand.backrow("/")}'
             f'<div style="text-align:center;font-size:26px;margin:18px 0 6px">{brand.LOGO}</div>'
             f'<h1 style="text-align:center">Вход в портал</h1>{fl}{code}'
             f'<div class="card" style="padding:16px;margin-bottom:12px"><button class="btn" id="pklogin" hidden style="width:100%">Войти по Face ID</button>'
@@ -786,6 +807,17 @@ async def passkey_options(request: web.Request) -> web.Response:
                                             "userVerification": "required", "timeout": 60000}})
 
 
+async def passkey_err(request: web.Request) -> web.Response:
+    """Телефон сообщает, почему Face ID не сработал (только имя ошибки), — чтобы причину видно было в журнале Railway."""
+    if not _same_origin(request) or request.headers.get("X-Zc") != "1" or _limit(_pk_hits, _ip(request), 30, 600):
+        return web.json_response({"error": "limit"}, status=429)
+    body = await _pk_body(request) or {}
+    where = re.sub(r"[^a-z]", "", str(body.get("where", "")).lower())[:12]
+    name = re.sub(r"[^A-Za-z]", "", str(body.get("name", "")))[:40]
+    log.info("Face ID на устройстве (%s): ошибка %s; %s", where, name, webchat.device_label(request.headers.get("User-Agent")))
+    return web.json_response({"ok": True})
+
+
 async def passkey_login(request: web.Request) -> web.Response:
     if not _same_origin(request):
         return web.json_response({"error": "origin"}, status=403)
@@ -825,16 +857,36 @@ async def api_push_test(request: web.Request, uid: int) -> web.Response:
 
 # ---------- Настройки входа: почта ----------
 
+def _mail_card(email: str | None) -> str:
+    """Что нужно для писем с кодом: чего не хватает в Railway, где взять пароль приложения, кнопка проверки."""
+    import os
+    miss = mailer.missing()
+    if not miss:
+        test = ('<form method="post" action="/portal/settings" style="margin-top:8px"><input type="hidden" name="step" value="mailtest">'
+                '<button class="btn">Проверить почту</button></form>') if email else \
+               '<p class="muted">Добавьте почту для входа выше — и здесь появится проверка.</p>'
+        return (f'<div class="card" style="padding:14px;margin-top:10px"><b>Отправка писем с кодом</b>'
+                f'<p>Настроена ✅ Письма уходят с адреса из SMTP_USER.</p>{test}</div>')
+    pid, sid = os.getenv("RAILWAY_PROJECT_ID"), os.getenv("RAILWAY_SERVICE_ID")
+    rw = (f'<a href="https://railway.com/project/{_e(pid)}/service/{_e(sid)}/variables" target="_blank" rel="noopener">'
+          f'Railway → Variables</a>') if pid and sid else "Railway → ваш сервис → Variables"
+    helper = mailer.password_help()
+    how = (f'<li>Создайте пароль приложения: <a href="{_e(helper[1])}" target="_blank" rel="noopener">страница {_e(helper[0])}</a> '
+           f'(нужна двухэтапная проверка в аккаунте). Название любое, например «Зооконсьерж».</li>') if helper else \
+          '<li>В настройках вашей почты создайте «пароль приложения» (не обычный пароль от ящика).</li>'
+    return (f'<div class="card" style="padding:14px;margin-top:10px"><b>Отправка писем с кодом</b>'
+            f'<p>Пока не настроена. Не хватает в {rw}: <b>{_e(", ".join(miss))}</b>.</p>'
+            f'<ol style="padding-left:20px;margin:0">{how}'
+            f'<li>Откройте {rw}, нажмите «New Variable», имя <b>SMTP_PASSWORD</b>, в значение вставьте этот пароль и сохраните.</li>'
+            f'<li>Подождите минуту, пока сервис перезапустится, и вернитесь сюда: появится кнопка «Проверить почту».</li></ol>'
+            f'<p class="muted">Пароль вставляйте только в Railway: в чат и на сайт его не отправляйте.</p></div>')
+
+
 @admin_page
 async def settings_page(request: web.Request, uid: int) -> web.Response:
     email = await admin_email(uid)
     pending = await db.fetch_one("SELECT value FROM kv WHERE key=?", (f"admin_email_pending:{uid}",))
-    if mailer.configured():
-        mail_state = "Почта для писем настроена ✅"
-    else:
-        mail_state = ("Почта для писем ещё не настроена. Добавьте в Railway → Variables: SMTP_HOST (например, smtp.yandex.ru), "
-                      "SMTP_USER (адрес ящика, с которого придут коды), SMTP_PASSWORD (пароль приложения из настроек почты). "
-                      "Это бесплатно.")
+    mail_state = "Почта для писем настроена ✅" if mailer.configured() else "Почта для писем ещё не настроена (шаги ниже)."
     confirm = ""
     if pending:
         confirm = (f'<form method="post" action="/portal/settings" class="card" style="padding:14px;margin-top:10px">'
@@ -880,6 +932,7 @@ async def settings_page(request: web.Request, uid: int) -> web.Response:
                  f'<button class="btn" id="pushon" type="button">Включить на этом устройстве</button> '
                  f'<button class="btn" id="pushtest" type="button">Проверить уведомления</button>'
                  f'<p id="pushst" class="muted" style="margin-top:8px"></p></div>')
+    mail_card = _mail_card(email)
     body = (f'<h1>Вход и почта</h1><div class="card pre">Вы вошли как администратор (Telegram ID {uid}).\n'
             f'Почта для входа: {_e(email) if email else "не добавлена"}\n{_e(mail_state)}</div>'
             f'<form method="post" action="/portal/settings" class="card" style="padding:14px;margin-top:10px">'
@@ -887,7 +940,7 @@ async def settings_page(request: web.Request, uid: int) -> web.Response:
             f'<input id="email" name="email" type="email" required value="{_e(email or "")}" style="width:100%">'
             f'<button class="btn" style="margin-top:10px">Прислать код для проверки</button></form>{confirm}'
             f'<p class="muted">После проверки почты входите в портал с любого устройства без VPN: «Прислать код на почту».</p>'
-            + push_card + passkey_card + devices)
+            + mail_card + push_card + passkey_card + devices)
     return _html_resp(page("Вход и почта", body, "settings", request.query.get("m")))
 
 
@@ -905,6 +958,14 @@ async def settings_action(request: web.Request, uid: int) -> web.Response:
         code = await _issue_code(uid, "email_reg")
         sent = await mailer.send(email, f"{brand.NAME}: подтверждение почты", f"Код подтверждения почты: {code}\nДействует 10 минут.")
         return _redirect("/portal/settings", "Код отправлен на почту." if sent else "Письмо не ушло: проверьте SMTP в Railway.")
+    if form.get("step") == "mailtest":
+        email = await admin_email(uid)
+        if not email:
+            return _redirect("/portal/settings", "Сначала добавьте почту для входа.")
+        ok, why = await mailer.send_checked(email, f"{brand.NAME}: проверка почты",
+                                            "Если вы видите это письмо, отправка писем с кодом входа настроена.")
+        return _redirect("/portal/settings", f"Письмо отправлено на {email} ✅ Проверьте входящие и «Спам»." if ok
+                         else f"Письмо не ушло: {why}.")
     if form.get("step") == "pk_revoke":
         rid = re.sub(r"\D", "", str(form.get("id", "")))
         if rid:
@@ -954,6 +1015,7 @@ def setup(app: web.Application) -> None:
     app.router.add_post("/portal/api/passkey/register", api_passkey_register)
     app.router.add_post("/portal/passkey/options", passkey_options)
     app.router.add_post("/portal/passkey/login", passkey_login)
+    app.router.add_post("/portal/passkey/err", passkey_err)
     import tariffs_web
     tariffs_web.setup(app)
     app.router.add_get("/portal/settings", settings_page)

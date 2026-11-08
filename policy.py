@@ -146,7 +146,7 @@ def render_html(op: dict) -> str:
         f"<title>{e(TITLE)}</title>{brand.HEAD}"
         "<style>body{font:17px/1.55 var(--font);max-width:720px;margin:0 auto;padding:16px 16px 48px}"
         "h1{font-size:1.4rem}h2{font-size:1.1rem;margin-top:1.6em}.meta{color:var(--mute)}</style></head><body>"
-        + f'<div class="backrow">{brand.back("/")}</div>' + "".join(body) + "</body></html>"
+        + f'{brand.backrow("/")}' + "".join(body) + "</body></html>"
     )
 
 
