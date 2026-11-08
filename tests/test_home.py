@@ -35,7 +35,7 @@ class HomeTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_home_text_and_services(self):
         t = await self.home()
-        for must in ("Zo Concierge", "подберёт подходящего специалиста", "Выгул", "Зооняня", "Передержка", "Зоотакси",
+        for must in ("Зооконсьерж", "подберёт подходящего специалиста", "Выгул", "Зооняня", "Передержка", "Зоотакси",
                      "несколько вариантов по цене и уровню исполнения"):
             self.assertIn(must, t)
 

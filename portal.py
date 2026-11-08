@@ -207,10 +207,10 @@ if(test)test.onclick=function(e){
 })();</script>"""
 
 
-def page(title: str, body: str, active: str = "", flash: str | None = None) -> str:
+def page(title: str, body: str, active: str = "", flash: str | None = None, back: str | None = "/portal") -> str:
     nav = "".join(f'<a href="{href}" class="{"on" if key == active else ""}">{label}</a>' for key, href, label in (
         ("orders", "/portal", "Заявки"), ("clients", "/portal/clients", "Клиенты"),
-        ("executors", "/portal/executors", "Исполнители"), ("settings", "/portal/settings", "Вход и почта"),
+        ("executors", "/portal/executors", "Исполнители"), ("tariffs", "/portal/tariffs", "Тарифы"), ("settings", "/portal/settings", "Вход и почта"),
         ("bot", "/portal/bot", "Бот")))
     fl = f'<div class="flash">{_e(flash)}</div>' if flash else ""
     return (f'<!doctype html><html lang="ru"><head><meta charset="utf-8">'
@@ -218,7 +218,7 @@ def page(title: str, body: str, active: str = "", flash: str | None = None) -> s
             f'<title>{brand.NAME} — {_e(title)}</title>{brand.HEAD_ADMIN}<style>{CSS}</style></head><body>{ribbons.html(ribbons.ADMIN)}'
             f'<div class="top"><a href="/portal" class="brand" style="text-decoration:none"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</a>'
             f'<nav>{nav}<a href="#" id="perm" hidden>🔔 Уведомления</a><a href="/portal/logout">Выйти</a></nav></div>'
-            f'<main>{fl}{body}</main><a id="newbar" class="btn" href="">.</a>{NOTIFY_JS}</body></html>')
+            f'<main>{("<div class=backrow>" + brand.back(back) + "</div>") if back else ""}{fl}{body}</main><a id="newbar" class="btn" href="">.</a>{NOTIFY_JS}</body></html>')
 
 
 # ---------- Вход ----------
@@ -319,6 +319,7 @@ def login_page(msg: str | None = None, code_form: bool = False) -> str:
     return (f'<!doctype html><html lang="ru"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{brand.NAME} — вход</title>'
             f'{brand.HEAD_ADMIN}<style>{CSS}</style></head><body>{ribbons.html(ribbons.ADMIN)}<main style="max-width:460px">'
+            f'<div class="backrow">{brand.back("/")}</div>'
             f'<div style="text-align:center;font-size:26px;margin:18px 0 6px">{brand.LOGO}</div>'
             f'<h1 style="text-align:center">Вход в портал</h1>{fl}{code}'
             f'<div class="card" style="padding:16px;margin-bottom:12px"><button class="btn" id="pklogin" hidden style="width:100%">Войти по Face ID</button>'
@@ -451,7 +452,7 @@ async def list_page(request: web.Request, uid: int) -> web.Response:
                     for k, v in (("all", "Все источники"), *SOURCES.items()))
     body = (f'<h1>Заявки</h1><div class="tabs">{tabs}</div><div class="tabs">{stabs}</div>'
             f'<div class="list">{"".join(_row_html(r) for r in rows) or "<p class=muted>Пока пусто.</p>"}</div>')
-    return _html_resp(page("Заявки", body, "orders", request.query.get("m")))
+    return _html_resp(page("Заявки", body, "orders", request.query.get("m"), back=None))
 
 
 def _actions(o: dict, execs: list[dict], room_open: bool) -> str:
@@ -953,6 +954,8 @@ def setup(app: web.Application) -> None:
     app.router.add_post("/portal/api/passkey/register", api_passkey_register)
     app.router.add_post("/portal/passkey/options", passkey_options)
     app.router.add_post("/portal/passkey/login", passkey_login)
+    import tariffs_web
+    tariffs_web.setup(app)
     app.router.add_get("/portal/settings", settings_page)
     app.router.add_post("/portal/settings", settings_action)
 

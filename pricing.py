@@ -61,7 +61,12 @@ async def _pet_other(service: dict, p: dict) -> bool:
     return p.get("pet_species") == "другое"
 
 
+async def _always(service: dict, p: dict) -> bool:
+    return True
+
+
 CONDITIONS = {
+    "always": _always,
     "pet_danger": _pet_danger,
     "pet_notes": _pet_notes,
     "weekend": _weekend,

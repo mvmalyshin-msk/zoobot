@@ -7,6 +7,7 @@
 """
 import html
 
+import brand
 import texts
 
 SERVICE = "Зооконсьерж"
@@ -142,10 +143,10 @@ def render_html(op: dict) -> str:
     return (
         "<!doctype html>\n<html lang=\"ru\"><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        f"<title>{e(TITLE)}</title>"
-        "<style>:root{color-scheme:light dark}body{font:16px/1.55 -apple-system,system-ui,sans-serif;"
-        "max-width:720px;margin:0 auto;padding:16px 16px 48px}h1{font-size:1.4rem}h2{font-size:1.1rem;margin-top:1.6em}"
-        ".meta{opacity:.7}</style></head><body>" + "".join(body) + "</body></html>"
+        f"<title>{e(TITLE)}</title>{brand.HEAD}"
+        "<style>body{font:17px/1.55 var(--font);max-width:720px;margin:0 auto;padding:16px 16px 48px}"
+        "h1{font-size:1.4rem}h2{font-size:1.1rem;margin-top:1.6em}.meta{color:var(--mute)}</style></head><body>"
+        + f'<div class="backrow">{brand.back("/")}</div>' + "".join(body) + "</body></html>"
     )
 
 

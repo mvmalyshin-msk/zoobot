@@ -177,6 +177,12 @@ MIGRATIONS: dict[int, str] = {
     );
     CREATE INDEX IF NOT EXISTS idx_passkeys_uid ON passkeys(uid);
     """,
+    # 19: общая наценка сервиса (в процентах, по умолчанию 0 — цены не меняются); правится на странице «Тарифы» портала
+    19: """
+INSERT INTO price_rules (service_id, name, condition_type, effect_type, value, sort_order)
+SELECT NULL, 'Наценка сервиса', 'always', 'percent', 0, 5
+WHERE NOT EXISTS (SELECT 1 FROM price_rules WHERE condition_type='always');
+""",
     # 14: шаги диалога (FSM) — в базе, чтобы переживать перезапуск бота (см. fsm_store.py)
     14: """
     CREATE TABLE IF NOT EXISTS fsm (

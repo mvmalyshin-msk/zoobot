@@ -22,6 +22,7 @@ from aiogram.methods import (AnswerCallbackQuery, DeleteMessage, EditMessageRepl
 from aiogram.types import (Chat, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove)
 from aiohttp import web
 
+import brand
 import db
 import ribbons
 from config import config
@@ -354,6 +355,7 @@ def _ui(name: str) -> str:
 def _chat_html(admin: bool) -> str:
     html = (_ui("chat.html").replace("__TG_URL__", f"https://t.me/{config.bot_username}")
             .replace("__RIBBON__", ribbons.html(ribbons.ADMIN if admin else ribbons.CLIENT))
+            .replace("__BACK__", brand.back("/portal" if admin else "/", compact=True))
             .replace("__API__", "/portal/bot" if admin else "/chat")
             .replace("__LOGOUT__", "/portal/logout" if admin else "/chat/logout"))
     if admin:  # админский и клиентский интерфейсы не смешиваем: «Кабинет» — клиентский
@@ -395,8 +397,8 @@ async def page_login(request: web.Request) -> web.Response:
                    if n == "portal" else ("Ваш кабинет", "Нажмите кнопку, чтобы открыть кабинет Зооконсьерж на этом телефоне."))
     page = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
             f"<title>{brand.NAME} — вход</title>{brand.HEAD_ADMIN if n == 'portal' else brand.HEAD}<body>{ribbons.html(ribbons.ADMIN if n == 'portal' else ribbons.CLIENT)}"
-            "<div style='max-width:420px;margin:10vh auto;padding:16px'>"
-            f"<div style='text-align:center;font-size:26px'>{brand.LOGO}</div>"
+            "<div style='max-width:420px;margin:6vh auto;padding:16px'>"
+            f"<div class=backrow>{brand.back('/')}</div><div style='text-align:center;font-size:26px'>{brand.LOGO}</div>"
             f"<h2 style='text-align:center'>{title}</h2><p>{text}</p>"
             f"<form method=post action=/chat/login><input type=hidden name=t value='{t}'><input type=hidden name=n value='{n}'>"
             "<button class='btn' style='width:100%'>Войти</button></form></div></body>")
