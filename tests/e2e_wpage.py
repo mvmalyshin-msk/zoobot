@@ -16,7 +16,7 @@ from playwright.async_api import async_playwright  # noqa: E402
 import webserver  # noqa: E402
 
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
-TG_STUB = """window.Telegram={WebApp:{ready(){},expand(){},sendData(d){window.__sent=d}}};"""
+TG_STUB = """window.Telegram={WebApp:{platform:"ios",ready(){},expand(){},sendData(d){window.__sent=d}}};"""
 PHOTON = {"features": [
     {"geometry": {"coordinates": [37.3, 55.9]}, "properties": {"street": "Железнодорожная улица", "housenumber": "33",
                                                                "district": "Сходня", "city": "Химки", "state": "Московская область"}},
@@ -64,7 +64,7 @@ async def main():
             else:
                 await r.abort()
         await pg.route("**/*", route)
-        await pg.goto(f"http://127.0.0.1:{port}/")
+        await pg.goto(f"http://127.0.0.1:{port}/map")
         await pg.wait_for_selector(".leaflet-container")
 
         check("кнопка «Выбрать» выключена, пока адрес не выбран", await pg.is_disabled("#ok"))

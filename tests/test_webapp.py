@@ -61,7 +61,7 @@ class Server(unittest.IsolatedAsyncioTestCase):
         await self.client.close()
 
     async def test_index(self):
-        r = await self.client.get("/")
+        r = await self.client.get("/map")
         self.assertEqual(r.status, 200)
         self.assertIn("text/html", r.headers["Content-Type"])
         self.assertIn("telegram-web-app.js", await r.text())
@@ -77,7 +77,7 @@ class Server(unittest.IsolatedAsyncioTestCase):
         self.assertIn(r.status, (403, 404))
 
     async def test_no_cache_on_index(self):
-        r = await self.client.get("/")
+        r = await self.client.get("/map")
         self.assertIn("no-cache", r.headers.get("Cache-Control", ""))
 
 

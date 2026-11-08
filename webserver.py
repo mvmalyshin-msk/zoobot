@@ -10,6 +10,7 @@ from pathlib import Path
 from aiohttp import web
 
 import cabinet
+from config import config
 import policy
 import portal
 import webchat
@@ -20,9 +21,15 @@ log = logging.getLogger(__name__)
 WEBAPP_DIR = Path(__file__).parent / "webapp"
 
 
-async def _index(request: web.Request) -> web.Response:
-    # no-cache: после обновления бота клиенты сразу видят новую страницу
+async def _map(request: web.Request) -> web.Response:
+    # страница карты (мини-приложение выбора адреса); no-cache: после обновления бота клиенты сразу видят новую страницу
     return web.FileResponse(WEBAPP_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+
+
+async def _index(request: web.Request) -> web.Response:
+    """Главная: описание сервиса и три входа для заявки. Лёгкая страница без внешних скриптов."""
+    page = (WEBAPP_DIR / "home.html").read_text(encoding="utf-8").replace("__BOT__", config.bot_username)
+    return web.Response(text=page, content_type="text/html", headers={"Cache-Control": "no-cache"})
 
 
 async def _health(request: web.Request) -> web.Response:
@@ -62,6 +69,7 @@ async def _touch_icon(request: web.Request) -> web.Response:
 def make_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/", _index)
+    app.router.add_get("/map", _map)
     app.router.add_get("/healthz", _health)
     app.router.add_get("/policy", _policy)
     app.router.add_get("/request", webform.get_form)
