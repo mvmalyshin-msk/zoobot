@@ -16,6 +16,7 @@ a{color:var(--boarding)}
 .brand{display:inline-flex;align-items:center;gap:.35em;font-weight:700;letter-spacing:.01em;text-decoration:none;color:var(--ink)}
 .brand .zoo{background:var(--coral);color:#fff;border-radius:var(--pill);padding:.05em .55em .1em}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
+.strap{text-align:center;margin:6px 0 14px}.strap p{margin:0 0 8px;color:var(--mute);font-size:.95rem}.strap .chips{justify-content:center}
 .chip{display:inline-block;border-radius:var(--pill);padding:.15em .7em;color:#fff;font-weight:700;font-size:.85rem}
 .chip.walk{background:var(--walk)}.chip.nanny{background:var(--nanny)}.chip.boarding{background:var(--boarding)}.chip.taxi{background:var(--taxi)}
 .btn{display:inline-block;font:700 1rem var(--font);border:0;border-radius:var(--pill);padding:.75em 1.3em;background:var(--coral);color:#fff;cursor:pointer;text-decoration:none;text-align:center}
