@@ -1236,6 +1236,14 @@ async def main():
     ok(any(m["to"] == REG and "Регистрация подтверждена через Telegram" in m["text"] for m in r),
        "после регистрации клиент получает подтверждение в Telegram")
 
+    print("Аналитика бота")
+    n_btn = (await db.fetch_one("SELECT COUNT(*) AS n FROM analytics_events WHERE source='bot' AND type='btn'"))["n"]
+    n_cmd = (await db.fetch_one("SELECT COUNT(*) AS n FROM analytics_events WHERE source='bot' AND type='cmd' AND target='/start'"))["n"]
+    ok(n_btn > 20 and n_cmd >= 2, f"нажатия кнопок и команды клиентов посчитаны ({n_btn} нажатий, {n_cmd} × /start)")
+    ok(not await db.fetch_one("SELECT 1 AS x FROM analytics_events WHERE vid='tg:111'"), "действия администратора не считаются")
+    ok(not await db.fetch_one("SELECT 1 AS x FROM analytics_events WHERE target LIKE '%Рита%' OR target LIKE '%Барон%'"),
+       "тексты сообщений клиентов в аналитику не попадают")
+
     print("\nВСЕ ПРОВЕРКИ ПРОЙДЕНЫ")
 
 

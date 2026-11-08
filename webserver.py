@@ -82,6 +82,8 @@ def make_app() -> web.Application:
     webchat.setup(app)
     cabinet.setup(app)
     portal.setup(app)
+    import analytics
+    analytics.setup(app)
     import phoneverify
     phoneverify.setup(app)
     app.router.add_static("/vendor/", WEBAPP_DIR / "vendor", follow_symlinks=False)
