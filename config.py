@@ -10,7 +10,8 @@ load_dotenv()
 
 def _admin_ids() -> set[int]:
     raw = os.getenv("ADMIN_IDS", "")
-    return {int(x) for x in raw.replace(" ", "").split(",") if x}
+    ids = [int(x) for x in raw.replace(" ", "").split(",") if x]
+    return set(ids[:1])  # администратор один — первый в списке; остальные id не получают доступа
 
 
 @dataclass(frozen=True)
