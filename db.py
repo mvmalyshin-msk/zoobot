@@ -183,6 +183,14 @@ INSERT INTO price_rules (service_id, name, condition_type, effect_type, value, s
 SELECT NULL, 'Наценка сервиса', 'always', 'percent', 0, 5
 WHERE NOT EXISTS (SELECT 1 FROM price_rules WHERE condition_type='always');
 """,
+    # 20: заявка с сайта помнит гостя (чат с админом), устройство и IP; сессия — последний IP и время визита
+    20: """
+    ALTER TABLE web_requests ADD COLUMN web_uid INTEGER;
+    ALTER TABLE web_requests ADD COLUMN ip TEXT;
+    ALTER TABLE web_requests ADD COLUMN device TEXT;
+    ALTER TABLE web_sessions ADD COLUMN ip TEXT;
+    ALTER TABLE web_sessions ADD COLUMN seen_at TEXT;
+    """,
     # 14: шаги диалога (FSM) — в базе, чтобы переживать перезапуск бота (см. fsm_store.py)
     14: """
     CREATE TABLE IF NOT EXISTS fsm (

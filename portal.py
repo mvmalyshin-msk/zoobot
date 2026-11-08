@@ -600,12 +600,20 @@ async def request_page(request: web.Request, uid: int) -> web.Response:
                   '<label for="cnote">Причина (по желанию)</label>'
                   '<input id="cnote" name="note" maxlength="1000" style="width:100%">'
                   '<button class="btn small" name="cancel" value="1" style="margin-top:10px;background:#d62b2b">❌ Отменить заявку</button></form>')
-    body = (f'<h1>Заявка с сайта №{r["id"]} <span class="src">{_e(site)}</span></h1><div class="card pre">{_e(info)}</div>'
-            f'<div class="actions"><a class="btn small" href="tel:{_e(r["phone"])}">📞 Позвонить</a>'
+    who = [f"Устройство: {r['device'] or '—'}", f"IP: {r['ip'] or '—'}"]
+    same = await db.fetch_all("SELECT id, device, ip, created_at FROM web_requests WHERE phone=? AND id<>? ORDER BY id DESC LIMIT 10",
+                              (r["phone"], r["id"]))
+    others = "".join(f'<a class="src" href="/portal/request/{x["id"]}">№{x["id"]} · {_e(x["device"] or "—")} · {_e(x["ip"] or "—")}</a> '
+                     for x in same)
+    same_html = (f'<h2>Другие заявки с этого номера</h2><div class="chips">{others}</div>'
+                 f'<p class="muted" style="font-size:14px">Устройство и IP помогают отличить клиентов: у каждого браузера свой чат.</p>') if same else ""
+    chat = (f'<a class="btn small" href="/portal/chat/{r["web_uid"]}">💬 Чат с клиентом</a>' if r["web_uid"] else "")
+    body = (f'<h1>Заявка с сайта №{r["id"]} <span class="src">{_e(site)}</span></h1><div class="card pre">{_e(info)}\n{_e(chr(10).join(who))}</div>'
+            f'<div class="actions">{chat}<a class="btn small" href="tel:{_e(r["phone"])}">📞 Позвонить</a>'
             f'<a class="btn small ghost" href="sms:{_e(r["phone"])}">✉️ СМС</a></div>'
             f'<form method="post" class="card" style="padding:14px"><label for="status">Статус</label><select id="status" name="status">{opts}</select>'
             f'<label for="note">Заметка</label><textarea id="note" name="note" maxlength="1000" style="width:100%;min-height:80px">{_e(r["admin_note"])}</textarea>'
-            f'<button class="btn" style="margin-top:10px">Сохранить</button></form>' + cancel)
+            f'<button class="btn" style="margin-top:10px">Сохранить</button></form>' + cancel + same_html)
     return _html_resp(page(f"Заявка №{r['id']}", body, "orders", request.query.get("m")))
 
 
