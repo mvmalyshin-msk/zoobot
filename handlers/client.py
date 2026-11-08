@@ -44,7 +44,6 @@ class Profile(StatesGroup):
     pet_size = State()
     pet_traits = State()
     pet_notes = State()
-    contact = State()
     recognize = State()
 
 
@@ -284,7 +283,6 @@ async def show_profile(msg: Message, tg_user) -> None:
         f"Телефон: {user['phone'] or '—'}",
         f"Район: {user['district'] or '—'}",
         f"Адрес: {user['address'] or '—'}",
-        "Связь: " + texts.CONTACT_LABELS.get(user["contact_pref"] or "telegram", "Telegram"),
         "",
         "Питомцы:",
     ]
@@ -301,7 +299,6 @@ async def show_profile(msg: Message, tg_user) -> None:
 async def show_settings(msg: Message, tg_user) -> None:
     user = await repo.get_or_create_user(tg_user)
     text = ("⚙️ Настройки\n"
-            "Связь: " + texts.CONTACT_LABELS.get(user["contact_pref"] or "telegram", "Telegram") + "\n"
             "Уведомления о заказах: включены ✅\n"
             "Акции и новости: " + ("включены ✅" if user["marketing_consent"] else "выключены"))
     import webchat
@@ -730,8 +727,7 @@ async def _address_done(msg: Message, state: FSMContext, target: str, label: str
         if district:
             fields["district"] = district
         await repo.update_user(user["id"], **fields)
-        await state.set_state(Profile.contact)
-        await msg.answer(texts.ASK_CONTACT, reply_markup=kb.contact_pref())
+        await _after_address_block(msg, state, tg_user)
         return
     point = [lat, lon] if lat is not None and lon is not None else None  # координаты нужны такси для маршрута
     if target in ("a", "edit"):
@@ -748,33 +744,13 @@ async def _address_done(msg: Message, state: FSMContext, target: str, label: str
 
 
 async def _after_address_block(msg: Message, state: FSMContext, tg_user) -> None:
-    """Имя, телефон, адрес и способ связи есть: если питомец уже известен — готово, иначе спрашиваем про питомца."""
+    """Имя, телефон и адрес есть: если питомец уже известен — готово, иначе спрашиваем про питомца."""
     user = await repo.get_or_create_user(tg_user)
     if await repo.list_pets(user["id"]):
         await finish_profile(msg, state, tg_user)
     else:
         await state.set_state(Profile.pet_name)
         await msg.answer(texts.ASK_PET_NAME, reply_markup=ReplyKeyboardRemove())
-
-
-@router.callback_query(F.data.startswith("cp:"))
-async def cb_contact(cb: CallbackQuery, state: FSMContext) -> None:
-    """Предпочтительный способ связи: при заполнении профиля и по кнопке в профиле."""
-    await cb.answer()
-    arg = cb.data[3:]
-    if arg == "menu":
-        await cb.message.answer(texts.ASK_CONTACT, reply_markup=kb.contact_pref())
-        return
-    if arg not in texts.CONTACT_LABELS:
-        await cb.message.answer(texts.STALE)
-        return
-    user = await repo.get_or_create_user(cb.from_user)
-    await repo.update_user(user["id"], contact_pref=arg)
-    await cb.message.answer(texts.CONTACT_SAVED.format(how=texts.CONTACT_LABELS[arg]))
-    if await state.get_state() == Profile.contact.state:
-        await _after_address_block(cb.message, state, cb.from_user)
-    else:
-        await show_settings(cb.message, cb.from_user)
 
 
 @router.message(Profile.pet_name, F.text)
@@ -1125,8 +1101,8 @@ async def msg_rider_phone(m: Message, state: FSMContext) -> None:
 
 
 def min_ahead(service) -> timedelta:
-    """Запас до начала: такси можно заказать почти сразу, для остальных услуг нужно время найти исполнителя."""
-    return timedelta(minutes=30) if service["category"] == "taxi" else timedelta(days=1)
+    """Запас до начала: такси — не раньше чем через 40 минут, для остальных услуг нужно время найти исполнителя."""
+    return datepicker.TAXI_AHEAD if service["category"] == "taxi" else timedelta(days=1)
 
 
 async def _service_of(state: FSMContext) -> dict:
@@ -1385,6 +1361,11 @@ async def show_confirm(msg: Message, state: FSMContext, tg_user) -> None:
 
     when = fmt_local(start) + (f" → {fmt_local(end)}" if end and service["unit"] in ("час", "сутки") else "")
     lines = ["Проверьте заказ:", "", f"Услуга: {service['name']}", f"Когда: {when}"]
+    qty = data.get("quantity") or 1
+    if service["unit"] == "час":  # сколько длится заказ — это не цена, клиент должен это видеть
+        lines.append(f"Длительность: {qty:g} ч")
+    elif service["unit"] == "сутки":
+        lines.append(f"Суток: {qty:g}")
     if data.get("address_to"):
         lines += [f"Подача: {data['address']}", f"Куда: {data['address_to']}"]
         route = taxi.Route.of(data.get("route"))
@@ -1403,8 +1384,7 @@ async def show_confirm(msg: Message, state: FSMContext, tg_user) -> None:
                      else "⚠️ Возьмите переноску или клетку и подстилку.")
     if data.get("comment"):
         lines.append(f"Комментарий: {data['comment']}")
-    lines += ["", "💰 " + pricing.format_range(total), "Что учтено:", pricing.format_breakdown_lines(breakdown),
-              "", texts.CONFIRM_QUESTION]
+    lines += ["", "💰 " + pricing.format_range(total), "", texts.CONFIRM_QUESTION]  # расчёт и наценку клиенту не показываем
 
     await state.set_state(Order.confirm)
     await msg.answer("\n".join(lines), reply_markup=kb.order_confirm())

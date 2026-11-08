@@ -5,6 +5,7 @@
 (работает без VPN). Права те же, что у админа в боте: только ADMIN_IDS. Все действия идут через те же функции,
 что и кнопки в Telegram (orders.change_status и т. д.), поэтому клиент получает те же уведомления.
 """
+import contextvars
 import hashlib
 import html as _html
 import json
@@ -27,7 +28,7 @@ import talk
 import texts
 import webchat
 from config import config
-from utils import fmt_local, rub
+from utils import from_db, fmt_local, now_utc, rub, to_local
 
 log = logging.getLogger(__name__)
 CODE_LIMIT = 5            # запросов кода с одного адреса за 10 минут
@@ -37,6 +38,9 @@ _hits: dict[str, list[float]] = {}
 _pk_hits: dict[str, list[float]] = {}
 _fails: dict[str, list[float]] = {}
 
+_NEW_N: contextvars.ContextVar[int] = contextvars.ContextVar("portal_new_n", default=0)  # новых заявок — для значка в переключателе
+MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+WEEKDAYS_RU = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
 SOURCES = {"tg": "Telegram", "web": "Чат на сайте", "form": "Форма на сайте"}
 REQ_STATUSES = {"new": "Новая", "work": "В работе", "done": "Готово", "rejected": "Отменена"}
 CHIP = {"walk": "walk", "sitter": "nanny", "boarding": "boarding", "taxi": "taxi"}
@@ -79,6 +83,13 @@ def _same_origin(request: web.Request) -> bool:
     return urlparse(origin).netloc in {h for h in allowed if h}
 
 
+async def _new_count() -> int:
+    """Сколько заявок ждут первого ответа: новые заказы и новые заявки с сайта."""
+    a = await db.fetch_one("SELECT COUNT(*) AS n FROM orders WHERE status='created'")
+    b = await db.fetch_one("SELECT COUNT(*) AS n FROM web_requests WHERE status='new'")
+    return int(a["n"]) + int(b["n"])
+
+
 def admin_page(handler):
     async def wrapper(request: web.Request):
         uid = await _admin(request)
@@ -88,6 +99,7 @@ def admin_page(handler):
             if request.path.startswith("/portal/api/"):
                 return web.json_response({"error": "login"}, status=401)
             return _html_resp(login_page())
+        _NEW_N.set(await _new_count())
         return await handler(request, uid)
     return wrapper
 
@@ -143,6 +155,21 @@ details.filter summary::-webkit-details-marker{display:none}details.filter[open]
 .msg .t{display:block;font-size:11px;color:var(--mute);margin-top:3px}
 .send{display:flex;gap:8px;margin-top:8px}.send input{flex:1;min-width:0}
 #newbar{display:none;position:fixed;left:12px;right:12px;bottom:max(12px,env(safe-area-inset-bottom));z-index:9;text-align:center}
+.top nav.seg{flex:1 0 100%;display:flex;gap:6px;flex-wrap:nowrap;margin-top:2px}
+.top nav.seg a{flex:1 1 0;text-align:center;padding:9px 6px;font-size:15px;background:var(--peach);white-space:nowrap}
+.top nav.seg a.on{background:var(--ink);color:#fff}
+.seg .cnt{display:inline-block;min-width:1.5em;margin-left:6px;padding:0 .4em;border-radius:999px;background:var(--coral);color:#fff;font-size:13px;line-height:1.5}
+.item.ord{display:flex;gap:12px;align-items:stretch}.item.ord .main{flex:1;min-width:0}
+.stamp{flex:0 0 66px;display:flex;flex-direction:column;justify-content:center;align-items:center;border-radius:14px;padding:6px 4px;background:var(--peach);color:var(--ink);line-height:1.15}
+.stamp b{font-size:21px;font-variant-numeric:tabular-nums}.stamp span{font-size:13px;font-weight:700;color:var(--mute)}
+.stamp.new{background:var(--coral);color:#fff}.stamp.new span{color:#fff}
+h3.day{margin:16px 4px 2px;font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:var(--mute)}
+.reg{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin:0 0 12px;padding:10px 14px;border-radius:16px;background:var(--peach)}
+.reg b{font-size:28px;font-variant-numeric:tabular-nums}.reg span{font-size:18px;font-weight:700}.reg em{font-style:normal;color:var(--mute);font-size:14px;flex-basis:100%}
+.pager{display:flex;gap:6px;margin:0 0 12px}
+.pager a,.pager .off{flex:1;text-align:center;padding:9px 6px;border-radius:999px;background:var(--card);border:1.5px solid var(--line);color:var(--ink);text-decoration:none;font-weight:700;font-size:15px}
+.pager .off{opacity:.4}
+.others{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}.others a{text-decoration:none;color:var(--ink)}
 label{font-weight:700;display:block;margin:10px 0 4px}
 input,select,textarea{max-width:100%}
 """
@@ -213,6 +240,16 @@ if(test)test.onclick=function(e){
 })();</script>"""
 
 
+def _seg(active: str) -> str:
+    """Переключатель, который виден на каждой странице: Заявки · Клиенты · Исполнители (не прячем в меню)."""
+    n = _NEW_N.get()
+    cnt = f'<b class="cnt">{n}</b>' if n else ""
+    items = (("orders", "/portal", "Заявки" + cnt), ("clients", "/portal/clients", "Клиенты"),
+             ("executors", "/portal/executors", "Исполнители"))
+    return '<nav class="seg" aria-label="Разделы">' + "".join(
+        f'<a {"class=\"on\" " if key == active else ""}href="{href}">{label}</a>' for key, href, label in items) + "</nav>"
+
+
 def page(title: str, body: str, active: str = "", flash: str | None = None, back: str | None = "/portal") -> str:
     nav = "".join(f'<a href="{href}" class="{"on" if key == active else ""}">{label}</a>' for key, href, label in (
         ("orders", "/portal", "Заявки"), ("clients", "/portal/clients", "Клиенты"),
@@ -223,7 +260,7 @@ def page(title: str, body: str, active: str = "", flash: str | None = None, back
             f'<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
             f'<title>{brand.NAME} — {_e(title)}</title>{brand.HEAD_ADMIN}<style>{CSS}</style></head><body>{ribbons.html(ribbons.ADMIN)}'
             f'<div class="top">{brand.LOGO}'
-            f'<details class="menu"><summary>☰ Меню</summary><nav>{nav}<a href="#" id="perm" hidden>🔔 Уведомления</a><form method="post" action="/portal/as-client" class="asclient"><button>👤 Как клиент</button></form><a href="/portal/logout">Выйти</a></nav></details></div>'
+            f'<details class="menu"><summary>☰ Меню</summary><nav>{nav}<a href="#" id="perm" hidden>🔔 Уведомления</a><form method="post" action="/portal/as-client" class="asclient"><button>👤 Как клиент</button></form><a href="/portal/logout">Выйти</a></nav></details>{_seg(active)}</div>'
             f'<main>{brand.backrow(back) if back else ""}{fl}{body}</main><a id="newbar" class="btn" href="">.</a>{NOTIFY_JS}</body></html>')
 
 
@@ -446,8 +483,32 @@ async def all_requests(flt: str, src: str) -> list[dict]:
                 f"""SELECT r.*, s.name AS service, s.category FROM web_requests r LEFT JOIN services s ON s.id=r.service_id
                     {w} ORDER BY r.id DESC LIMIT 300""", rs or ()):
             rows.append({"kind": "form", **r, "source": "form"})
-    rows.sort(key=lambda r: r["created_at"], reverse=True)
+    rows.sort(key=lambda r: (r["created_at"], r["id"]), reverse=True)
     return rows
+
+
+def _local_dt(value):
+    return to_local(from_db(value)) if isinstance(value, str) else to_local(value)
+
+
+def stamp_html(created_at, fresh: bool = False) -> str:
+    """Крупно: время регистрации заявки, под ним дата. Новые заявки — коралловым, чтобы бросались в глаза."""
+    d = _local_dt(created_at)
+    return f'<span class="stamp{" new" if fresh else ""}"><b>{d:%H:%M}</b><span>{d:%d.%m}</span></span>'
+
+
+def day_label(created_at) -> str:
+    d = _local_dt(created_at)
+    today = to_local(now_utc()).date()
+    base = f"{d.day} {MONTHS_GEN[d.month - 1]}, {WEEKDAYS_RU[d.weekday()]}"
+    gap = (today - d.date()).days
+    return ("Сегодня · " if gap == 0 else "Вчера · " if gap == 1 else "") + base
+
+
+def reg_html(created_at, what: str) -> str:
+    """Плашка наверху карточки: когда заявка зарегистрирована (время и дата — крупно)."""
+    d = _local_dt(created_at)
+    return f'<div class="reg"><b>{d:%H:%M}</b><span>{d:%d.%m.%Y}</span><em>{_e(what)}</em></div>'
 
 
 def _row_html(r: dict) -> str:
@@ -455,15 +516,30 @@ def _row_html(r: dict) -> str:
     src = f'<span class="src">{SOURCES[r["source"]]}</span>'
     if r["kind"] == "order":
         st = f'<span class="badge" style="background:{STATUS_COLOR[r["status"]]}">{_e(texts.STATUS_LABELS[r["status"]])}</span>'
-        return (f'<a class="item card" href="/portal/order/{r["id"]}"><div class="row"><span class="who">№{r["id"]} · {_e(r["name"] or "—")}</span>{st}</div>'
+        fresh = r["status"] == "created"
+        return (f'<a class="item card ord" href="/portal/order/{r["id"]}">{stamp_html(r["created_at"], fresh)}<div class="main">'
+                f'<div class="row"><span class="who">№{r["id"]} · {_e(r["name"] or "—")}</span>{st}</div>'
                 f'<div class="row" style="margin-top:6px">{chip}{src}</div>'
-                f'<div class="sub">{_e(fmt_local(r["start_at"]))} · {_e(r["phone"] or "—")} · {rub(r["price_total"])}</div></a>')
+                f'<div class="sub">На {_e(fmt_local(r["start_at"]))} · {_e(r["phone"] or "—")} · {rub(r["price_total"])}</div></div></a>')
     st = f'<span class="badge" style="background:{"var(--coral)" if r["status"] == "new" else "#8a8178"}">{REQ_STATUSES.get(r["status"], r["status"])}</span>'
     if str(r.get("address") or "").startswith("Сайт "):  # заявка с сайта конструктора: показываем, с какого
         src = f'<span class="src">{_e(r["address"])}</span>'
-    return (f'<a class="item card" href="/portal/request/{r["id"]}"><div class="row"><span class="who">Заявка с сайта №{r["id"]} · {_e(r["name"])}</span>{st}</div>'
+    return (f'<a class="item card ord" href="/portal/request/{r["id"]}">{stamp_html(r["created_at"], r["status"] == "new")}<div class="main">'
+            f'<div class="row"><span class="who">Заявка с сайта №{r["id"]} · {_e(r["name"])}</span>{st}</div>'
             f'<div class="row" style="margin-top:6px">{chip}{src}</div>'
-            f'<div class="sub">{_e(r["when_text"] or "время не указано")} · {_e(r["phone"])}</div></a>')
+            f'<div class="sub">{_e(r["when_text"] or "время не указано")} · {_e(r["phone"])}</div></div></a>')
+
+
+def _grouped(rows: list[dict]) -> str:
+    """Строки заявок, разбитые по дням: «Сегодня · 8 ноября, воскресенье» и так далее."""
+    out, day = [], None
+    for r in rows:
+        label = day_label(r["created_at"])
+        if label != day:
+            out.append(f'<h3 class="day">{_e(label)}</h3>')
+            day = label
+        out.append(_row_html(r))
+    return "".join(out)
 
 
 @admin_page
@@ -482,7 +558,7 @@ async def list_page(request: web.Request, uid: int) -> web.Response:
     flt_html = (f'<details class="filter"{" open" if changed else ""}><summary>🔍 Фильтр<small class="muted"> · {hint}</small></summary>'
                 f'<div class="tabs" style="margin-top:10px">{tabs}</div><div class="tabs">{stabs}</div></details>')
     body = (f'<h1>Заявки</h1>{flt_html}'
-            f'<div class="list">{"".join(_row_html(r) for r in rows) or "<p class=muted>Пока пусто.</p>"}</div>')
+            f'<div class="list">{_grouped(rows) or "<p class=muted>Пока пусто.</p>"}</div>')
     return _html_resp(page("Заявки", body, "orders", request.query.get("m"), back=None))
 
 
@@ -517,6 +593,29 @@ def _actions(o: dict, execs: list[dict], room_open: bool) -> str:
     return f'<div class="actions">{"".join(out)}</div>'
 
 
+def _pager(prev_href: str | None, prev_label: str, mid_href: str | None, mid_label: str,
+           next_href: str | None, next_label: str) -> str:
+    def cell(href, label):
+        return f'<a href="{href}">{label}</a>' if href else f'<span class="off">{label}</span>'
+    return f'<div class="pager">{cell(prev_href, prev_label)}{cell(mid_href, mid_label)}{cell(next_href, next_label)}</div>'
+
+
+async def _order_nav(o: dict) -> str:
+    """Соседние заказы по номеру, переход к клиенту и другие заказы этого же клиента: не нужно возвращаться в список."""
+    prev = await db.fetch_one("SELECT MAX(id) AS n FROM orders WHERE id<?", (o["id"],))
+    nxt = await db.fetch_one("SELECT MIN(id) AS n FROM orders WHERE id>?", (o["id"],))
+    p, n = prev["n"], nxt["n"]
+    pager = _pager(f"/portal/order/{p}" if p else None, f"← №{p}" if p else "←",
+                   f"/portal/chat/{o['client_tg_id']}", "👤 Клиент",
+                   f"/portal/order/{n}" if n else None, f"№{n} →" if n else "→")
+    rest = await db.fetch_all("SELECT id, status, created_at FROM orders WHERE user_id=? AND id<>? ORDER BY id DESC LIMIT 8",
+                              (o["user_id"], o["id"]))
+    chips = "".join(f'<a class="src" href="/portal/order/{x["id"]}">№{x["id"]} · {_local_dt(x["created_at"]):%d.%m %H:%M}'
+                    f' · {_e(texts.STATUS_LABELS[x["status"]])}</a>' for x in rest)
+    others = f'<div class="muted" style="font-size:14px;margin:0 0 4px">Другие заказы клиента</div><div class="others">{chips}</div>' if chips else ""
+    return pager + others
+
+
 @admin_page
 async def order_page(request: web.Request, uid: int) -> web.Response:
     oid = request.match_info["oid"]
@@ -544,7 +643,10 @@ async def order_page(request: web.Request, uid: int) -> web.Response:
         links.append(f'<a class="btn small ghost" href="tel:{_e(o["client_phone"])}">📞 Позвонить</a>')
     if o.get("executor_tg_id"):
         links.append(f'<a class="btn small ghost" href="/portal/chat/{o["executor_tg_id"]}">💬 Написать исполнителю</a>')
+    nav_html = await _order_nav(o)
+    reg = reg_html(o["created_at"], f"Заявка №{o['id']} зарегистрирована")
     body = (f'<h1>Заказ №{o["id"]} <span class="src">{SOURCES[_source(o["client_tg_id"])]}</span></h1>'
+            f'{reg}{nav_html}'
             f'<div class="card pre">{_e(orders.order_card(o, for_staff=True))}</div>'
             f'{_actions(o, execs, room_open)}<div class="actions">{"".join(links)}</div>{room_html}'
             f'<h2>История</h2>{hist_html}')
@@ -596,10 +698,9 @@ async def request_page(request: web.Request, uid: int) -> web.Response:
                            (int(rid),)) if rid.isdigit() else None
     if not r:
         return _html_resp(page("Не найдено", "<h1>Заявка не найдена</h1>"), 404)
-    contact = {"call": "звонок", "sms": "СМС", "telegram": "Telegram или мессенджер"}.get(r["contact_pref"], r["contact_pref"])
     info = "\n".join([f"Услуга: {r['service'] or '—'}", f"Когда: {r['when_text'] or '—'}", f"Адрес: {r['address']}",
                       f"Питомец: {r['pet'] or '—'}", f"Комментарий: {r['comment'] or '—'}", f"Имя: {r['name']}",
-                      f"Телефон: {r['phone']}", f"Связь: {contact}", f"Создана: {fmt_local(r['created_at'])}"])
+                      f"Телефон: {r['phone']}", f"Зарегистрирована: {fmt_local(r['created_at'])}"])
     opts = "".join(f'<option value="{k}"{" selected" if k == r["status"] else ""}>{v}</option>' for k, v in REQ_STATUSES.items())
     site = r["address"] if str(r["address"]).startswith("Сайт ") else "Форма на сайте"
     if r["status"] == "rejected":
@@ -618,7 +719,14 @@ async def request_page(request: web.Request, uid: int) -> web.Response:
     same_html = (f'<h2>Другие заявки с этого номера</h2><div class="chips">{others}</div>'
                  f'<p class="muted" style="font-size:14px">Устройство и IP помогают отличить клиентов: у каждого браузера свой чат.</p>') if same else ""
     chat = (f'<a class="btn small" href="/portal/chat/{r["web_uid"]}">💬 Чат с клиентом</a>' if r["web_uid"] else "")
-    body = (f'<h1>Заявка с сайта №{r["id"]} <span class="src">{_e(site)}</span></h1><div class="card pre">{_e(info)}\n{_e(chr(10).join(who))}</div>'
+    pv = await db.fetch_one("SELECT MAX(id) AS n FROM web_requests WHERE id<?", (r["id"],))
+    nx = await db.fetch_one("SELECT MIN(id) AS n FROM web_requests WHERE id>?", (r["id"],))
+    pn, nn = pv["n"], nx["n"]
+    pager = _pager(f"/portal/request/{pn}" if pn else None, f"← №{pn}" if pn else "←",
+                   f"/portal/chat/{r['web_uid']}" if r["web_uid"] else None, "👤 Клиент",
+                   f"/portal/request/{nn}" if nn else None, f"№{nn} →" if nn else "→")
+    reg = reg_html(r["created_at"], f"Заявка с сайта №{r['id']} зарегистрирована")
+    body = (f'<h1>Заявка с сайта №{r["id"]} <span class="src">{_e(site)}</span></h1>{reg}{pager}<div class="card pre">{_e(info)}\n{_e(chr(10).join(who))}</div>'
             f'<div class="actions">{chat}<a class="btn small" href="tel:{_e(r["phone"])}">📞 Позвонить</a>'
             f'<a class="btn small ghost" href="sms:{_e(r["phone"])}">✉️ СМС</a></div>'
             f'<form method="post" class="card" style="padding:14px"><label for="status">Статус</label><select id="status" name="status">{opts}</select>'
@@ -658,7 +766,9 @@ async def clients_page(request: web.Request, uid: int) -> web.Response:
         """SELECT u.*, (SELECT COUNT(*) FROM orders o WHERE o.user_id=u.id) AS n,
                   (SELECT MAX(id) FROM messages m WHERE m.party_tg_id=u.tg_id) AS last_msg,
                   (SELECT text FROM messages m WHERE m.party_tg_id=u.tg_id ORDER BY id DESC LIMIT 1) AS last_text,
-                  (SELECT COUNT(*) FROM web_requests r WHERE r.web_uid=u.tg_id) AS nreq
+                  (SELECT COUNT(*) FROM web_requests r WHERE r.web_uid=u.tg_id) AS nreq,
+                  (SELECT o.id FROM orders o WHERE o.user_id=u.id ORDER BY o.id DESC LIMIT 1) AS last_order,
+                  (SELECT o.created_at FROM orders o WHERE o.user_id=u.id ORDER BY o.id DESC LIMIT 1) AS last_order_at
            FROM users u WHERE (u.pdn_consent=1 OR EXISTS (SELECT 1 FROM orders o WHERE o.user_id=u.id)
                                OR EXISTS (SELECT 1 FROM messages m WHERE m.party_tg_id=u.tg_id)
                                OR EXISTS (SELECT 1 FROM web_requests r WHERE r.web_uid=u.tg_id))
@@ -670,6 +780,8 @@ async def clients_page(request: web.Request, uid: int) -> web.Response:
         mark = '<span class="badge" style="background:var(--nanny)">проверен Telegram</span>' if ok else \
                '<span class="badge" style="background:#b9b0a6">не подтверждён</span>'
         last = f'<div class="sub">💬 {_e(str(u["last_text"] or "")[:80])}</div>' if u["last_text"] else ""
+        if u["last_order"]:
+            last = (f'<div class="sub">Последний заказ №{u["last_order"]} · <b>{_local_dt(u["last_order_at"]):%d.%m %H:%M}</b></div>' + last)
         items.append(f'<a class="item card" href="/portal/chat/{u["tg_id"]}"><div class="row"><span class="who">{_e(u["name"] or "Без имени")}</span>{mark}</div>'
                      f'<div class="row" style="margin-top:6px"><span class="src">{SOURCES[_source(u["tg_id"])]}</span></div>'
                      f'<div class="sub">{_e(u["phone"] or "—")} · заказов: {u["n"]} · заявок с сайта: {u["nreq"]}</div>{last}</a>')

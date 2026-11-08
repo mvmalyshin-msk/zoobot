@@ -17,13 +17,12 @@ import ribbons
 import talk
 import texts
 from config import config
-from utils import normalize_phone, rub
+from utils import fmt_local, normalize_phone, now_utc, rub
 
 log = logging.getLogger(__name__)
 
 RATE_LIMIT = 5          # заявок с одного адреса в час
 RATE: dict[str, list[float]] = {}
-CONTACTS = {"call": "звонок", "sms": "СМС", "telegram": "Telegram или мессенджер"}
 MAX = {"name": 80, "address": 200, "when": 100, "pet": 120, "comment": 500}
 
 
@@ -32,7 +31,6 @@ def validate(form: dict) -> tuple[dict, dict]:
     g = lambda k: str(form.get(k) or "").strip()  # noqa: E731
     clean = {k: g(k)[:n] for k, n in MAX.items()}
     clean["service_id"] = g("service_id")
-    clean["contact"] = g("contact") if g("contact") in CONTACTS else "call"
     errors: dict[str, str] = {}
     if g("site"):  # ловушка для ботов: настоящий человек это поле не видит
         errors["bot"] = "spam"
@@ -76,8 +74,6 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
             f'<option value="{s["id"]}"{" selected" if str(s["id"]) == str(values.get("service_id")) else ""}>'
             f'{_e(texts.variant_label(cat, s["name"]))} — от {rub(s["base_price"])}</option>' for s in opts)
         groups.append(f'<optgroup label="{_e(texts.CATEGORY_TITLES[cat])}">{rows}</optgroup>')
-    contacts = "".join(f'<option value="{k}"{" selected" if values.get("contact", "call") == k else ""}>{_e(t)}</option>'
-                       for k, t in CONTACTS.items())
     checked = " checked" if values.get("consent") else ""
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — заявка</title>
@@ -93,7 +89,6 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
 <label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="кличка, вид, порода">
 <label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name">{err("name")}
 <label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 900 123-45-67">{err("phone")}
-<label for="contact">Как с вами связаться</label><select id="contact" name="contact">{contacts}</select>
 <label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500">{v("comment")}</textarea>
 <div class="hp"><label>Не заполняйте <input name="site" tabindex="-1" autocomplete="off"></label></div>
 <label class="check"><input type="checkbox" name="consent"{checked}><span>Согласен(на) на обработку персональных данных, <a href="/policy">политика</a></span></label>{err("consent")}
@@ -159,16 +154,16 @@ async def post_form(request: web.Request) -> web.Response:
         await conn.execute("UPDATE users SET phone=COALESCE(phone, ?), name=COALESCE(name, ?) WHERE tg_id=?",
                            (clean["phone"], clean["name"], web_uid))
         cur = await conn.execute(
-            """INSERT INTO web_requests (service_id, name, phone, contact_pref, address, when_text, pet, comment, web_uid, ip, device)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            (svc["id"], clean["name"], clean["phone"], clean["contact"], clean["address"], clean["when"],
+            """INSERT INTO web_requests (service_id, name, phone, address, when_text, pet, comment, web_uid, ip, device)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (svc["id"], clean["name"], clean["phone"], clean["address"], clean["when"],
              clean["pet"], clean["comment"], web_uid, ip, device))
         rid = cur.lastrowid
     text = "\n".join(filter(None, [
         f"🌐 Заявка с сайта №{rid}",
         f"Услуга: {svc['name']} (от {rub(svc['base_price'])})",
         f"Имя: {clean['name']}", f"Телефон: {clean['phone']}",
-        f"Связь: {CONTACTS[clean['contact']]}",
+        f"Зарегистрирована: {fmt_local(now_utc())}",
         f"Когда: {clean['when']}" if clean["when"] else "",
         f"Адрес: {clean['address']}",
         f"Питомец: {clean['pet']}" if clean["pet"] else "",

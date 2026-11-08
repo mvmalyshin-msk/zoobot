@@ -106,6 +106,28 @@ async def main():
         check("🗺 Адрес выбран на карте" in await events_text(uid), "адрес с карты вернулся в чат")
         check(not errors, "в консоли нет ошибок JS: " + "; ".join(errors))
 
+        # панель «Найти на карте / Отправить геопозицию» не должна висеть на следующих шагах (жалоба владельца)
+        panel = [[{"t": "🗺 Найти на карте", "map": base + "/map"}, {"t": "📍 Отправить геопозицию", "loc": True}]]
+        await page.goto(base + "/chat")
+        await page.wait_for_timeout(1200)
+        await webchat.push(uid, "send", who="bot", text="Адрес для панели?", reply=panel, once=True)
+        await page.wait_for_selector("#rk button", state="visible", timeout=5000)
+        await page.click("text=📍 Отправить геопозицию")
+        await page.wait_for_timeout(1500)
+        check(not await page.is_visible("#rk"), "после геопозиции панель карты и геопозиции убирается")
+        await webchat.push(uid, "send", who="bot", text="Ещё раз адрес?", reply=panel, once=True)
+        await page.wait_for_selector("#rk button", state="visible", timeout=5000)
+        await page.fill("#t", "Химки, Мира 1")
+        await page.press("#t", "Enter")
+        await page.wait_for_timeout(1500)
+        check(not await page.is_visible("#rk"), "после ответа текстом панель карты и геопозиции убирается")
+        await webchat.push(uid, "send", who="bot", text="Постоянная клавиатура", reply=[[{"t": "Да"}, {"t": "Нет"}]])
+        await page.wait_for_selector("#rk button", state="visible", timeout=5000)
+        await page.fill("#t", "привет")
+        await page.press("#t", "Enter")
+        await page.wait_for_timeout(1200)
+        check(await page.is_visible("#rk"), "обычная (не «один раз») клавиатура после ответа остаётся")
+
         # геопозиция на компьютере: точный запрос не успевает (у Mac нет GPS) — чат повторяет с обычной точностью
         async def geo_page(script):
             gctx = await br.new_context(viewport={"width": 390, "height": 780})

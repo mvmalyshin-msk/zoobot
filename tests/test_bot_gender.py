@@ -24,14 +24,13 @@ class BotSpeaksMasculineTest(unittest.TestCase):
                     found.append(f"{f}:{i}: {m.group(1)}")
         self.assertEqual(found, [])
 
-    def test_contact_choice_is_confirmed_in_masculine(self):
+    def test_address_check_has_yo(self):
         import os, sys
         sys.path.insert(0, str(ROOT))
         os.environ.setdefault("BOT_TOKEN", "1:x")
         os.environ.setdefault("ADMIN_IDS", "111")
         import texts
-        self.assertTrue(texts.CONTACT_SAVED.startswith("Запомнил:"))
-        self.assertIn("всё верно?", texts.ADDR_CHECK)  # и «ё» там, где она нужна
+        self.assertIn("всё верно?", texts.ADDR_CHECK)  # «ё» там, где она нужна
 
 
 if __name__ == "__main__":
