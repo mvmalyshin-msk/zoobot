@@ -266,7 +266,7 @@ async def post_verify(request: web.Request) -> web.Response:
     if not row or row["tg_id"] not in config.admin_ids:
         return _html_resp(login_page("Код не подошёл или устарел. Запросите новый.", code_form=True))
     _fails.pop(_ip(request), None)
-    token = await webchat.new_session(row["tg_id"])
+    token = await webchat.new_session(row["tg_id"], device=webchat.device_label(request.headers.get("User-Agent")))
     resp = web.Response(status=303, headers={"Location": "/portal"})
     webchat._set_cookie(request, resp, token, admin=True)
     return resp
@@ -629,13 +629,33 @@ async def settings_page(request: web.Request, uid: int) -> web.Response:
         confirm = (f'<form method="post" action="/portal/settings" class="card" style="padding:14px;margin-top:10px">'
                    f'<input type="hidden" name="step" value="confirm"><label for="code">Код из письма на {_e(pending["value"])}</label>'
                    f'<input id="code" name="code" inputmode="numeric" maxlength="6" required><button class="btn" style="margin-left:6px">Подтвердить</button></form>')
+    mine = request.cookies.get(webchat.ADMIN_COOKIE)
+    me_hash = webchat._hash(mine) if mine else None
+    devs = await db.fetch_all("SELECT id, token_hash, device, created_at FROM web_sessions WHERE uid=? ORDER BY id DESC", (uid,))
+    rows = ""
+    for d in devs:
+        here = d["token_hash"] == me_hash
+        rows += (f'<form method="post" action="/portal/settings" class="dev" style="display:flex;gap:8px;align-items:center;'
+                 f'justify-content:space-between;padding:8px 0;border-top:1px solid var(--line)">'
+                 f'<span>{_e(d["device"] or "Неизвестное устройство")}{" — это устройство" if here else ""}'
+                 f'<br><small class="muted">вход {_e(d["created_at"])} (UTC)</small></span>'
+                 f'<input type="hidden" name="step" value="revoke"><input type="hidden" name="id" value="{d["id"]}">'
+                 f'<button class="btn" name="revoke" value="1">{"Выйти" if here else "Отозвать"}</button></form>')
+    others = ""
+    if len(devs) > 1:
+        others = ('<form method="post" action="/portal/settings" style="margin-top:8px"><input type="hidden" name="step" value="revoke_others">'
+                  '<button class="btn">Отозвать все остальные</button></form>')
+    devices = (f'<div class="card" style="padding:14px;margin-top:10px"><b>Доверенные устройства</b>'
+               f'<p class="muted">Устройства, на которых вы вошли по коду. Повторный код с них не нужен, пока вход не отозван.</p>'
+               f'{rows or "<p class=muted>Пока нет.</p>"}{others}</div>')
     body = (f'<h1>Вход и почта</h1><div class="card pre">Вы вошли как администратор (Telegram ID {uid}).\n'
             f'Почта для входа: {_e(email) if email else "не добавлена"}\n{_e(mail_state)}</div>'
             f'<form method="post" action="/portal/settings" class="card" style="padding:14px;margin-top:10px">'
             f'<input type="hidden" name="step" value="set"><label for="email">Почта для входа без Telegram</label>'
             f'<input id="email" name="email" type="email" required value="{_e(email or "")}" style="width:100%">'
             f'<button class="btn" style="margin-top:10px">Прислать код для проверки</button></form>{confirm}'
-            f'<p class="muted">После проверки почты входите в портал с любого устройства без VPN: «Прислать код на почту».</p>')
+            f'<p class="muted">После проверки почты входите в портал с любого устройства без VPN: «Прислать код на почту».</p>'
+            + devices)
     return _html_resp(page("Вход и почта", body, "settings", request.query.get("m")))
 
 
@@ -653,6 +673,17 @@ async def settings_action(request: web.Request, uid: int) -> web.Response:
         code = await _issue_code(uid, "email_reg")
         sent = await mailer.send(email, f"{brand.NAME}: подтверждение почты", f"Код подтверждения почты: {code}\nДействует 10 минут.")
         return _redirect("/portal/settings", "Код отправлен на почту." if sent else "Письмо не ушло: проверьте SMTP в Railway.")
+    if form.get("step") in ("revoke", "revoke_others"):
+        mine = request.cookies.get(webchat.ADMIN_COOKIE)
+        if form.get("step") == "revoke":
+            rid = re.sub(r"\D", "", str(form.get("id", "")))
+            if rid:
+                await db.execute("DELETE FROM web_sessions WHERE id=? AND uid=?", (int(rid), uid))
+        else:
+            await db.execute("DELETE FROM web_sessions WHERE uid=? AND token_hash<>?", (uid, webchat._hash(mine) if mine else ""))
+        webchat._linked_cache.clear()
+        webchat._targets_cache.clear()
+        return _redirect("/portal/settings", "Устройство отозвано." if form.get("step") == "revoke" else "Остальные устройства отозваны.")
     if form.get("step") == "confirm":
         code = re.sub(r"\D", "", str(form.get("code", "")))
         row = await _check_code(code, ("email_reg",)) if len(code) == 6 else None

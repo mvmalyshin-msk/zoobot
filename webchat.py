@@ -283,12 +283,29 @@ class WebRouterSession(BaseSession):
 
 # ---------- Сессии и вход ----------
 
-async def new_session(uid: int | None = None) -> str:
+def device_label(ua: str | None) -> str:
+    """Короткое название устройства по User-Agent для списка доверенных устройств («iPhone · Safari»). Только из известных слов."""
+    ua = ua or ""
+    for key, name in (("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android"), ("Macintosh", "Mac"),
+                      ("Windows", "Windows"), ("Linux", "Linux")):
+        if key in ua:
+            device = name
+            break
+    else:
+        return "Неизвестное устройство"
+    for key, name in (("Edg/", "Edge"), ("OPR/", "Opera"), ("YaBrowser", "Яндекс Браузер"), ("CriOS", "Chrome"),
+                      ("FxiOS", "Firefox"), ("Firefox", "Firefox"), ("Chrome", "Chrome"), ("Safari", "Safari")):
+        if key in ua:
+            return f"{device} · {name}"
+    return device
+
+
+async def new_session(uid: int | None = None, device: str | None = None) -> str:
     """Выдаёт токен. Без uid — гость: отрицательный id, не пересекается с настоящими Telegram-id."""
     token = secrets.token_urlsafe(32)
     async with db.transaction() as conn:
-        cur = await conn.execute("INSERT INTO web_sessions (token_hash, uid) VALUES (?, ?)",
-                                 (_hash(token), uid if uid is not None else 0))
+        cur = await conn.execute("INSERT INTO web_sessions (token_hash, uid, device) VALUES (?, ?, ?)",
+                                 (_hash(token), uid if uid is not None else 0, device))
         if uid is None:
             await conn.execute("UPDATE web_sessions SET uid=? WHERE id=?", (-cur.lastrowid, cur.lastrowid))
     _linked_cache.clear()
@@ -397,7 +414,7 @@ async def post_login(request: web.Request) -> web.Response:
     if not row or tg is None or tg <= 0 or (form.get("n") == "portal" and tg not in config.admin_ids):
         return web.Response(status=403, text="Ссылка не действует. Нажмите кнопку в Telegram ещё раз.")
     await db.execute(f"UPDATE web_login SET used=1, {db.touch()} WHERE token_hash=?", (h,))
-    token = await new_session(row["tg_id"])
+    token = await new_session(row["tg_id"], device=device_label(request.headers.get("User-Agent")))
     admin = tg in config.admin_ids  # админ всегда входит на админскую cookie, клиент — на клиентскую
     where = "/portal" if form.get("n") == "portal" else ("/portal/bot" if admin else "/chat")
     resp = web.Response(status=302, headers={"Location": where})
