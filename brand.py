@@ -31,13 +31,9 @@ def back(href: str = "/", compact: bool = False) -> str:
             f'<span aria-hidden="true">←</span><b>Назад</b></a>')
 
 
-def home() -> str:
-    return '<a class="back home" href="/" aria-label="Главная страница"><span aria-hidden="true">🏠</span><b>Главная страница</b></a>'
-
-
 def backrow(href: str = "/") -> str:
-    """Ряд из двух кнопок: «Назад» и «Главная страница» (на каждой странице глубже стартовой)."""
-    return f'<div class="backrow">{back(href)}{home()}</div>'
+    """Ряд с кнопкой «Назад» (на каждой странице глубже стартовой). На главную ведёт надпись ЗООКОНСЬЕРЖ (LOGO)."""
+    return f'<div class="backrow">{back(href)}</div>'
 
 
-LOGO = '<span class="brand"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</span>'
+LOGO = '<a class="brand" href="/" aria-label="На главную"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</a>'

@@ -49,7 +49,7 @@ class PortalFilterTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_filters_hidden_behind_button(self):
         t = await self.get("/portal")
-        i = t.index("<summary")
+        i = t.index("<summary", t.index('class="filter"'))
         self.assertIn("Фильтр", t[i:i + 80])
         details = t[t.rindex("<details", 0, i):t.index("</details>", i)]
         for must in ("Новые", "В работе", "Все", "Все источники", "Форма на сайте", "Чат на сайте", "Telegram"):

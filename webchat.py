@@ -365,7 +365,7 @@ def _chat_html(admin: bool) -> str:
             .replace("__API__", "/portal/bot" if admin else "/chat")
             .replace("__LOGOUT__", "/portal/logout" if admin else "/chat/logout"))
     if admin:  # админский и клиентский интерфейсы не смешиваем: «Кабинет» — клиентский
-        html = html.replace('<a href="/cabinet">Кабинет</a>', '<a href="/">🏠 Главная страница</a><a href="/portal">Заявки</a>')
+        html = html.replace('<a href="/cabinet">Кабинет</a>', '<a href="/portal">Заявки</a>')
         # на экране «Домой» — приложение администратора (открывает портал), а не клиентский чат
         html = (html.replace('href="/manifest.webmanifest"', 'href="/manifest-admin.webmanifest"')
                 .replace('apple-mobile-web-app-title" content="Зооконсьерж"', 'apple-mobile-web-app-title" content="ЗК Админ"')
