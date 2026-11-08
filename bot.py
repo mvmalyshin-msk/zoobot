@@ -21,6 +21,7 @@ from handlers.executor import Report
 import policy
 import purge
 import releases
+import seo
 from scheduler import setup_scheduler
 
 log = logging.getLogger("zoobot")
@@ -160,6 +161,7 @@ async def main() -> None:
     except Exception:
         log.exception("Чистка тестовых данных не выполнена")
     try:
+        asyncio.create_task(seo.indexnow_ping(config.webapp_url.rstrip("/"), releases.RELEASES[0]["number"]))  # поисковикам: сайт обновился
         await releases.announce(bot)  # админам: «Прошло обновление №N» и что изменилось
     except Exception:
         log.exception("Не удалось объявить обновление")

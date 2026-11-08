@@ -47,7 +47,7 @@ def render_form(values: dict, errors: dict) -> str:
     call = ('<a class="way tel" href="/contact/call" rel="nofollow"><span>📞</span><span>Позвонить администратору'
             '<small>обычный звонок по сотовой сети</small></span></a>') if _tel() else ""   # номера на странице нет: он отдаётся только при нажатии
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — связаться с администратором</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — связаться с администратором</title><meta name="description" content="Свяжитесь с администратором Зооконсьержа: поможем с выгулом, зооняней, передержкой и зоотакси в Химках и Москве.">
 {brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.CLIENT)}<main>
 {brand.backrow("/")}
 <div class="top">{brand.LOGO}</div>{brand.STRAP}
