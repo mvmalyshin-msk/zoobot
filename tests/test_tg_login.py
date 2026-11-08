@@ -63,10 +63,20 @@ class TgLoginTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await webchat.confirm_tg_login("nope", 555))
         _, _, token = await self.start()
         self.assertFalse(await webchat.confirm_tg_login(token, 111))                # админ входит через портал
+        j = await (await self.poll(token)).json()
+        self.assertEqual((j["ok"], j.get("admin")), (False, True))                  # страница узнаёт причину и объясняет её
         _, _, token2 = await self.start()
         webchat._tg_logins[token2]["exp"] = 0
         self.assertFalse(await webchat.confirm_tg_login(token2, 555))
         self.assertEqual((await (await self.poll("garbage")).json())["ok"], False)
+
+
+class AdminExplained(unittest.TestCase):
+    def test_constant_and_page_script(self):
+        self.assertIn("администратора", webchat.ADMIN_AS_CLIENT_TEXT)
+        import inspect
+        self.assertIn("j.admin", inspect.getsource(webchat.page_login_tg))
+        self.assertIn("ADMIN_AS_CLIENT_TEXT", inspect.getsource(webchat.page_login_tg))
 
 
 if __name__ == "__main__":
