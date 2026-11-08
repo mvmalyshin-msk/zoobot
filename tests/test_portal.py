@@ -332,5 +332,83 @@ class ChatTest(unittest.TestCase):
         run(t)
 
 
+class DevicesTest(unittest.TestCase):
+    """Доверенные устройства администратора: вход по коду запоминает устройство, в «Вход и почта» его видно и можно отозвать."""
+    IPHONE = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 "
+              "(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1")
+    MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+
+    def test_label_from_user_agent(self):
+        self.assertEqual(webchat.device_label(self.IPHONE), "iPhone · Safari")
+        self.assertEqual(webchat.device_label(self.MAC), "Mac · Safari")
+        self.assertEqual(webchat.device_label(""), "Неизвестное устройство")
+        self.assertEqual(webchat.device_label("<b>x</b>" * 50)[:1], "Н")
+
+    def test_login_by_code_remembers_device(self):
+        async def t(c, f):
+            await c.post("/portal/code", data={"via": "tg"}, headers={"User-Agent": self.IPHONE})
+            code = re.search(r"\b(\d{6})\b", next(t for to, t in TG if to == 111)).group(1)
+            await c.post("/portal/verify", data={"code": code}, headers={"User-Agent": self.IPHONE}, allow_redirects=False)
+            row = await db.fetch_one("SELECT device FROM web_sessions WHERE uid=111 ORDER BY id DESC LIMIT 1")
+            self.assertEqual(row["device"], "iPhone · Safari")
+        run(t, admin=False)
+
+    def test_login_by_telegram_link_remembers_device(self):
+        async def t(c, f):
+            link = await webchat.make_login_link(111, "portal")
+            token = link.split("t=")[1].split("&")[0]
+            r = await c.post("/chat/login", data={"t": token, "n": "portal"}, headers={"User-Agent": self.MAC}, allow_redirects=False)
+            self.assertEqual(r.status, 302)
+            row = await db.fetch_one("SELECT device FROM web_sessions WHERE uid=111 ORDER BY id DESC LIMIT 1")
+            self.assertEqual(row["device"], "Mac · Safari")
+        run(t, admin=False)
+
+    def test_settings_lists_devices_and_marks_current(self):
+        async def t(c, f):
+            await db.execute("INSERT INTO web_sessions (token_hash, uid, device) VALUES ('h-old', 111, 'Mac · Safari')")
+            html = await (await c.get("/portal/settings")).text()
+            self.assertIn("Доверенные устройства", html)
+            self.assertIn("Mac · Safari", html)
+            self.assertIn("это устройство", html)
+            self.assertEqual(html.count('name="revoke"'), html.count('<form method="post" action="/portal/settings" class="dev"'))
+        run(t)
+
+    def test_revoke_other_device_kills_its_session_only(self):
+        async def t(c, f):
+            old = await db.execute("INSERT INTO web_sessions (token_hash, uid, device) VALUES ('h-old2', 111, 'Mac · Safari')")
+            r = await c.post("/portal/settings", data={"step": "revoke", "id": str(old)}, allow_redirects=False)
+            self.assertEqual(r.status, 303)
+            self.assertIsNone(await db.fetch_one("SELECT 1 FROM web_sessions WHERE id=?", (old,)))
+            self.assertIn("Вход и почта", await (await c.get("/portal/settings")).text(), "текущий вход не пострадал")
+        run(t)
+
+    def test_cannot_revoke_foreign_session(self):
+        async def t(c, f):
+            other = await db.execute("INSERT INTO web_sessions (token_hash, uid, device) VALUES ('h-cl', 555, 'Чужой планшет')")
+            await c.post("/portal/settings", data={"step": "revoke", "id": str(other)}, allow_redirects=False)
+            self.assertIsNotNone(await db.fetch_one("SELECT 1 FROM web_sessions WHERE id=?", (other,)))
+            self.assertNotIn("Чужой планшет", await (await c.get("/portal/settings")).text())
+        run(t)
+
+    def test_revoke_all_others_keeps_current(self):
+        async def t(c, f):
+            for i in range(2):
+                await db.execute("INSERT INTO web_sessions (token_hash, uid, device) VALUES (?, 111, 'Старый')", (f"h-x{i}",))
+            await c.post("/portal/settings", data={"step": "revoke_others"}, allow_redirects=False)
+            left = await db.fetch_all("SELECT device FROM web_sessions WHERE uid=111")
+            self.assertNotIn("Старый", [r["device"] for r in left])
+            self.assertIn("Вход и почта", await (await c.get("/portal/settings")).text())
+        run(t)
+
+    def test_revoked_device_loses_access(self):
+        async def t(c, f):
+            tok = await webchat.new_session(111, device="Телефон")
+            row = await db.fetch_one("SELECT id FROM web_sessions WHERE token_hash=?", (webchat._hash(tok),))
+            await c.post("/portal/settings", data={"step": "revoke", "id": str(row["id"])}, allow_redirects=False)
+            c.session.cookie_jar.update_cookies({webchat.ADMIN_COOKIE: tok})
+            self.assertIn("Вход в портал", await (await c.get("/portal")).text())
+        run(t)
+
+
 if __name__ == "__main__":
     unittest.main()

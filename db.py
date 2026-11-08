@@ -158,6 +158,8 @@ MIGRATIONS: dict[int, str] = {
     );
     CREATE INDEX IF NOT EXISTS idx_push_subs_uid ON push_subs(uid);
     """,
+    # 16: доверенные устройства: вход запоминает название устройства (см. webchat.device_label), в портале его можно отозвать
+    16: "ALTER TABLE web_sessions ADD COLUMN device TEXT;",
     # 14: шаги диалога (FSM) — в базе, чтобы переживать перезапуск бота (см. fsm_store.py)
     14: """
     CREATE TABLE IF NOT EXISTS fsm (
