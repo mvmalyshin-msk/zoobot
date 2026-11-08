@@ -20,4 +20,15 @@ HEAD_ADMIN = (HEAD.replace('href="/manifest.webmanifest"', 'href="/manifest-admi
               .replace(f'application-name" content="{NAME}"', f'application-name" content="{ADMIN_TITLE}"')
               .replace('theme-color" content="#FC6751"', 'theme-color" content="#d62b2b"'))
 
+_BACK_JS = ("if(history.length>1&&document.referrer&&document.referrer.indexOf(location.origin)===0)"
+            "{history.back();return false}")
+
+
+def back(href: str = "/", compact: bool = False) -> str:
+    """Стрелка «Назад»: возвращает туда, откуда пришли; если пришли не с нашего сайта — ведёт на href (страница выше)."""
+    cls = "back compact" if compact else "back"
+    return (f'<a class="{cls}" href="{href}" aria-label="Назад" onclick="{_BACK_JS}">'
+            f'<span aria-hidden="true">←</span><b>Назад</b></a>')
+
+
 LOGO = '<span class="brand"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</span>'

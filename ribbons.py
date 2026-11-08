@@ -14,8 +14,8 @@ _STYLE = {
 def html(role: str) -> str:
     """Полоса сверху страницы. Для клиента — синяя, для администратора — красная."""
     color, dot, label = _STYLE[role]
-    return ('<div class="role-ribbon" role="banner" style="background:%s;color:#fff;font:700 13px/1.3 -apple-system,'
-            'system-ui,sans-serif;text-align:center;padding:7px 10px;letter-spacing:.3px">%s %s</div>'
+    return ('<div class="role-ribbon" role="banner" style="background:%s;color:#fff;font:700 13px/1.3 var(--font,sans-serif);'
+            'text-align:center;padding:7px 10px;letter-spacing:.3px">%s %s</div>'
             % (color, dot, _h.escape(label)))
 
 
