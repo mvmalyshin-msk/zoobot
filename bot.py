@@ -19,6 +19,7 @@ from config import config
 from handlers import admin, client, executor
 from handlers.executor import Report
 import policy
+import purge
 import releases
 from scheduler import setup_scheduler
 
@@ -154,6 +155,10 @@ async def main() -> None:
     scheduler.start()
     await set_commands(bot)
     await set_profile_texts(bot)
+    try:
+        await purge.run_once(bot)  # один раз убирает тестовые данные до 18:40 8 ноября (с копией); потом ничего не делает
+    except Exception:
+        log.exception("Чистка тестовых данных не выполнена")
     try:
         await releases.announce(bot)  # админам: «Прошло обновление №N» и что изменилось
     except Exception:
