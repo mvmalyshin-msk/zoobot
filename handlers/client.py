@@ -140,15 +140,17 @@ async def cb_erase_ping(cb: CallbackQuery) -> None:
 async def cb_erase(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
     if cb.data == "del:no":
-        await cb.message.answer(texts.ERASE_CANCELLED)
+        await cb.message.answer(texts.ERASE_CANCELLED, reply_markup=ReplyKeyboardRemove())
         return
     u = await repo.get_or_create_user(cb.from_user)
+    if u.get("erased_at") and not (u["name"] or u["phone"] or u["pdn_consent"]):  # повторное нажатие: уже удалено, второе «Готово» не шлём
+        return
     if await repo.active_order_count(u["id"]):  # за время раздумий мог появиться заказ
         await _erase_blocked(cb.message, u["id"])
         return
     await repo.erase_user(u["id"])
     await state.clear()
-    await cb.message.answer(texts.ERASE_DONE)
+    await cb.message.answer(texts.ERASE_DONE, reply_markup=ReplyKeyboardRemove())  # панель карты/геопозиции больше не нужна
 
 
 @router.message(Command("policy"))
