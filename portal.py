@@ -288,7 +288,8 @@ def _seg(active: str) -> str:
 def page(title: str, body: str, active: str = "", flash: str | None = None, back: str | None = "/portal") -> str:
     nav = "".join(f'<a href="{href}" class="{"on" if key == active else ""}">{label}</a>' for key, href, label in (
         ("orders", "/portal", "Заявки"), ("clients", "/portal/clients", "Клиенты"),
-        ("executors", "/portal/executors", "Исполнители"), ("tariffs", "/portal/tariffs", "Тарифы"), ("settings", "/portal/settings", "Вход и почта"),
+        ("executors", "/portal/executors", "Исполнители"), ("reports", "/portal/reports", "📥 Отчёты и база"),
+        ("tariffs", "/portal/tariffs", "Тарифы"), ("settings", "/portal/settings", "Вход и почта"),
         ("bot", "/portal/bot", "Бот")))
     fl = f'<div class="flash">{_e(flash)}</div>' if flash else ""
     return (f'<!doctype html><html lang="ru"><head><meta charset="utf-8">'
@@ -834,7 +835,8 @@ async def clients_page(request: web.Request, uid: int) -> web.Response:
         items.append(f'<a class="item card" href="/portal/chat/{u["tg_id"]}"><div class="row"><span class="who">{_e(u["name"] or "Без имени")}</span>{mark}</div>'
                      f'<div class="row" style="margin-top:6px"><span class="src">{SOURCES[_source(u["tg_id"])]}</span></div>'
                      f'<div class="sub">{_e(u["phone"] or "—")} · заказов: {u["n"]} · заявок с сайта: {u["nreq"]}</div>{last}</a>')
-    body = (f'<h1>Клиенты</h1><form class="send" method="get"><input name="q" value="{_e(q)}" placeholder="имя или телефон">'
+    body = (f'<h1>Клиенты</h1><p><a class="btn small" href="/portal/export/database.xlsx">📥 Выгрузить базу в Excel</a></p>'
+            f'<form class="send" method="get"><input name="q" value="{_e(q)}" placeholder="имя или телефон">'
             f'<button class="btn small">Найти</button></form><div class="list" style="margin-top:10px">{"".join(items) or "<p class=muted>Никого.</p>"}</div>')
     return _html_resp(page("Клиенты", body, "clients"))
 
@@ -1202,7 +1204,37 @@ async def as_client(request: web.Request, uid: int) -> web.Response:
     return resp
 
 
+@admin_page
+async def reports_page(request: web.Request, uid: int) -> web.Response:
+    """Отчёты: сводка по статусам и кнопка «вся база в Excel» (клиенты, заказы, заявки с сайта, история статусов)."""
+    import exports
+    rows = await exports.status_summary()
+    table = "".join(
+        f'<tr class="{STATUS_CLASS[r["status"]]}"><td>{_e(r["label"])}</td><td><b>{r["n"]}</b></td><td>{rub(r["total"])}</td>'
+        f'<td>{r["today"]}</td><td>{r["week"]}</td></tr>' for r in rows)
+    clients = (await db.fetch_one("SELECT COUNT(*) AS n FROM users WHERE pdn_consent=1 OR id IN (SELECT user_id FROM orders)"))["n"]
+    body = (f'<h1>Отчёты и база</h1><div class="card" style="padding:14px"><b>База клиентов в Excel</b>'
+            f'<p class="muted">Клиенты ({clients}), заказы, заявки с сайта, история статусов и сводка. Файл собирается заново при каждом нажатии.</p>'
+            f'<a class="btn" href="/portal/export/database.xlsx">📥 Скачать базу (Excel)</a></div>'
+            f'<h2>Заказы по статусам</h2><div class="card" style="padding:6px 10px;overflow-x:auto"><table class="stt-tab">'
+            f'<tr><th>Статус</th><th>Сейчас</th><th>Сумма</th><th>Сегодня</th><th>7 дней</th></tr>{table}</table></div>'
+            f'<style>.stt-tab{{width:100%;border-collapse:collapse}}.stt-tab th,.stt-tab td{{padding:8px 6px;text-align:left;border-bottom:1px solid var(--line)}}'
+            f'.stt-tab th{{font-size:13px;color:var(--mute)}}</style>')
+    return _html_resp(page("Отчёты и база", body, "reports"))
+
+
+@admin_page
+async def export_database(request: web.Request, uid: int) -> web.Response:
+    import exports
+    stamp = to_local(now_utc()).strftime("%Y-%m-%d_%H%M")
+    return web.Response(body=await exports.build_database_xlsx(), headers={
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": f'attachment; filename="baza_klientov_{stamp}.xlsx"', "Cache-Control": "no-store"})
+
+
 def setup(app: web.Application) -> None:
+    app.router.add_get("/portal/reports", reports_page)
+    app.router.add_get("/portal/export/database.xlsx", export_database)
     app.router.add_post("/portal/as-client", as_client)
     app.router.add_get("/portal", list_page)
     app.router.add_post("/portal/code", post_code)
