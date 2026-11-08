@@ -418,6 +418,7 @@ def _phone_form(msg: str = "") -> web.Response:
         f"{note}<form method=post action=\"/chat/login/phone\"><label>Телефон</label>"
         "<input name=\"phone\" type=tel inputmode=tel autocomplete=tel placeholder='+7 900 000-00-00' required style='width:100%'>"
         "<button class='btn' style='width:100%;margin-top:12px'>Получить код</button></form>"
+        "<p style='margin-top:18px'><a class=\"btn ghost\" style='display:block;text-align:center' href=\"/chat/login/tg\">✈️ Войти через Telegram</a></p>"
         "<p class=muted style='margin-top:18px'>Нет Telegram или вы у нас впервые? "
         "<a href=\"/request\">Оставьте заявку без входа</a> — администратор свяжется с вами.</p>")
 
@@ -431,7 +432,51 @@ def _code_form(phone: str, msg: str = "") -> web.Response:
         f"{note}<form method=post action=\"/chat/login/code\"><input type=hidden name=phone value='{_h.escape(phone, quote=True)}'>"
         "<input name=\"code\" inputmode=numeric autocomplete=one-time-code maxlength=6 placeholder='6 цифр' required style='width:100%'>"
         "<button class='btn' style='width:100%;margin-top:12px'>Войти</button></form>"
-        "<p class=muted style='margin-top:18px'><a href=\"/chat/login\">Другой номер</a></p>")
+        "<p class=muted style='margin-top:18px'>Код не пришёл? Номера может не быть в нашей базе — "
+        "<a href=\"/chat/login/tg\">войдите через Telegram</a>. Или <a href=\"/chat/login\">введите другой номер</a>.</p>")
+
+
+_tg_logins: dict[str, dict] = {}   # токен ожидающего входа -> {tg, exp}; живёт в памяти, 10 минут
+TG_LOGIN_TTL = 600
+
+
+async def confirm_tg_login(token: str, tg_id: int) -> bool:
+    """Бот зовёт это, когда клиент нажал «Start» по ссылке входа. Админ так не входит: у него портал."""
+    entry = _tg_logins.get(token)
+    if not entry or entry["exp"] < time.time() or tg_id in config.admin_ids or entry["tg"] is not None:
+        return False
+    entry["tg"] = tg_id
+    return True
+
+
+async def page_login_tg(request: web.Request) -> web.Response:
+    now = time.time()
+    for k in [k for k, v in _tg_logins.items() if v["exp"] < now]:
+        _tg_logins.pop(k, None)
+    token = secrets.token_urlsafe(18)
+    _tg_logins[token] = {"tg": None, "exp": now + TG_LOGIN_TTL}
+    link = f"https://t.me/{config.bot_username}?start=lg_{token}"
+    return _login_shell(
+        "<h2 style='text-align:center'>Вход через Telegram</h2>"
+        "<p>Нажмите кнопку, в Telegram нажмите «Запустить» (Start) — и эта страница сама откроет ваш кабинет.</p>"
+        f"<p><a class=\"btn\" style='display:block;text-align:center' href=\"{link}\">Открыть Telegram</a></p>"
+        "<p id=st class=muted>Ждём подтверждения…</p>"
+        "<script>(function(){var t=" + json.dumps(token) + ";function p(){fetch('/chat/login/tg/poll?t='+encodeURIComponent(t),{credentials:'same-origin'})"
+        ".then(function(r){return r.json()}).then(function(j){if(j.ok){location.href='/chat'}else{setTimeout(p,2000)}})"
+        ".catch(function(){setTimeout(p,4000)})}setTimeout(p,2000)})();</script>"
+        "<p class=muted style='margin-top:18px'><a href=\"/chat/login\">Войти по номеру телефона</a></p>")
+
+
+async def poll_login_tg(request: web.Request) -> web.Response:
+    token = request.query.get("t", "")
+    entry = _tg_logins.get(token)
+    if not entry or entry["tg"] is None or entry["exp"] < time.time():
+        return web.json_response({"ok": False})
+    _tg_logins.pop(token, None)                       # одноразово
+    session = await new_session(entry["tg"], device=device_label(request.headers.get("User-Agent")), ip=client_ip(request))
+    resp = web.json_response({"ok": True})
+    _set_cookie(request, resp, session)
+    return resp
 
 
 async def post_login_phone(request: web.Request) -> web.Response:
@@ -702,6 +747,8 @@ def setup(app: web.Application) -> None:
     app.router.add_get("/chat", page_chat)
     app.router.add_get("/chat/login", page_login)
     app.router.add_post("/chat/login", post_login)
+    app.router.add_get("/chat/login/tg", page_login_tg)
+    app.router.add_get("/chat/login/tg/poll", poll_login_tg)
     app.router.add_post("/chat/login/phone", post_login_phone)
     app.router.add_post("/chat/login/code", post_login_code)
     app.router.add_get("/chat/logout", logout)

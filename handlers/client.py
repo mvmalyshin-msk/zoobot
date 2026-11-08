@@ -176,6 +176,22 @@ async def show_menu(msg: Message, tg_user, text: str | None = None) -> None:
                      reply_markup=kb.main_menu(last is not None, last["name"] if last else None))
 
 
+@router.message(CommandStart(deep_link=True, magic=F.args.startswith("lg_")))
+async def cmd_start_site_login(m: Message) -> None:
+    """Клиент нажал «Войти через Telegram» на сайте: подтверждаем вход, страница откроется сама."""
+    import webchat
+    if await webchat.confirm_tg_login(command_args(m), m.from_user.id):
+        await repo.get_or_create_user(m.from_user)
+        await m.answer("✅ Готово! Вернитесь на сайт — кабинет откроется сам.")
+    else:
+        await m.answer("Ссылка входа устарела. Откройте сайт и нажмите «Войти через Telegram» ещё раз.")
+
+
+def command_args(m: Message) -> str:
+    parts = (m.text or "").split(maxsplit=1)
+    return parts[1][3:] if len(parts) > 1 else ""
+
+
 @router.message(CommandStart(deep_link=True, magic=F.args.startswith("wl_")))
 async def cmd_start_web_link(m: Message, command: CommandObject, state: FSMContext) -> None:
     """П.4: клиент с сайта подтверждает себя через Telegram."""
