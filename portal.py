@@ -109,6 +109,9 @@ body{min-height:100vh}
 .top{position:sticky;top:0;z-index:5;background:var(--cream);border-bottom:1.5px solid var(--line);padding:10px 14px;
   padding-top:max(10px,env(safe-area-inset-top));display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between}
 .top .brand{font-size:20px}
+.top details.menu{position:relative}.top details.menu summary{cursor:pointer;list-style:none;padding:6px 14px;border-radius:999px;background:var(--card);border:1.5px solid var(--line);font-weight:700}
+.top details.menu summary::-webkit-details-marker{display:none}.top details.menu[open] summary{background:var(--ink);color:#fff}
+.top details.menu nav{position:absolute;right:0;top:calc(100% + 6px);z-index:9;flex-direction:column;background:var(--cream);border:1.5px solid var(--line);border-radius:16px;padding:8px;min-width:200px;box-shadow:0 8px 24px rgba(0,0,0,.15)}
 .top nav{display:flex;gap:6px;flex-wrap:wrap}
 .top nav a{text-decoration:none;color:var(--ink);padding:6px 12px;border-radius:999px;font-weight:700;font-size:15px;background:var(--card)}
 .top nav a.on{background:var(--coral);color:#fff}
@@ -219,7 +222,7 @@ def page(title: str, body: str, active: str = "", flash: str | None = None, back
             f'<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
             f'<title>{brand.NAME} — {_e(title)}</title>{brand.HEAD_ADMIN}<style>{CSS}</style></head><body>{ribbons.html(ribbons.ADMIN)}'
             f'<div class="top">{brand.LOGO}'
-            f'<nav>{nav}<a href="#" id="perm" hidden>🔔 Уведомления</a><a href="/portal/logout">Выйти</a></nav></div>'
+            f'<details class="menu"><summary>☰ Меню</summary><nav>{nav}<a href="#" id="perm" hidden>🔔 Уведомления</a><a href="/portal/logout">Выйти</a></nav></details></div>'
             f'<main>{brand.backrow(back) if back else ""}{fl}{body}</main><a id="newbar" class="btn" href="">.</a>{NOTIFY_JS}</body></html>')
 
 

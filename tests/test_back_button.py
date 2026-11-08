@@ -77,6 +77,14 @@ class BackButtonTest(unittest.IsolatedAsyncioTestCase):
             _, t = await self.back_of(path, self.admin)
             self.assertRegex(t, r'<a[^>]*class="brand"[^>]*href="/"', path)    # на главную ведёт надпись ЗООКОНСЬЕРЖ
 
+    async def test_admin_menu_is_collapsed(self):
+        _, t = await self.back_of("/portal", self.admin)
+        m = re.search(r'<details class="menu"><summary>[^<]*Меню</summary>(.*?)</details>', t, re.S)
+        self.assertIsNotNone(m)
+        for word in ("Заявки", "Клиенты", "Исполнители", "Тарифы", "Вход и почта", "Бот", "Выйти"):
+            self.assertIn(word, m.group(1))
+        self.assertNotIn("Главная страница", t)
+
     async def test_start_pages_have_no_back(self):
         for path, hdr in (("/", None), ("/portal", self.admin)):
             href, _ = await self.back_of(path, hdr)
