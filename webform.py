@@ -11,9 +11,12 @@ from aiohttp import web
 
 import db
 import orders
+import webchat
 import brand
 import ribbons
+import talk
 import texts
+from config import config
 from utils import normalize_phone, rub
 
 log = logging.getLogger(__name__)
@@ -104,12 +107,12 @@ def render_done(request_id: int) -> str:
 {brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.CLIENT)}<main>{brand.backrow("/")}<div class="top">{brand.LOGO}</div><h1>✅ Заявка принята</h1>
 <p>Номер заявки: <b>№{request_id}</b>. Мы свяжемся с вами по указанному телефону, уточним детали и сообщим цену.</p>
 <p class="hint">Данные используются только для выполнения заявки. Удалить их можно, написав нам.</p>
+<p><a class="btn" href="/chat">💬 Открыть чат с администратором</a></p>
+<p class="hint">Администратор напишет вам в этот чат. Заходите с этого же телефона и браузера — мы вас узнаем.</p>
 <p><a href="/request">Отправить ещё одну заявку</a></p></main></body></html>"""
 
 
-def _client_ip(request: web.Request) -> str:
-    fwd = request.headers.get("X-Forwarded-For", "")
-    return (fwd.split(",")[0].strip() or request.remote or "?")[:64]
+_client_ip = webchat.client_ip
 
 
 def _limited(ip: str) -> bool:
@@ -145,12 +148,22 @@ async def post_form(request: web.Request) -> web.Response:
     if errors:
         return web.Response(status=400, text=render_form(services, clean, errors), content_type="text/html")
     svc = next(s for s in services if str(s["id"]) == clean["service_id"])
+    # кто это: тот же браузер (cookie) остаётся тем же клиентом, новому браузеру выдаём свою гостевую сессию
+    ip, device = _client_ip(request), webchat.device_label(request.headers.get("User-Agent"))
+    web_uid, new_token = await webchat.session_uid(request), None
+    if web_uid is None:
+        new_token = await webchat.new_session(device=device, ip=ip)
+        web_uid = (await db.fetch_one("SELECT uid FROM web_sessions WHERE token_hash=?", (webchat._hash(new_token),)))["uid"]
     async with db.transaction() as conn:
+        await conn.execute("INSERT OR IGNORE INTO users (tg_id, name, phone) VALUES (?,?,?)",
+                           (web_uid, clean["name"], clean["phone"]))
+        await conn.execute("UPDATE users SET phone=COALESCE(phone, ?), name=COALESCE(name, ?) WHERE tg_id=?",
+                           (clean["phone"], clean["name"], web_uid))
         cur = await conn.execute(
-            """INSERT INTO web_requests (service_id, name, phone, contact_pref, address, when_text, pet, comment)
-               VALUES (?,?,?,?,?,?,?,?)""",
+            """INSERT INTO web_requests (service_id, name, phone, contact_pref, address, when_text, pet, comment, web_uid, ip, device)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (svc["id"], clean["name"], clean["phone"], clean["contact"], clean["address"], clean["when"],
-             clean["pet"], clean["comment"]))
+             clean["pet"], clean["comment"], web_uid, ip, device))
         rid = cur.lastrowid
     text = "\n".join(filter(None, [
         f"🌐 Заявка с сайта №{rid}",
@@ -161,9 +174,15 @@ async def post_form(request: web.Request) -> web.Response:
         f"Адрес: {clean['address']}",
         f"Питомец: {clean['pet']}" if clean["pet"] else "",
         f"Комментарий: {clean['comment']}" if clean["comment"] else "",
-        "Свяжитесь с клиентом по телефону: он без Telegram."]))
+        "Свяжитесь с клиентом по телефону или напишите ему в чат (он увидит ответ на сайте):",
+        f"{config.webapp_url}/portal/chat/{web_uid}"]))
     try:
+        await talk.save(web_uid, "client", "in", text)
+        await orders.notify(request.app["bot"], web_uid, f"✅ Заявка №{rid} принята. Администратор свяжется с вами и ответит здесь, в чате.")
         await orders.notify_admins(request.app["bot"], text)
     except Exception:
         log.exception("Не удалось уведомить админа о заявке с сайта №%s", rid)
-    return web.Response(text=render_done(rid), content_type="text/html", headers={"Cache-Control": "no-cache"})
+    resp = web.Response(text=render_done(rid), content_type="text/html", headers={"Cache-Control": "no-cache"})
+    if new_token:
+        webchat._set_cookie(request, resp, new_token)
+    return resp

@@ -302,12 +302,17 @@ def device_label(ua: str | None) -> str:
     return device
 
 
-async def new_session(uid: int | None = None, device: str | None = None) -> str:
+def client_ip(request: web.Request) -> str:
+    fwd = request.headers.get("X-Forwarded-For", "")
+    return (fwd.split(",")[0].strip() or request.remote or "?")[:64]
+
+
+async def new_session(uid: int | None = None, device: str | None = None, ip: str | None = None) -> str:
     """Выдаёт токен. Без uid — гость: отрицательный id, не пересекается с настоящими Telegram-id."""
     token = secrets.token_urlsafe(32)
     async with db.transaction() as conn:
-        cur = await conn.execute("INSERT INTO web_sessions (token_hash, uid, device) VALUES (?, ?, ?)",
-                                 (_hash(token), uid if uid is not None else 0, device))
+        cur = await conn.execute("INSERT INTO web_sessions (token_hash, uid, device, ip, seen_at) VALUES (?, ?, ?, ?, datetime('now'))",
+                                 (_hash(token), uid if uid is not None else 0, device, ip))
         if uid is None:
             await conn.execute("UPDATE web_sessions SET uid=? WHERE id=?", (-cur.lastrowid, cur.lastrowid))
     _linked_cache.clear()
@@ -378,7 +383,10 @@ async def page_chat(request: web.Request) -> web.Response:
     uid = await session_uid(request)
     resp = _html_page(_chat_html(admin=False))
     if uid is None:  # нет клиентской сессии (или в ней старый админ) — новый гость
-        _set_cookie(request, resp, await new_session())
+        _set_cookie(request, resp, await new_session(device=device_label(request.headers.get("User-Agent")), ip=client_ip(request)))
+    else:  # запоминаем, с какого IP человек пришёл в этот раз
+        await db.execute("UPDATE web_sessions SET ip=?, seen_at=datetime('now') WHERE token_hash=?",
+                         (client_ip(request), _hash(request.cookies.get(COOKIE, ""))))
     return resp
 
 
