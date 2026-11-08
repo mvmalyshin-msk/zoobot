@@ -136,7 +136,7 @@ class RequestChatTest(unittest.IsolatedAsyncioTestCase):
     async def test_home_has_prominent_chat_button(self):
         t = await (await self.client.get("/")).text()
         hero = t.split("</header>")[0]
-        self.assertRegex(hero, r'<a[^>]*href="/chat"[^>]*>[^<]*Чат')
+        self.assertRegex(hero, r'<a[^>]*href="/contact"[^>]*>[^<]*Написать администратору')   # было «Чат» → /chat; теперь сразу на связь с админом
 
 
 if __name__ == "__main__":
