@@ -23,7 +23,8 @@
   #top { padding: 10px 12px 8px; position: relative; z-index: 2000; background: var(--bg); }
   #q { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line);
     background: var(--card); color: var(--fg); font-size: 16px; outline: none; }
-  #sugg { position: absolute; left: 12px; right: 12px; top: 58px; background: var(--bg); border: 1px solid var(--line);
+  #qwrap { position: relative; }
+  #sugg { position: absolute; left: 0; right: 0; top: 52px; background: var(--bg); border: 1px solid var(--line);
     border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.18); max-height: 40vh; overflow-y: auto; display: none; }
   #sugg button { display: block; width: 100%; text-align: left; padding: 11px 14px; border: 0; background: none;
     color: var(--fg); font-size: 15px; border-bottom: 1px solid var(--line); }
@@ -41,14 +42,19 @@
     font-size: 16px; font-weight: 600; }
   #ok:disabled { opacity: .45; }
   .leaflet-container { font-family: inherit; }
+  #title { margin: 0 0 8px; font-size: 17px; font-weight: 700; }
+  #here { width: 100%; margin: 0 0 8px; padding: 11px; border-radius: 12px; border: 1px solid var(--line);
+    background: var(--card); color: var(--fg); font-size: 15px; }
 </style>
 </head>
 <body>
 <div id="app">
 <div class="role-ribbon" role="banner" style="flex:none;background:#1d6fd6;color:#fff;font:700 13px/1.3 -apple-system,system-ui,sans-serif;text-align:center;padding:7px 10px">🔵 КЛИЕНТСКОЕ МЕНЮ · Зооконсьерж</div>
   <div id="top">
-    <input id="q" type="search" placeholder="Начните вводить адрес: улица, дом" autocomplete="off" enterkeyhint="search">
-    <div id="sugg"></div>
+    <p id="title" hidden></p>
+    <div id="qwrap"><input id="q" type="search" placeholder="Начните вводить адрес: улица, дом" autocomplete="off" enterkeyhint="search">
+    <div id="sugg"></div></div>
+    <button id="here" type="button">📍 Я здесь</button>
   </div>
   <div id="map"></div>
   <div id="panel">
@@ -81,6 +87,22 @@
   var $ = function (id) { return document.getElementById(id); };
   var q = $("q"), sugg = $("sugg"), label = $("label"), flat = $("flat"), ok = $("ok"), hint = $("hint");
   var marker = null, sel = null, timer = null, ctrl = null;
+
+  // Зоотакси: бот открывает карту с ?pt=a (откуда забрать) или ?pt=b (куда поедем) и &from=lat,lon — подача на карте
+  var params = new URLSearchParams(location.search);
+  var pt = params.get("pt");
+  if (pt === "a" || pt === "b") {
+    var title = $("title");
+    title.hidden = false;
+    title.textContent = pt === "a" ? "🚕 Откуда забрать питомца?" : "🏁 Куда поедем?";
+    $("ok").textContent = pt === "a" ? "Забрать отсюда" : "Ехать сюда";
+  }
+  var from = (params.get("from") || "").split(",").map(parseFloat);
+  if (pt === "b" && from.length === 2 && inBox(from[0], from[1])) {
+    L.circleMarker([from[0], from[1]], { radius: 9, weight: 3, color: "#fff", fillColor: "#e8a33d", fillOpacity: 1 })
+      .addTo(map).bindTooltip("Подача", { permanent: true, direction: "top" });
+    map.setView([from[0], from[1]], 13);
+  }
 
   function setPoint(lat, lon, text, zoom) {
     sel = { lat: lat, lon: lon };
@@ -153,10 +175,10 @@
   document.addEventListener("click", function (e) { if (!sugg.contains(e.target) && e.target !== q) sugg.style.display = "none"; });
 
   // ---------- Выбор точки касанием по карте (Nominatim reverse: один запрос на касание) ----------
-  map.on("click", function (e) {
-    var lat = e.latlng.lat, lon = e.latlng.lng;
-    if (!inBox(lat, lon)) return;
-    setPoint(lat, lon, "", null);
+  map.on("click", function (e) { pickAt(e.latlng.lat, e.latlng.lng, null); });
+  function pickAt(lat, lon, zoom) {
+    if (!inBox(lat, lon)) { hint.textContent = "Эта точка вне Москвы и области."; return; }
+    setPoint(lat, lon, "", zoom);
     hint.textContent = "Определяю адрес…";
     fetch("https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=ru&lat=" + lat + "&lon=" + lon)
       .then(function (r) { return r.json(); }).then(function (j) {
@@ -166,6 +188,17 @@
         label.value = parts.join(", ");
         refresh();
       }).catch(function () { hint.textContent = "Адрес по точке не определился — впишите его в поле «Адрес»."; });
+  }
+
+  // «Я здесь»: геопозиция браузера/телефона. Если Telegram или Safari не дали — подсказываем, что делать
+  $("here").addEventListener("click", function () {
+    if (!navigator.geolocation) { hint.textContent = "Геопозиция тут недоступна. Найдите адрес или коснитесь карты."; return; }
+    hint.textContent = "Определяю, где вы…";
+    navigator.geolocation.getCurrentPosition(function (p) {
+      pickAt(p.coords.latitude, p.coords.longitude, 17);
+    }, function () {
+      hint.textContent = "Не удалось определить место: разрешите геопозицию или коснитесь карты. В боте есть кнопка «📍 Отправить геопозицию».";
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
   });
   label.addEventListener("input", refresh);
 

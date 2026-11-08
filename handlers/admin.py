@@ -14,6 +14,7 @@ import keyboards as kb
 import orders
 import payinfo
 import pricing
+import taxi
 import texts
 from config import config
 from utils import fmt_local, min_age, now_utc, rub, to_db, to_local
@@ -44,6 +45,7 @@ HELP = """Команды админа
 Цены:
 /services — услуги и цены
 /price_set <id услуги> <цена>
+/taxi_tariff [ставка число] — ставки зоотакси (км, мин, животное…)
 /service_active <id услуги> <0|1>
 /rules — правила надбавок
 /rule_add <id услуги или 0> <условие> <fixed|percent> <значение> <название>
@@ -228,6 +230,26 @@ async def cmd_price_set(m: Message, command: CommandObject) -> None:
         return
     await db.execute(f"UPDATE services SET base_price=?, {db.touch()} WHERE id=?", (ids[1], ids[0]))
     await m.answer(f"✅ {s['name']}: {rub(s['base_price'])} → {rub(ids[1])}")
+
+
+@router.message(Command("taxi_tariff"))
+async def cmd_taxi_tariff(m: Message, command: CommandObject) -> None:
+    """Ставки зоотакси (формула Яндекс Такси): без параметров — показать, «/taxi_tariff км 17» — изменить."""
+    parts = (command.args or "").split()
+    if parts and len(parts) != 2:
+        await m.answer("Формат: /taxi_tariff <ставка> <число>. Ставки: " + ", ".join(taxi.PARAMS))
+        return
+    if parts:
+        try:
+            await taxi.set_param(parts[0], parts[1])
+        except ValueError as e:
+            await m.answer(f"⚠️ {e}")
+            return
+    svc = await db.fetch_one("SELECT base_price FROM services WHERE code='taxi'")
+    prefix = "✅ Сохранено. " if parts else ""
+    await m.answer(prefix + taxi.describe(await taxi.get_tariff(), svc["base_price"])
+                   + f"\nПробки: время × {(await taxi.get_tariff()).traffic:g}. Посадку меняет /price_set."
+                   "\nСтавки: " + ", ".join(taxi.PARAMS))
 
 
 @router.message(Command("service_active"))

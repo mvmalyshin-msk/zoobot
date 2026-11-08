@@ -231,7 +231,7 @@ INSERT OR IGNORE INTO services (code, category, name, base_price, unit) VALUES
     ('sitter_live',    'sitter',   'Зооняня с проживанием',             2500, 'сутки'),
     ('boarding_home',  'boarding', 'Передержка в частном доме',         1500, 'сутки'),
     ('boarding_hotel', 'boarding', 'Передержка в зоогостинице',         1800, 'сутки'),
-    ('taxi',           'taxi',     'Зоотакси',                          1200, 'поездка');
+    ('taxi',           'taxi',     'Зоотакси',                          189,  'поездка');  -- посадка, дальше по маршруту (taxi.py)
 
 INSERT OR IGNORE INTO price_rules (id, service_id, name, condition_type, effect_type, value, sort_order) VALUES
     (1, NULL, 'Крупная собака',          'pet_size_l',   'fixed',   100, 10),

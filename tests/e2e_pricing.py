@@ -64,8 +64,8 @@ async def main():
     check("зооняня с проживанием 2 сут.: ночь не считается", await price("sitter_live", at(*tue, 23), qty=2), 5000)
     check("передержка дом 3 сут.", await price("boarding_home", at(*tue), qty=3), 4500)
     check("передержка отель 1 сут. + срочно", await price("boarding_hotel", at(*tue), urgent=True), 2000)
-    check("такси днём", await price("taxi", at(*tue)), 1200)
-    check("такси в 23:00 ×1.3", await price("taxi", at(*tue, 23)), 1560)
+    check("такси днём без маршрута: посадка 189 + животное 150", await price("taxi", at(*tue)), 339)
+    check("такси в 23:00 ×1.3", await price("taxi", at(*tue, 23)), 441)
     print("Праздничные дни (+20%) должны работать без ручного заполнения")
     for y, mo, d, name in [(2026, 12, 31, "31 декабря 2026"), (2027, 1, 1, "1 января 2027"), (2027, 2, 23, "23 февраля 2027"),
                            (2027, 3, 8, "8 марта 2027"), (2027, 5, 1, "1 мая 2027"), (2027, 5, 9, "9 мая 2027"),
