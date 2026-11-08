@@ -81,3 +81,12 @@ class AdminExplained(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PhoneFormOrderTest(unittest.TestCase):
+    def test_telegram_button_comes_first_and_code_hint_is_honest(self):
+        import webchat
+        t = webchat._phone_form().text
+        self.assertLess(t.index("/chat/login/tg"), t.index("/chat/login/phone"))   # самый надёжный путь — первым
+        self.assertIn("Код придёт в Telegram только", t)                           # честно: когда код не придёт
+        self.assertIn("если номер уже есть у нас", t)
