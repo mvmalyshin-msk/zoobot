@@ -220,6 +220,11 @@ CREATE INDEX IF NOT EXISTS idx_an_src_ts ON analytics_events(source, ts);
 CREATE INDEX IF NOT EXISTS idx_an_sid ON analytics_events(sid);
 CREATE INDEX IF NOT EXISTS idx_an_vid ON analytics_events(vid, ts);
 """,
+    # 23: почта клиента — вход и регистрация по коду из письма (webchat.post_login_email)
+    23: """
+ALTER TABLE users ADD COLUMN email TEXT;
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+""",
     # 14: шаги диалога (FSM) — в базе, чтобы переживать перезапуск бота (см. fsm_store.py)
     14: """
     CREATE TABLE IF NOT EXISTS fsm (

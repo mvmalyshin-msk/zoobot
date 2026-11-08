@@ -417,20 +417,38 @@ def _yandex_on() -> bool:
 
 def _phone_form(msg: str = "") -> web.Response:
     note = f"<p style='color:#b3261e'>{msg}</p>" if msg else ""
+    gap = "<p class=muted style='text-align:center;margin:22px 0 10px'>{}</p>"
     return _login_shell(
-        "<h2 style='text-align:center'>Вход для клиентов</h2>"
-        "<p>Самый надёжный способ — через Telegram: нажмите кнопку, в Telegram «Запустить» — и кабинет откроется здесь.</p>"
+        "<h2 style='text-align:center'>Вход и регистрация</h2>"
+        "<p class=muted style='text-align:center'>Выберите, как удобнее. Новым клиентам отдельная регистрация не нужна: "
+        "при первом входе кабинет создаётся сам.</p>"
+        f"{note}"
         "<p><a class=\"btn\" style='display:block;text-align:center' href=\"/chat/login/tg\">✈️ Войти через Telegram</a></p>"
-        + ("<p><a class=\"btn ghost\" style='display:block' href=\"/chat/login/yandex\">"
-           "Войти через Яндекс ID — без кода и VPN</a></p>" if _yandex_on() else "") +
-        "<p class=muted style='text-align:center;margin:18px 0 8px'>или по номеру телефона</p>"
-        "<p class=muted style='font-size:.9em'>Код придёт в Telegram только если номер уже есть у нас и вы раньше открывали бота. "
-        "СМС мы не отправляем.</p>"
-        f"{note}<form method=post action=\"/chat/login/phone\"><label>Телефон</label>"
+        + ("<p><a class=\"btn ghost\" style='display:block;text-align:center' href=\"/chat/login/yandex\">"
+           "Войти через Яндекс ID</a></p>" if _yandex_on() else "")
+        + gap.format("или по почте — без Telegram и VPN") +
+        "<form method=post action=\"/chat/login/email\"><label>Почта</label>"
+        "<input name=\"email\" type=email inputmode=email autocomplete=email placeholder='name@example.com' required style='width:100%'>"
+        "<button class='btn ghost' style='width:100%;margin-top:10px'>Получить код на почту</button></form>"
+        + gap.format("или по номеру телефона") +
+        "<form method=post action=\"/chat/login/phone\"><label>Телефон</label>"
         "<input name=\"phone\" type=tel inputmode=tel autocomplete=tel placeholder='+7 900 000-00-00' required style='width:100%'>"
-        "<button class='btn ghost' style='width:100%;margin-top:12px'>Получить код</button></form>"
-        "<p class=muted style='margin-top:18px'>Нет Telegram или вы у нас впервые? "
-        "<a href=\"/request\">Оставьте заявку без входа</a> — администратор свяжется с вами.</p>")
+        "<button class='btn ghost' style='width:100%;margin-top:10px'>Получить код в Telegram</button></form>"
+        "<p class=muted style='font-size:.9em;margin-top:8px'>Код придёт в Telegram только если номер уже есть у нас и вы раньше открывали бота. СМС мы не отправляем.</p>"
+        "<p class=muted style='margin-top:22px;text-align:center'>Не хотите входить? "
+        "<a href=\"/request\">Оставьте заявку</a> — администратор свяжется с вами.</p>")
+
+
+def _email_code_form(email: str, msg: str = "") -> web.Response:
+    import html as _h
+    note = f"<p style='color:#b3261e'>{msg}</p>" if msg else ""
+    return _login_shell(
+        "<h2 style='text-align:center'>Введите код из письма</h2>"
+        f"<p>Мы отправили код на {_h.escape(email)}. Он действует 10 минут. Проверьте и папку «Спам».</p>"
+        f"{note}<form method=post action=\"/chat/login/emailcode\"><input type=hidden name=email value='{_h.escape(email, quote=True)}'>"
+        "<input name=\"code\" inputmode=numeric autocomplete=one-time-code maxlength=6 placeholder='6 цифр' required style='width:100%'>"
+        "<button class='btn' style='width:100%;margin-top:12px'>Войти</button></form>"
+        "<p class=muted style='margin-top:18px'><a href=\"/chat/login\">Другой способ входа</a></p>")
 
 
 def _code_form(phone: str, msg: str = "") -> web.Response:
@@ -557,6 +575,72 @@ async def post_login_code(request: web.Request) -> web.Response:
         return _code_form(phone, "Неверный код.")
     _login_codes.pop(phone, None)                     # код одноразовый
     token = await new_session(entry["uid"], device=device_label(request.headers.get("User-Agent")))
+    resp = web.Response(status=302, headers={"Location": "/chat"})
+    _set_cookie(request, resp, token)
+    return resp
+
+
+_email_codes: dict[str, dict] = {}   # почта -> {h, exp, tries, sent}; в памяти, код действует 10 минут
+_EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]{2,}$")
+
+
+async def _is_admin_email(email: str) -> bool:
+    import os
+    if email and email == (os.getenv("ADMIN_EMAIL") or "").strip().lower():
+        return True
+    return bool(await db.fetch_one("SELECT 1 AS x FROM kv WHERE key LIKE 'admin_email:%' AND value=?", (email,)))
+
+
+async def post_login_email(request: web.Request) -> web.Response:
+    import mailer
+    import portal
+    if not portal._same_origin(request):
+        return web.Response(status=403, text="Нет доступа")
+    email = str((await request.post()).get("email", "")).strip().lower()[:200]
+    if not _EMAIL_RE.match(email):
+        return _phone_form("Проверьте адрес почты: он должен выглядеть как name@example.com.")
+    if not mailer.configured():
+        return _phone_form("Почта для входа ещё не настроена. Войдите через Telegram или оставьте заявку.")
+    now = time.time()
+    old = _email_codes.get(email)
+    if old and now - old["sent"] < CODE_COOLDOWN:
+        return _email_code_form(email)                 # слишком часто: новое письмо не шлём, прежний код действует
+    if portal._limit(portal._hits, "mail:" + client_ip(request), 8, 600):
+        return _phone_form("Слишком много запросов. Подождите 10 минут.")
+    if not await _is_admin_email(email):               # админ входит в портал, на его адрес клиентский код не шлём
+        code = f"{secrets.randbelow(10**6):06d}"
+        if await mailer.send(email, "Зооконсьерж: код для входа",
+                             f"Код для входа на сайт Зооконсьерж: {code}\nДействует 10 минут. "
+                             "Никому его не сообщайте. Если это были не вы — просто удалите письмо."):
+            _email_codes[email] = {"h": _hash(f"{email}:{code}"), "exp": now + CODE_TTL, "tries": 0, "sent": now}
+    return _email_code_form(email)                     # ответ одинаков для любого адреса
+
+
+async def post_login_emailcode(request: web.Request) -> web.Response:
+    import portal
+    if not portal._same_origin(request):
+        return web.Response(status=403, text="Нет доступа")
+    form = await request.post()
+    email = str(form.get("email", "")).strip().lower()[:200]
+    code = re.sub(r"\D", "", str(form.get("code", "")))
+    entry = _email_codes.get(email)
+    if not entry or entry["exp"] < time.time() or entry["tries"] >= CODE_TRIES:
+        return _email_code_form(email, "Код не подошёл или устарел. Запросите новый.")
+    entry["tries"] += 1
+    if not secrets.compare_digest(entry["h"], _hash(f"{email}:{code}")):
+        return _email_code_form(email, "Неверный код.")
+    _email_codes.pop(email, None)                      # код одноразовый
+    device, ip = device_label(request.headers.get("User-Agent")), client_ip(request)
+    user = await db.fetch_one("SELECT * FROM users WHERE email=? AND erased_at IS NULL ORDER BY (tg_id>0) DESC, id LIMIT 1", (email,))
+    if user and user["tg_id"] in config.admin_ids:
+        return _phone_form(ADMIN_AS_CLIENT_TEXT)
+    if user:
+        token = await new_session(user["tg_id"], device=device, ip=ip)
+    else:                                              # новый клиент: заводим кабинет с подтверждённой почтой
+        token = await new_session(None, device=device, ip=ip)
+        uid = (await db.fetch_one("SELECT uid FROM web_sessions ORDER BY id DESC LIMIT 1"))["uid"]
+        await db.execute("INSERT OR IGNORE INTO users (tg_id) VALUES (?)", (uid,))
+        await db.execute("UPDATE users SET email=?, updated_at=datetime('now') WHERE tg_id=?", (email, uid))
     resp = web.Response(status=302, headers={"Location": "/chat"})
     _set_cookie(request, resp, token)
     return resp
@@ -787,6 +871,8 @@ def setup(app: web.Application) -> None:
     app.router.add_get("/chat/login/tg/poll", poll_login_tg)
     app.router.add_post("/chat/login/phone", post_login_phone)
     app.router.add_post("/chat/login/code", post_login_code)
+    app.router.add_post("/chat/login/email", post_login_email)
+    app.router.add_post("/chat/login/emailcode", post_login_emailcode)
     app.router.add_get("/chat/logout", logout)
     app.router.add_get("/chat/api/history", api_history)
     app.router.add_get("/chat/api/poll", api_poll)
