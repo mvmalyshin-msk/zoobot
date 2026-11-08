@@ -418,13 +418,37 @@ async def cb_marketing(cb: CallbackQuery) -> None:
     await show_settings(cb.message, cb.from_user)
 
 
-async def start_profile(msg: Message, state: FSMContext, after: str | None, add_pet_only: bool = False) -> None:
-    """Запускает опрос. after='order' — потом сразу к выбору услуги."""
+def _from_web() -> bool:
+    import webchat
+    return webchat.ORIGIN.get() is not None
+
+
+async def start_profile(msg: Message, state: FSMContext, after: str | None, add_pet_only: bool = False,
+                        tg_user=None) -> None:
+    """Запускает опрос. after='order' — потом сразу к выбору услуги.
+    С tg_user опрос не повторяет то, что клиент уже сообщил: спрашивается только недостающее."""
     await state.clear()
     await state.update_data(after=after)
     if add_pet_only:
         await state.set_state(Profile.pet_name)
         await msg.answer(texts.ASK_PET_NAME)
+    elif tg_user is not None and after is not None:
+        user = await repo.get_or_create_user(tg_user)
+        known = {k: user[k] for k in ("name", "phone", "address") if user[k]}
+        if user["phone"]:
+            await state.update_data(phone=user["phone"], phone_verified=user["phone_verified"])
+        if user["name"]:
+            await state.update_data(name=user["name"])
+        if not known.get("name"):
+            await state.set_state(Profile.name)
+            await msg.answer(texts.ASK_NAME)
+        elif not known.get("phone"):
+            await state.set_state(Profile.phone)
+            await msg.answer(texts.ASK_PHONE_WEB if _from_web() else texts.ASK_PHONE, reply_markup=kb.phone_request())
+        elif not known.get("address"):
+            await _ask_address(msg, state)
+        else:
+            await _after_address_block(msg, state, tg_user)
     else:
         await state.set_state(Profile.name)
         await msg.answer(texts.ASK_NAME)
@@ -450,6 +474,9 @@ async def p_name(m: Message, state: FSMContext) -> None:
         await m.answer(texts.BAD_PERSON_NAME)
         return
     await state.update_data(name=name)
+    if (await state.get_data()).get("phone"):  # телефон уже известен (вход по номеру) — повторно не спрашиваем
+        await _ask_address(m, state)
+        return
     await state.set_state(Profile.phone)
     import webchat
     ask = texts.ASK_PHONE_WEB if webchat.ORIGIN.get() is not None else texts.ASK_PHONE  # в браузере Telegram ни при чём
@@ -983,7 +1010,7 @@ async def cb_order(cb: CallbackQuery, state: FSMContext) -> None:
     user = await repo.get_or_create_user(cb.from_user)
     # при первом заказе собираем профиль и питомца, потом возвращаемся к выбору услуги
     if not repo.profile_complete(user) or not await repo.list_pets(user["id"]):
-        await start_profile(cb.message, state, after="order")
+        await start_profile(cb.message, state, after="order", tg_user=cb.from_user)
         return
     await state.clear()
     await show_services(cb.message)
@@ -1003,7 +1030,7 @@ async def cb_service(cb: CallbackQuery, state: FSMContext) -> None:
     user = await repo.get_or_create_user(cb.from_user)
     pets = await repo.list_pets(user["id"])
     if not pets or not repo.profile_complete(user):
-        await start_profile(cb.message, state, after="order")
+        await start_profile(cb.message, state, after="order", tg_user=cb.from_user)
         return
     await _init_order(state, user, service, pets[0]["id"])
     if service["category"] == "taxi":  # сначала: кто поедет, предупреждение, для кого заказ
