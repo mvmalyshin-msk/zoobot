@@ -8,6 +8,7 @@
 import hashlib
 import html as _html
 import json
+import logging
 import re
 import secrets
 import time
@@ -19,6 +20,7 @@ import brand
 import ribbons
 import db
 import mailer
+import passkeys
 import orders
 import payinfo
 import talk
@@ -27,10 +29,12 @@ import webchat
 from config import config
 from utils import fmt_local, rub
 
+log = logging.getLogger(__name__)
 CODE_LIMIT = 5            # запросов кода с одного адреса за 10 минут
 FAIL_LIMIT = 20           # неверных кодов с одного адреса за час
 CODE_TRIES = 5            # попыток на один код
 _hits: dict[str, list[float]] = {}
+_pk_hits: dict[str, list[float]] = {}
 _fails: dict[str, list[float]] = {}
 
 SOURCES = {"tg": "Telegram", "web": "Чат на сайте", "form": "Форма на сайте"}
@@ -251,6 +255,60 @@ async def admin_email(tg_id: int) -> str | None:
     return env if env and tg_id == min(config.admin_ids) else None
 
 
+_PK_JS_COMMON = """
+function d(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var b=atob(s),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a.buffer}
+function e(buf){var a=new Uint8Array(buf),s='';for(var i=0;i<a.length;i++)s+=String.fromCharCode(a[i]);return btoa(s).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'')}
+var H={'X-Zc':'1','Content-Type':'application/json'};
+function say(t){var s=document.getElementById('pkst');if(s)s.textContent=t}
+"""
+
+# Кнопка на странице входа: вход по ключу, созданному в «Вход и почта». Показывается там, где браузер умеет ключи доступа.
+LOGIN_PASSKEY_JS = ("<script>(function(){" + _PK_JS_COMMON + """
+var b=document.getElementById('pklogin');
+if(!b||!window.PublicKeyCredential||!navigator.credentials)return;
+b.hidden=false;
+var has=false;try{has=!!localStorage.getItem('zc_passkey')}catch(x){}
+if(!has)b.textContent='Войти по Face ID (если включён на этом устройстве)';
+b.onclick=function(ev){
+  ev.preventDefault();say('Подтвердите Face ID или отпечаток…');
+  fetch('/portal/passkey/options',{method:'POST',headers:H,credentials:'same-origin'}).then(function(r){return r.json()}).then(function(o){
+    var pk=o.publicKey;pk.challenge=d(pk.challenge);
+    return navigator.credentials.get({publicKey:pk});
+  }).then(function(c){
+    var r=c.response;
+    return fetch('/portal/passkey/login',{method:'POST',headers:H,credentials:'same-origin',body:JSON.stringify({id:e(c.rawId),
+      response:{clientDataJSON:e(r.clientDataJSON),authenticatorData:e(r.authenticatorData),signature:e(r.signature)}})});
+  }).then(function(r){
+    if(r.ok){location.href='/portal';return}
+    say(r.status===429?'Слишком много попыток. Попробуйте позже или войдите по коду.':'Не получилось войти по Face ID. Войдите по коду.');
+  }).catch(function(){say('Вход по Face ID отменён. Можно войти по коду.')});
+};
+})();</script>""")
+
+# Карточка в «Вход и почта»: создать ключ на этом устройстве.
+PASSKEY_JS = ("<script>(function(){" + _PK_JS_COMMON + """
+var b=document.getElementById('pkon');
+if(!b)return;
+if(!window.PublicKeyCredential||!navigator.credentials){b.hidden=true;say('Этот браузер не умеет Face ID для сайтов. На iPhone откройте портал в Safari или в приложении с экрана «Домой».');return}
+b.onclick=function(ev){
+  ev.preventDefault();say('Подтвердите Face ID или отпечаток…');
+  fetch('/portal/api/passkey/options',{method:'POST',headers:H,credentials:'same-origin'}).then(function(r){return r.json()}).then(function(o){
+    var pk=o.publicKey;pk.challenge=d(pk.challenge);pk.user.id=d(pk.user.id);
+    (pk.excludeCredentials||[]).forEach(function(c){c.id=d(c.id)});
+    return navigator.credentials.create({publicKey:pk});
+  }).then(function(c){
+    var r=c.response;
+    return fetch('/portal/api/passkey/register',{method:'POST',headers:H,credentials:'same-origin',body:JSON.stringify({id:e(c.rawId),
+      response:{clientDataJSON:e(r.clientDataJSON),attestationObject:e(r.attestationObject)}})});
+  }).then(function(r){
+    if(!r.ok){say('Не получилось включить Face ID. Попробуйте ещё раз.');return}
+    try{localStorage.setItem('zc_passkey','1')}catch(x){}
+    say('Face ID включён на этом устройстве ✅');setTimeout(function(){location.reload()},900);
+  }).catch(function(){say('Включение Face ID отменено.')});
+};
+})();</script>""")
+
+
 def login_page(msg: str | None = None, code_form: bool = False) -> str:
     tg = f"https://t.me/{config.bot_username}?start=webadmin"
     fl = f'<div class="flash">{_e(msg)}</div>' if msg else ""
@@ -263,6 +321,8 @@ def login_page(msg: str | None = None, code_form: bool = False) -> str:
             f'{brand.HEAD_ADMIN}<style>{CSS}</style></head><body>{ribbons.html(ribbons.ADMIN)}<main style="max-width:460px">'
             f'<div style="text-align:center;font-size:26px;margin:18px 0 6px">{brand.LOGO}</div>'
             f'<h1 style="text-align:center">Вход в портал</h1>{fl}{code}'
+            f'<div class="card" style="padding:16px;margin-bottom:12px"><button class="btn" id="pklogin" hidden style="width:100%">Войти по Face ID</button>'
+            f'<p id="pkst" class="muted" style="margin:0"></p></div>'
             f'<div class="card" style="padding:16px;margin-bottom:12px"><b>Через Telegram</b>'
             f'<p class="muted">Откроется бот и пришлёт ссылку для входа. Или получите код:</p>'
             f'<a class="btn" style="width:100%" href="{_e(tg)}">Войти через Telegram</a>'
@@ -275,7 +335,7 @@ def login_page(msg: str | None = None, code_form: bool = False) -> str:
             f'<label for="email">Ваша почта</label><input id="email" name="email" type="email" autocomplete="email" required style="width:100%">'
             f'<button class="btn ghost" style="width:100%;margin-top:10px">Прислать код на почту</button></form>'
             f'<p class="muted" style="font-size:14px">Почту для входа добавляют в портале: «Вход и почта».</p></div>'
-            f'</main></body></html>')
+            f'</main>{LOGIN_PASSKEY_JS}</body></html>')
 
 
 async def post_code(request: web.Request) -> web.Response:
@@ -659,6 +719,102 @@ async def api_summary(request: web.Request, uid: int) -> web.Response:
     })
 
 
+def _pk_site(request: web.Request) -> tuple[set[str], str]:
+    """Адрес сайта (origin) и домен (rpId), для которых выдаются и проверяются ключи: из WEBAPP_URL, а без него — из запроса."""
+    from urllib.parse import urlparse
+    if config.webapp_url:
+        u = urlparse(config.webapp_url)
+        origin = f"{u.scheme}://{u.netloc}"
+    else:
+        origin = f"{request.headers.get('X-Forwarded-Proto', request.scheme)}://{request.host}"
+    return {origin}, urlparse(origin).hostname or ""
+
+
+async def _pk_body(request: web.Request) -> dict | None:
+    try:
+        body = await request.json()
+    except (ValueError, UnicodeDecodeError):
+        return None
+    return body if isinstance(body, dict) else None
+
+
+@admin_page
+async def api_passkey_options(request: web.Request, uid: int) -> web.Response:
+    """Параметры для создания ключа Face ID на этом устройстве (только в выполненном входе)."""
+    _, rp_id = _pk_site(request)
+    exclude = [{"type": "public-key", "id": k["cred_id"]} for k in await passkeys.list_for(uid)]
+    return web.json_response({"publicKey": {
+        "challenge": passkeys.new_challenge("reg", uid),
+        "rp": {"id": rp_id, "name": brand.NAME},
+        "user": {"id": passkeys.b64u(uid.to_bytes(8, "big")), "name": f"admin-{uid}", "displayName": "Администратор"},
+        "pubKeyCredParams": [{"type": "public-key", "alg": -7}],
+        "authenticatorSelection": {"authenticatorAttachment": "platform", "userVerification": "required",
+                                   "residentKey": "required", "requireResidentKey": True},
+        "attestation": "none", "timeout": 60000, "excludeCredentials": exclude}})
+
+
+@admin_page
+async def api_passkey_register(request: web.Request, uid: int) -> web.Response:
+    body = await _pk_body(request)
+    resp = body.get("response") if body else None
+    bad = web.json_response({"error": "passkey"}, status=400)
+    if not isinstance(resp, dict):
+        return bad
+    origins, rp_id = _pk_site(request)
+    try:
+        cred_id, point = passkeys.verify_registration(
+            passkeys.unb64u(resp.get("clientDataJSON", "")), passkeys.unb64u(resp.get("attestationObject", "")),
+            uid=uid, origins=origins, rp_id=rp_id)
+        if str(body.get("id", "")) != passkeys.b64u(cred_id):
+            raise passkeys.PasskeyError("id не совпал")
+    except passkeys.PasskeyError as e:
+        log.info("Face ID: ключ не принят: %s", e)
+        return bad
+    device = webchat.device_label(request.headers.get("User-Agent"))
+    if not await passkeys.add(uid, cred_id, point, device):
+        return bad
+    return web.json_response({"ok": True})
+
+
+async def passkey_options(request: web.Request) -> web.Response:
+    """Строка для входа по ключу. Без входа: ключ найдёт сам телефон (ключ доступа привязан к сайту)."""
+    if not _same_origin(request) or _limit(_pk_hits, _ip(request), 30, 600):
+        return web.json_response({"error": "limit"}, status=429)
+    _, rp_id = _pk_site(request)
+    return web.json_response({"publicKey": {"challenge": passkeys.new_challenge("login"), "rpId": rp_id,
+                                            "userVerification": "required", "timeout": 60000}})
+
+
+async def passkey_login(request: web.Request) -> web.Response:
+    if not _same_origin(request):
+        return web.json_response({"error": "origin"}, status=403)
+    if _limit(_fails, _ip(request), FAIL_LIMIT, 3600):
+        return web.json_response({"error": "limit"}, status=429)
+    bad = web.json_response({"error": "passkey"}, status=400)
+    body = await _pk_body(request)
+    resp = body.get("response") if body else None
+    if not isinstance(resp, dict):
+        return bad
+    origins, rp_id = _pk_site(request)
+    try:
+        row = await db.fetch_one("SELECT * FROM passkeys WHERE cred_id=?", (str(body.get("id", ""))[:200],))
+        if not row or row["uid"] not in config.admin_ids:
+            raise passkeys.PasskeyError("ключ неизвестен или не администратора")
+        count = passkeys.verify_assertion(
+            passkeys.unb64u(resp.get("clientDataJSON", "")), passkeys.unb64u(resp.get("authenticatorData", "")),
+            passkeys.unb64u(resp.get("signature", "")), public_key=passkeys.unb64u(row["public_key"]),
+            stored_count=row["sign_count"], origins=origins, rp_id=rp_id)
+    except passkeys.PasskeyError as e:
+        log.info("Face ID: вход не принят: %s", e)
+        return bad
+    await db.execute("UPDATE passkeys SET sign_count=?, last_used=datetime('now') WHERE id=?", (count, row["id"]))
+    _fails.pop(_ip(request), None)
+    token = await webchat.new_session(row["uid"], device=webchat.device_label(request.headers.get("User-Agent")))
+    out = web.json_response({"ok": True})
+    webchat._set_cookie(request, out, token, admin=True)
+    return out
+
+
 @admin_page
 async def api_push_test(request: web.Request, uid: int) -> web.Response:
     """Проверочное уведомление на все устройства администратора; в ответе — сколько дошло."""
@@ -699,6 +855,19 @@ async def settings_page(request: web.Request, uid: int) -> web.Response:
     if len(devs) > 1:
         others = ('<form method="post" action="/portal/settings" style="margin-top:8px"><input type="hidden" name="step" value="revoke_others">'
                   '<button class="btn">Отозвать все остальные</button></form>')
+    keys = await passkeys.list_for(uid)
+    key_rows = "".join(
+        f'<form method="post" action="/portal/settings" style="display:flex;gap:8px;align-items:center;justify-content:space-between;'
+        f'padding:8px 0;border-top:1px solid var(--line)"><span>{_e(k["device"] or "Устройство")}'
+        f'<br><small class="muted">создан {_e(k["created_at"])} (UTC){", вход " + _e(k["last_used"]) if k["last_used"] else ""}</small></span>'
+        f'<input type="hidden" name="step" value="pk_revoke"><input type="hidden" name="id" value="{k["id"]}">'
+        f'<button class="btn">Отозвать</button></form>' for k in keys)
+    passkey_card = (f'<div class="card" style="padding:14px;margin-top:10px"><b>Вход по Face ID / Touch ID</b>'
+                    f'<p class="muted">Вместо кода из Telegram: телефон узнаёт вас по лицу или отпечатку. Создавайте ключ на том устройстве, '
+                    f'где пользуетесь порталом (на iPhone — открыв «ЗК Админ» с экрана «Домой»). Первый вход всегда по коду, '
+                    f'ключ можно отозвать здесь в любой момент.</p>'
+                    f'<button class="btn" id="pkon" type="button">Включить вход по Face ID</button>'
+                    f'<p id="pkst" class="muted" style="margin-top:8px"></p>{key_rows}</div>{PASSKEY_JS}')
     devices = (f'<div class="card" style="padding:14px;margin-top:10px"><b>Доверенные устройства</b>'
                f'<p class="muted">Устройства, на которых вы вошли по коду. Повторный код с них не нужен, пока вход не отозван.</p>'
                f'{rows or "<p class=muted>Пока нет.</p>"}{others}</div>')
@@ -717,7 +886,7 @@ async def settings_page(request: web.Request, uid: int) -> web.Response:
             f'<input id="email" name="email" type="email" required value="{_e(email or "")}" style="width:100%">'
             f'<button class="btn" style="margin-top:10px">Прислать код для проверки</button></form>{confirm}'
             f'<p class="muted">После проверки почты входите в портал с любого устройства без VPN: «Прислать код на почту».</p>'
-            + push_card + devices)
+            + push_card + passkey_card + devices)
     return _html_resp(page("Вход и почта", body, "settings", request.query.get("m")))
 
 
@@ -735,6 +904,11 @@ async def settings_action(request: web.Request, uid: int) -> web.Response:
         code = await _issue_code(uid, "email_reg")
         sent = await mailer.send(email, f"{brand.NAME}: подтверждение почты", f"Код подтверждения почты: {code}\nДействует 10 минут.")
         return _redirect("/portal/settings", "Код отправлен на почту." if sent else "Письмо не ушло: проверьте SMTP в Railway.")
+    if form.get("step") == "pk_revoke":
+        rid = re.sub(r"\D", "", str(form.get("id", "")))
+        if rid:
+            await passkeys.revoke(uid, int(rid))
+        return _redirect("/portal/settings", "Ключ Face ID отозван.")
     if form.get("step") in ("revoke", "revoke_others"):
         mine = request.cookies.get(webchat.ADMIN_COOKIE)
         if form.get("step") == "revoke":
@@ -775,6 +949,10 @@ def setup(app: web.Application) -> None:
     app.router.add_post("/portal/api/chat/{tg}", api_chat)
     app.router.add_get("/portal/api/summary", api_summary)
     app.router.add_post("/portal/api/push/test", api_push_test)
+    app.router.add_post("/portal/api/passkey/options", api_passkey_options)
+    app.router.add_post("/portal/api/passkey/register", api_passkey_register)
+    app.router.add_post("/portal/passkey/options", passkey_options)
+    app.router.add_post("/portal/passkey/login", passkey_login)
     app.router.add_get("/portal/settings", settings_page)
     app.router.add_post("/portal/settings", settings_action)
 

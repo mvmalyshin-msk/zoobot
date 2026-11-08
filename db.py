@@ -163,6 +163,20 @@ MIGRATIONS: dict[int, str] = {
     # 17: зоотакси по формуле Яндекс Такси («Эконом», Москва): цена услуги — посадка 189 ₽, дальше км и минуты
     #     по маршруту (taxi.py). Меняем только старую стартовую цену 1200 — цену, заданную админом, не трогаем.
     17: "UPDATE services SET base_price=189 WHERE code='taxi' AND base_price=1200;",
+    # 18: ключи доступа (Face ID / Touch ID) администратора, см. passkeys.py: открытый ключ, счётчик, название устройства
+    18: """
+    CREATE TABLE IF NOT EXISTS passkeys (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        uid        INTEGER NOT NULL,
+        cred_id    TEXT NOT NULL UNIQUE,
+        public_key TEXT NOT NULL,
+        sign_count INTEGER NOT NULL DEFAULT 0,
+        device     TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        last_used  TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_passkeys_uid ON passkeys(uid);
+    """,
     # 14: шаги диалога (FSM) — в базе, чтобы переживать перезапуск бота (см. fsm_store.py)
     14: """
     CREATE TABLE IF NOT EXISTS fsm (
