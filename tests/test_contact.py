@@ -47,10 +47,19 @@ class ContactTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Перезвоните мне", t)
         self.assertNotIn("tel:", t)                                   # номер администратора не задан — кнопки «Позвонить» нет
 
-    async def test_call_button_appears_when_admin_phone_set(self):
+    async def test_call_button_hides_the_number_but_still_dials(self):
         with mock.patch.object(contact, "ADMIN_PHONE", "+7 900 111-22-33"):
             t = await (await self.client.get("/contact")).text()
-        self.assertIn('href="tel:+79001112233"', t)
+            self.assertIn('href="/contact/call"', t)
+            for leak in ("111-22-33", "111 22", "79001112233", "tel:"):
+                self.assertNotIn(leak, t)                                  # номера нет ни на экране, ни в коде страницы
+            r = await self.client.get("/contact/call", allow_redirects=False)
+            self.assertEqual((r.status, r.headers["Location"]), (302, "tel:+79001112233"))   # звонок идёт по сотовой сети
+            self.assertIn("no-store", r.headers["Cache-Control"])
+
+    async def test_call_link_closed_without_number(self):
+        r = await self.client.get("/contact/call", allow_redirects=False)
+        self.assertEqual(r.status, 404)
 
     async def test_valid_request_saved_and_admin_notified(self):
         with mock.patch.object(contact.orders, "notify_admins", mock.AsyncMock()) as n:
