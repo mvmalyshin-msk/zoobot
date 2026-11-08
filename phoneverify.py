@@ -23,6 +23,7 @@ TOKEN_URL = "https://oauth.yandex.ru/token"
 INFO_URL = "https://login.yandex.ru/info"
 STATE_SECONDS = 600
 _states: dict[str, tuple[int, float]] = {}  # state -> (uid гостя, время истечения); живёт в памяти процесса
+_login_states: dict[str, float] = {}         # state входа по номеру (человек ещё не вошёл) -> время истечения
 
 
 def enabled() -> bool:
@@ -72,8 +73,62 @@ async def start(request: web.Request) -> web.Response:
     return web.Response(status=302, headers={"Location": url})
 
 
+async def start_login(request: web.Request) -> web.Response:
+    """Вход по номеру через Яндекс ID: кабинет открывается по номеру из профиля Яндекса — без кодов, СМС и VPN."""
+    if not enabled():
+        return web.Response(status=404, text="Вход через Яндекс пока не настроен.")
+    now = time.time()
+    _prune(now)
+    for st in [s for s, exp in _login_states.items() if exp < now]:
+        _login_states.pop(st, None)
+    state = secrets.token_urlsafe(24)
+    _login_states[state] = now + STATE_SECONDS
+    url = AUTH_URL + "?" + urlencode({"response_type": "code", "client_id": config.yandex_client_id,
+                                      "redirect_uri": _redirect_uri(), "state": state, "force_confirm": "yes"})
+    return web.Response(status=302, headers={"Location": url})
+
+
+def _fail(text: str) -> web.Response:
+    return web.Response(status=403, text=text)
+
+
+async def _login_callback(request: web.Request, code: str) -> web.Response:
+    phone = None
+    try:
+        phone = normalize_phone(await fetch_phone(await exchange_code(code)) or "")
+    except Exception:  # сеть или отказ Яндекса
+        log.exception("Яндекс ID: не удалось получить номер для входа")
+    if not phone:
+        return _fail("Яндекс не передал номер телефона. Вернитесь на страницу входа и выберите «Войти через Telegram».")
+    user = await db.fetch_one(
+        "SELECT * FROM users WHERE phone=? AND erased_at IS NULL ORDER BY (tg_id>0) DESC, id LIMIT 1", (phone,))
+    if user and user["tg_id"] in webchat.config.admin_ids:  # настоящий конфиг: админ — один
+        return _fail(webchat.ADMIN_AS_CLIENT_TEXT)
+    device = webchat.device_label(request.headers.get("User-Agent"))
+    ip = webchat.client_ip(request)
+    if user:
+        uid = user["tg_id"]
+        token = await webchat.new_session(uid, device=device, ip=ip)
+        await db.execute("UPDATE users SET phone_verified='yandex', updated_at=datetime('now') WHERE id=? "
+                         "AND (phone_verified IS NULL OR phone_verified<>'telegram')", (user["id"],))
+    else:   # новый клиент: заводим гостя с подтверждённым номером
+        token = await webchat.new_session(None, device=device, ip=ip)
+        uid = (await db.fetch_one("SELECT uid FROM web_sessions ORDER BY id DESC LIMIT 1"))["uid"]
+        await db.execute("INSERT OR IGNORE INTO users (tg_id) VALUES (?)", (uid,))
+        await db.execute("UPDATE users SET phone=?, phone_verified='yandex', updated_at=datetime('now') WHERE tg_id=?",
+                         (phone, uid))
+    resp = web.Response(status=302, headers={"Location": "/chat"})
+    webchat._set_cookie(request, resp, token)
+    return resp
+
+
 async def callback(request: web.Request) -> web.Response:
     code = request.query.get("code", "")
+    login_exp = _login_states.pop(request.query.get("state", ""), None)
+    if login_exp is not None:     # состояние выдано странице входа, а не гостю в чате
+        if not enabled() or not code or login_exp < time.time():
+            return _fail("Вход не удался. Вернитесь на страницу входа и нажмите кнопку ещё раз.")
+        return await _login_callback(request, code)
     saved = _states.pop(request.query.get("state", ""), None)
     uid = await webchat.session_uid(request)
     # номер привязываем только к тому гостю, который начал подтверждение в этом же браузере
@@ -94,5 +149,6 @@ async def callback(request: web.Request) -> web.Response:
 
 
 def setup(app: web.Application) -> None:
+    app.router.add_get("/chat/login/yandex", start_login)
     app.router.add_get("/verify/yandex", start)
     app.router.add_get("/verify/yandex/cb", callback)

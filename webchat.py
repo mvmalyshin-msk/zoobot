@@ -410,12 +410,19 @@ def _login_shell(inner: str) -> web.Response:
     return web.Response(text=page, content_type="text/html", headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
 
+def _yandex_on() -> bool:
+    import phoneverify
+    return phoneverify.enabled()
+
+
 def _phone_form(msg: str = "") -> web.Response:
     note = f"<p style='color:#b3261e'>{msg}</p>" if msg else ""
     return _login_shell(
         "<h2 style='text-align:center'>Вход для клиентов</h2>"
         "<p>Самый надёжный способ — через Telegram: нажмите кнопку, в Telegram «Запустить» — и кабинет откроется здесь.</p>"
         "<p><a class=\"btn\" style='display:block;text-align:center' href=\"/chat/login/tg\">✈️ Войти через Telegram</a></p>"
+        + ("<p><a class=\"btn\" style='display:block;text-align:center;background:#fc3f1d' href=\"/chat/login/yandex\">"
+           "🟡 Войти через Яндекс ID — без кода и VPN</a></p>" if _yandex_on() else "") +
         "<p class=muted style='text-align:center;margin:18px 0 8px'>или по номеру телефона</p>"
         "<p class=muted style='font-size:.9em'>Код придёт в Telegram только если номер уже есть у нас и вы раньше открывали бота. "
         "СМС мы не отправляем.</p>"
