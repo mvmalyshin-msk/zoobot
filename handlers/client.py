@@ -182,7 +182,7 @@ async def cmd_start_site_login(m: Message) -> None:
     import webchat
     if await webchat.confirm_tg_login(command_args(m), m.from_user.id):
         await repo.get_or_create_user(m.from_user)
-        await m.answer("✅ Готово! Вернитесь на сайт — кабинет откроется сам.")
+        await m.answer("✅ Готово! Вернитесь на сайт — кабинет откроется автоматически.")
     else:
         await m.answer("Ссылка входа устарела. Откройте сайт и нажмите «Войти через Telegram» ещё раз.")
 

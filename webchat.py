@@ -458,7 +458,7 @@ async def page_login_tg(request: web.Request) -> web.Response:
     link = f"https://t.me/{config.bot_username}?start=lg_{token}"
     return _login_shell(
         "<h2 style='text-align:center'>Вход через Telegram</h2>"
-        "<p>Нажмите кнопку, в Telegram нажмите «Запустить» (Start) — и эта страница сама откроет ваш кабинет.</p>"
+        "<p>Нажмите кнопку, в Telegram нажмите «Запустить» (Start) — кабинет откроется на этой странице автоматически.</p>"
         f"<p><a class=\"btn\" style='display:block;text-align:center' href=\"{link}\">Открыть Telegram</a></p>"
         "<p id=st class=muted>Ждём подтверждения…</p>"
         "<script>(function(){var t=" + json.dumps(token) + ";function p(){fetch('/chat/login/tg/poll?t='+encodeURIComponent(t),{credentials:'same-origin'})"
