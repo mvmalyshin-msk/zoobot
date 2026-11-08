@@ -115,6 +115,8 @@ body{min-height:100vh}
 main{max-width:900px;margin:0 auto;padding:14px 12px 60px}
 h1{font-size:1.45rem;margin:.3em 0 .5em}h2{font-size:1.15rem;margin:1.2em 0 .5em}
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+details.filter{margin:0 0 12px}details.filter summary{display:inline-block;cursor:pointer;list-style:none;padding:8px 16px;border-radius:999px;background:var(--card);border:1.5px solid var(--line);font-weight:700}
+details.filter summary::-webkit-details-marker{display:none}details.filter[open] summary{background:var(--ink);color:#fff}details.filter[open] summary small{color:#ddd}
 .tabs a{padding:6px 12px;border-radius:999px;background:var(--peach);color:var(--ink);text-decoration:none;font-weight:700;font-size:14px}
 .tabs a.on{background:var(--ink);color:#fff}
 .list{display:flex;flex-direction:column;gap:8px}
@@ -462,7 +464,7 @@ def _row_html(r: dict) -> str:
 
 @admin_page
 async def list_page(request: web.Request, uid: int) -> web.Response:
-    flt = request.query.get("f", "active")
+    flt = request.query.get("f", "active")   # по умолчанию — только новые и в работе
     flt = flt if flt in ("new", "active", "all") else "active"
     src = request.query.get("src", "all")
     src = src if src in ("all", "tg", "web", "form") else "all"
@@ -471,7 +473,11 @@ async def list_page(request: web.Request, uid: int) -> web.Response:
                    for k, v in (("new", "Новые"), ("active", "В работе"), ("all", "Все")))
     stabs = "".join(f'<a class="{"on" if k == src else ""}" href="/portal?f={flt}&src={k}">{v}</a>'
                     for k, v in (("all", "Все источники"), *SOURCES.items()))
-    body = (f'<h1>Заявки</h1><div class="tabs">{tabs}</div><div class="tabs">{stabs}</div>'
+    changed = (flt, src) != ("active", "all")
+    hint = {"new": "только новые", "active": "новые и в работе", "all": "все"}[flt] + ("" if src == "all" else f" · {SOURCES[src]}")
+    flt_html = (f'<details class="filter"{" open" if changed else ""}><summary>🔍 Фильтр<small class="muted"> · {hint}</small></summary>'
+                f'<div class="tabs" style="margin-top:10px">{tabs}</div><div class="tabs">{stabs}</div></details>')
+    body = (f'<h1>Заявки</h1>{flt_html}'
             f'<div class="list">{"".join(_row_html(r) for r in rows) or "<p class=muted>Пока пусто.</p>"}</div>')
     return _html_resp(page("Заявки", body, "orders", request.query.get("m"), back=None))
 
@@ -646,8 +652,12 @@ async def clients_page(request: web.Request, uid: int) -> web.Response:
     like = f"%{q}%"
     rows = await db.fetch_all(
         """SELECT u.*, (SELECT COUNT(*) FROM orders o WHERE o.user_id=u.id) AS n,
-                  (SELECT MAX(id) FROM messages m WHERE m.party_tg_id=u.tg_id) AS last_msg
-           FROM users u WHERE (u.pdn_consent=1 OR EXISTS (SELECT 1 FROM orders o WHERE o.user_id=u.id))
+                  (SELECT MAX(id) FROM messages m WHERE m.party_tg_id=u.tg_id) AS last_msg,
+                  (SELECT text FROM messages m WHERE m.party_tg_id=u.tg_id ORDER BY id DESC LIMIT 1) AS last_text,
+                  (SELECT COUNT(*) FROM web_requests r WHERE r.web_uid=u.tg_id) AS nreq
+           FROM users u WHERE (u.pdn_consent=1 OR EXISTS (SELECT 1 FROM orders o WHERE o.user_id=u.id)
+                               OR EXISTS (SELECT 1 FROM messages m WHERE m.party_tg_id=u.tg_id)
+                               OR EXISTS (SELECT 1 FROM web_requests r WHERE r.web_uid=u.tg_id))
              AND (?='' OR u.name LIKE ? OR u.phone LIKE ?) ORDER BY COALESCE(last_msg,0) DESC, u.id DESC LIMIT 300""",
         (q, like, like))
     items = []
@@ -655,9 +665,10 @@ async def clients_page(request: web.Request, uid: int) -> web.Response:
         ok = u["tg_id"] > 0 or u["verified_tg_id"]
         mark = '<span class="badge" style="background:var(--nanny)">проверен Telegram</span>' if ok else \
                '<span class="badge" style="background:#b9b0a6">не подтверждён</span>'
+        last = f'<div class="sub">💬 {_e(str(u["last_text"] or "")[:80])}</div>' if u["last_text"] else ""
         items.append(f'<a class="item card" href="/portal/chat/{u["tg_id"]}"><div class="row"><span class="who">{_e(u["name"] or "Без имени")}</span>{mark}</div>'
                      f'<div class="row" style="margin-top:6px"><span class="src">{SOURCES[_source(u["tg_id"])]}</span></div>'
-                     f'<div class="sub">{_e(u["phone"] or "—")} · заказов: {u["n"]}</div></a>')
+                     f'<div class="sub">{_e(u["phone"] or "—")} · заказов: {u["n"]} · заявок с сайта: {u["nreq"]}</div>{last}</a>')
     body = (f'<h1>Клиенты</h1><form class="send" method="get"><input name="q" value="{_e(q)}" placeholder="имя или телефон">'
             f'<button class="btn small">Найти</button></form><div class="list" style="margin-top:10px">{"".join(items) or "<p class=muted>Никого.</p>"}</div>')
     return _html_resp(page("Клиенты", body, "clients"))
