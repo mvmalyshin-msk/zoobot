@@ -466,8 +466,19 @@ async def confirm_tg_login(token: str, tg_id: int) -> bool:
     return True
 
 
+async def _logged_in(request: web.Request) -> bool:
+    """Вошёл по-настоящему: Telegram-клиент (uid > 0) или гость с подтверждённым телефоном. Простой гость — нет."""
+    uid = await session_uid(request)
+    if uid is None:
+        return False
+    if uid > 0:
+        return True
+    row = await db.fetch_one("SELECT phone_verified FROM users WHERE tg_id=?", (uid,))
+    return bool(row and row["phone_verified"])
+
+
 async def page_login_tg(request: web.Request) -> web.Response:
-    if await session_uid(request) is not None:        # уже вошёл — кабинет, а не повторный вход
+    if await _logged_in(request):        # уже вошёл — кабинет, а не повторный вход
         return web.Response(status=302, headers={"Location": "/chat"})
     now = time.time()
     for k in [k for k, v in _tg_logins.items() if v["exp"] < now]:
@@ -552,7 +563,7 @@ async def post_login_code(request: web.Request) -> web.Response:
 async def page_login(request: web.Request) -> web.Response:
     import html as _h
     if not request.query.get("t"):
-        if await session_uid(request) is not None:    # «Войти как клиент» с главной у вошедшего ведёт сразу в кабинет
+        if await _logged_in(request):    # «Войти как клиент» с главной у вошедшего ведёт сразу в кабинет
             return web.Response(status=302, headers={"Location": "/chat"})
         return _phone_form()
     t = _h.escape(request.query.get("t", ""), quote=True)

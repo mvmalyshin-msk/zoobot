@@ -80,6 +80,13 @@ class TgLoginTest(unittest.IsolatedAsyncioTestCase):
         g = await self.client.get("/chat/login", allow_redirects=False)
         self.assertEqual(g.status, 200)                                                    # гостю — форма входа
 
+    async def test_plain_guest_session_still_sees_login_form(self):
+        self.client.session.cookie_jar.clear()
+        await self.client.get("/chat")                                      # браузер получил гостевую сессию, но не входил
+        for path in ("/chat/login", "/chat/login/tg"):
+            g = await self.client.get(path, allow_redirects=False)
+            self.assertEqual(g.status, 200, path)                          # «Войти как клиент» открывает вход, а не чат гостя
+
     async def test_unknown_token_admin_and_expired_refused(self):
         self.assertFalse(await webchat.confirm_tg_login("nope", 555))
         _, _, token = await self.start()
