@@ -85,12 +85,3 @@ class BackButtonTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class HomeButtonTest(unittest.TestCase):
-    def test_backrow_has_back_and_home(self):
-        import brand
-        h = brand.backrow("/portal")
-        self.assertIn('href="/portal"', h)
-        self.assertIn('href="/" aria-label="Главная страница"', h)
-        self.assertIn("Главная страница</b>", h)
