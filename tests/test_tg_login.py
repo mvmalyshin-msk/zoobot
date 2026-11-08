@@ -76,6 +76,7 @@ class TgLoginTest(unittest.IsolatedAsyncioTestCase):
         for path in ("/chat/login", "/chat/login/tg"):
             g = await self.client.get(path, cookies=cookie, allow_redirects=False)
             self.assertEqual((g.status, g.headers.get("Location")), (302, "/chat"), path)   # уже вошёл: сразу в кабинет
+        self.client.session.cookie_jar.clear()
         g = await self.client.get("/chat/login", allow_redirects=False)
         self.assertEqual(g.status, 200)                                                    # гостю — форма входа
 
