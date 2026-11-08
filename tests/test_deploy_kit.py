@@ -33,5 +33,15 @@ class DeployKit(unittest.TestCase):
         self.assertIn("TELEGRAM_PROXY", t)
 
 
+    def test_branch_is_chosen_and_remembered_for_updates(self):
+        i = (DEPLOY / "install.sh").read_text(encoding="utf-8")
+        u = (DEPLOY / "update.sh").read_text(encoding="utf-8")
+        self.assertIn('BRANCH="${BRANCH:-main}"', i)
+        self.assertIn('--branch "$BRANCH"', i)
+        self.assertIn(".branch", i)
+        self.assertIn(".branch", u)
+        self.assertNotIn("origin/main", u)
+
+
 if __name__ == "__main__":
     unittest.main()

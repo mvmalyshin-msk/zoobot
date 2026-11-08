@@ -7,6 +7,7 @@ set -euo pipefail
 APP=/opt/zoobot
 DATA=/opt/zoobot-data
 REPO=https://github.com/mvmalyshin-msk/zoobot
+BRANCH="${BRANCH:-main}"   # какая ветка GitHub ставится и потом сама обновляется
 
 if [ "$(id -u)" != "0" ]; then echo "Запустите от root."; exit 1; fi
 
@@ -16,7 +17,9 @@ apt-get update -y
 apt-get install -y git python3 python3-venv python3-pip sqlite3 curl cron
 
 echo "== 2/5 Код"
-if [ -d "$APP/.git" ]; then git -C "$APP" pull --ff-only; else git clone "$REPO" "$APP"; fi
+if [ -d "$APP/.git" ]; then git -C "$APP" fetch -q origin "$BRANCH" && git -C "$APP" checkout -q "$BRANCH" && git -C "$APP" pull -q --ff-only origin "$BRANCH"
+else git clone -q --branch "$BRANCH" "$REPO" "$APP"; fi
+echo "$BRANCH" > "$APP/.branch"
 python3 -m venv "$APP/venv"
 "$APP/venv/bin/pip" install --quiet --upgrade pip
 "$APP/venv/bin/pip" install --quiet -r "$APP/requirements.txt"
