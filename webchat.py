@@ -443,7 +443,9 @@ def _code_form(phone: str, msg: str = "") -> web.Response:
         "<input name=\"code\" inputmode=numeric autocomplete=one-time-code maxlength=6 placeholder='6 цифр' required style='width:100%'>"
         "<button class='btn' style='width:100%;margin-top:12px'>Войти</button></form>"
         "<p class=muted style='margin-top:18px'>Код не пришёл? Номера может не быть в нашей базе — "
-        "<a href=\"/chat/login/tg\">войдите через Telegram</a>. Или <a href=\"/chat/login\">введите другой номер</a>.</p>")
+        "<a href=\"/chat/login/tg\">войдите через Telegram</a>"
+        + (", <a href=\"/chat/login/yandex\">через Яндекс ID</a>" if _yandex_on() else "")
+        + ". Или <a href=\"/chat/login\">введите другой номер</a>.</p>")
 
 
 _tg_logins: dict[str, dict] = {}   # токен ожидающего входа -> {tg, exp}; живёт в памяти, 10 минут
