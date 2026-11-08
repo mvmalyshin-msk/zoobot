@@ -1,6 +1,5 @@
 """Один администратор (первый в ADMIN_IDS) и режим «войти как клиент» для проверки."""
 import os
-import re
 import subprocess
 import sys
 import unittest
