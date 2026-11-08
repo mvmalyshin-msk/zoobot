@@ -38,6 +38,15 @@ async def login(c, phone):
         return await c.get(f"/verify/yandex/cb?code=abc&state={q['state'][0]}", allow_redirects=False)
 
 
+class CodePageYandexTest(unittest.TestCase):
+    def test_code_page_offers_yandex_when_configured(self):
+        import webchat
+        with mock.patch.object(webchat, "_yandex_on", lambda: True):
+            self.assertIn("/chat/login/yandex", webchat._code_form("+79001112233").text)
+        with mock.patch.object(webchat, "_yandex_on", lambda: False):
+            self.assertNotIn("/chat/login/yandex", webchat._code_form("+79001112233").text)
+
+
 class YandexLoginTest(unittest.TestCase):
     def test_closed_without_credentials(self):
         async def t(c):
