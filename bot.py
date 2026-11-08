@@ -14,13 +14,13 @@ import repo
 import texts
 import webchat
 import webserver
-from aiogram.client.session.aiohttp import AiohttpSession
 from config import config
 from handlers import admin, client, executor
 from handlers.executor import Report
 import policy
 import purge
 import releases
+import tgnet
 from scheduler import setup_scheduler
 
 log = logging.getLogger("zoobot")
@@ -144,8 +144,9 @@ async def main() -> None:
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     await db.init_db()
+    log.info(tgnet.describe())
 
-    bot = Bot(config.bot_token, session=webchat.WebRouterSession(AiohttpSession()))
+    bot = Bot(config.bot_token, session=webchat.WebRouterSession(tgnet.make_session()))
     dp = build_dispatcher()
 
     web_runner = None
