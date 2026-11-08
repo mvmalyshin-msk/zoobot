@@ -31,6 +31,7 @@ header nav a.on{color:var(--coral);font-weight:700}
 .kb{display:flex;flex-direction:column;gap:6px;margin-top:9px}
 .kb .r{display:flex;gap:6px}
 .kb button,.kb a.b{flex:1;font:700 15px var(--font);padding:9px 8px;border:1.5px solid var(--coral);border-radius:999px;background:var(--cream);color:var(--coral);text-align:center;text-decoration:none;cursor:pointer}
+.kb.busy{opacity:.55;pointer-events:none}
 .kb button:active,.kb a.b:active{background:var(--coral);color:#fff}
 #rk{display:none;padding:6px 8px;background:var(--cream);gap:6px;flex-direction:column;border-top:1.5px solid var(--line)}
 #rk .r{display:flex;gap:6px}
@@ -79,7 +80,7 @@ function keyboard(msg,div){
     row.forEach(function(b){
       var e;
       if(b.url){e=document.createElement('a');e.className='b';e.href=b.url;e.target='_blank';e.rel='noopener noreferrer'}
-      else{e=document.createElement('button');e.type='button';e.onclick=function(){send({cb:b.cb,mid:msg.mid})}}
+      else{e=document.createElement('button');e.type='button';e.onclick=function(){if(kb.className.indexOf('busy')>=0)return;kb.className='kb busy';setTimeout(function(){kb.className='kb'},2000);send({cb:b.cb,mid:msg.mid})}}
       e.textContent=b.t;r.appendChild(e)});
     kb.appendChild(r)});
   div.appendChild(kb);
