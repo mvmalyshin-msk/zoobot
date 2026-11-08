@@ -7,6 +7,8 @@ self.addEventListener('push', function (e) {
   var d = {};
   try { d = e.data ? e.data.json() : {}; } catch (x) { d = { body: e.data ? e.data.text() : '' }; }
   var title = d.title || 'Зооконсьерж';
+  // красная точка на иконке приложения (iPhone, «Домой»): видно, что есть новое, даже если уведомление смахнули
+  try { if (self.navigator && self.navigator.setAppBadge) self.navigator.setAppBadge(); } catch (x) {}
   e.waitUntil(self.registration.showNotification(title, {
     body: d.body || 'Новое сообщение',
     icon: '/icons/icon-192.png',

@@ -136,11 +136,15 @@ def _site() -> str:
     return config.webapp_url or "https://zoobot-production.up.railway.app"
 
 
-async def notify(uid: int, text: str) -> None:
-    """Уведомление на все браузеры, где человек включил уведомления. Ошибки не роняют бота."""
+async def notify(uid: int, text: str) -> dict:
+    """Уведомление на все браузеры, где человек включил уведомления. Ошибки не роняют бота.
+    Возвращает итог: total — подписок, sent — принято push-сервисом, removed — подписка устарела и удалена,
+    failed — не отправилось (сеть или отказ). Каждая отправка пишется в журнал: так видно, почему «не пришло»."""
+    report = {"total": 0, "sent": 0, "removed": 0, "failed": 0}
     subs = await db.fetch_all("SELECT * FROM push_subs WHERE uid=?", (uid,))
+    report["total"] = len(subs)
     if not subs:
-        return
+        return report
     url = "/portal/bot" if uid in config.admin_ids else "/chat"
     body = (text or "Новое сообщение").strip()
     if len(body) > MAX_BODY:
@@ -164,8 +168,16 @@ async def notify(uid: int, text: str) -> None:
                     status = r.status
         except Exception as e:  # сеть или push-сервис недоступны — сообщение всё равно есть в чате
             log.info("Web Push не отправлен (%s): %s", u.netloc, type(e).__name__)
+            report["failed"] += 1
             continue
         if status in (404, 410):  # подписка отозвана или устарела
             await db.execute("DELETE FROM push_subs WHERE id=?", (sub["id"],))
+            report["removed"] += 1
+            log.info("Web Push: подписка на %s устарела (%s), удалена", u.netloc, status)
         elif status >= 400:
+            report["failed"] += 1
             log.info("Web Push: %s ответил %s", u.netloc, status)
+        else:
+            report["sent"] += 1
+            log.info("Web Push → %s: принято (%s)", u.netloc, status)
+    return report
