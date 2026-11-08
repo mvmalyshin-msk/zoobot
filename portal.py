@@ -34,7 +34,7 @@ _hits: dict[str, list[float]] = {}
 _fails: dict[str, list[float]] = {}
 
 SOURCES = {"tg": "Telegram", "web": "Чат на сайте", "form": "Форма на сайте"}
-REQ_STATUSES = {"new": "Новая", "work": "В работе", "done": "Готово", "rejected": "Отклонена"}
+REQ_STATUSES = {"new": "Новая", "work": "В работе", "done": "Готово", "rejected": "Отменена"}
 CHIP = {"walk": "walk", "sitter": "nanny", "boarding": "boarding", "taxi": "taxi"}
 STATUS_COLOR = {"created": "var(--coral)", "confirmed": "var(--taxi)", "paid": "var(--nanny)",
                 "assigned": "var(--boarding)", "in_progress": "var(--boarding)", "completed": "#8a8178",
@@ -462,12 +462,21 @@ async def request_page(request: web.Request, uid: int) -> web.Response:
                       f"Питомец: {r['pet'] or '—'}", f"Комментарий: {r['comment'] or '—'}", f"Имя: {r['name']}",
                       f"Телефон: {r['phone']}", f"Связь: {contact}", f"Создана: {fmt_local(r['created_at'])}"])
     opts = "".join(f'<option value="{k}"{" selected" if k == r["status"] else ""}>{v}</option>' for k, v in REQ_STATUSES.items())
-    body = (f'<h1>Заявка с сайта №{r["id"]} <span class="src">Форма на сайте</span></h1><div class="card pre">{_e(info)}</div>'
+    site = r["address"] if str(r["address"]).startswith("Сайт ") else "Форма на сайте"
+    if r["status"] == "rejected":
+        cancel = ('<form method="post" class="card" style="padding:14px"><p><b>❌ Заявка отменена.</b></p>'
+                  '<button class="btn small" name="restore" value="1">↩️ Вернуть в работу</button></form>')
+    else:
+        cancel = ('<form method="post" class="card" style="padding:14px" onsubmit="return confirm(\'Отменить эту заявку?\')">'
+                  '<label for="cnote">Причина (по желанию)</label>'
+                  '<input id="cnote" name="note" maxlength="1000" style="width:100%">'
+                  '<button class="btn small" name="cancel" value="1" style="margin-top:10px;background:#d62b2b">❌ Отменить заявку</button></form>')
+    body = (f'<h1>Заявка с сайта №{r["id"]} <span class="src">{_e(site)}</span></h1><div class="card pre">{_e(info)}</div>'
             f'<div class="actions"><a class="btn small" href="tel:{_e(r["phone"])}">📞 Позвонить</a>'
             f'<a class="btn small ghost" href="sms:{_e(r["phone"])}">✉️ СМС</a></div>'
             f'<form method="post" class="card" style="padding:14px"><label for="status">Статус</label><select id="status" name="status">{opts}</select>'
             f'<label for="note">Заметка</label><textarea id="note" name="note" maxlength="1000" style="width:100%;min-height:80px">{_e(r["admin_note"])}</textarea>'
-            f'<button class="btn" style="margin-top:10px">Сохранить</button></form>')
+            f'<button class="btn" style="margin-top:10px">Сохранить</button></form>' + cancel)
     return _html_resp(page(f"Заявка №{r['id']}", body, "orders", request.query.get("m")))
 
 
@@ -477,6 +486,13 @@ async def request_action(request: web.Request, uid: int) -> web.Response:
     if not rid.isdigit():
         return web.Response(status=404)
     form = await request.post()
+    if form.get("cancel") or form.get("restore"):  # отмена и возврат одной кнопкой
+        if form.get("cancel"):
+            await db.execute(f"UPDATE web_requests SET status='rejected', admin_note=COALESCE(?, admin_note), {db.touch()} WHERE id=?",
+                             (str(form.get("note", "")).strip()[:1000] or None, int(rid)))
+            return _redirect(f"/portal/request/{rid}", "Заявка отменена.")
+        await db.execute(f"UPDATE web_requests SET status='new', {db.touch()} WHERE id=? AND status='rejected'", (int(rid),))
+        return _redirect(f"/portal/request/{rid}", "Заявка возвращена в работу.")
     status = str(form.get("status", ""))
     if status not in REQ_STATUSES:
         return _redirect(f"/portal/request/{rid}", "Неизвестный статус.")
