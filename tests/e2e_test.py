@@ -272,10 +272,8 @@ async def main():
     r = await say(CLIENT, "ул. Ленина, 1, кв. 5")
     ok(len(_buttons(r[-1])) >= 3 and "Ленина" in str(_buttons(r[-1])), "адрес найден: варианты кнопками")
     r = await click(CLIENT, "Ленина, 1, Москва")
-    ok("Как вам удобнее" in last_text(r) and "Звонок" in str(_buttons(r[-1])), "после адреса — вопрос о способе связи")
-    r = await click(CLIENT, "Звонок")
-    ok("Как его зовут" in last_text(r), "после выбора способа связи — вопрос о питомце")
-    ok((await db.fetch_one("SELECT contact_pref FROM users"))["contact_pref"] == "call", "способ связи сохранён")
+    ok("Как его зовут" in last_text(r) and "Как вам удобнее" not in last_text(r),
+       "после адреса — сразу вопрос о питомце, способ связи не спрашиваем")
     u = await db.fetch_one("SELECT * FROM users")
     ok(u["address"] == "ул. Ленина, 1, Москва, кв. 5" and u["district"] == "Москва" and u["address_verified"] == 1
        and u["outside_mkad"] == 0, "адрес, район и «в пределах МКАД» взяты с карты, квартира добавлена")
@@ -341,7 +339,8 @@ async def main():
     r = await say(CLIENT, "послезавтра 06:30")  # рабочие часы, но ещё «ночной» тариф (до 07:00)
     txt = last_text(r)
     # (700 + 100 за крупную собаку) × 1.3 ночью = 1040
-    ok("1 040 ₽" in txt and "Крупная собака" in txt and "Ночное" in txt, "разбивка: база + L + ночь = 1 040 ₽")
+    ok("от 1 040 ₽" in txt and "Крупная собака" not in txt and "Ночное" not in txt and "Наценк" not in txt,
+       "клиент видит только вилку «от 1 040 ₽», без разбивки и наценки")
     r = await edit_click(CLIENT, "За МКАД")
     ok("(700 + 100 + 150) × 1.3" or "1 235 ₽" in last_text(r), "за МКАД пересчитывает")
     ok("1 235 ₽" in last_text(r), "итог за МКАД = 1 235 ₽")
@@ -349,6 +348,9 @@ async def main():
     r = await click(CLIENT, "Подтвердить")
     ok("принята" in last_text(r, CLIENT), "клиент получил подтверждение заявки")
     ok(any(m["to"] == ADMIN and "Новая заявка" in m["text"] for m in r), "админ получил уведомление")
+    adm = next((m["text"] for m in r if m["to"] == ADMIN and "Новая заявка" in m["text"]), "")
+    ok("Вилка для клиента: от 1 040 ₽" in adm and "Зарегистрирован:" in adm and "Крупная собака" in adm,
+       "админу в заявке: вилка для клиента, время регистрации и расчёт (база + L + ночь = 1 040 ₽)")
     o = await db.fetch_one("SELECT * FROM orders WHERE id=1")
     ok(o["status"] == "created" and o["price_total"] == 1040, "заказ создан, цена зафиксирована")
 
@@ -436,7 +438,8 @@ async def main():
     future = (datetime.now() + timedelta(days=3)).strftime("%d.%m %H:%M")
     r = await say(CLIENT, future.replace(future[-5:], "11:00"))
     r = await click(CLIENT, "3")
-    ok("3 ч × 600 ₽" in last_text(r) and "1 900 ₽" in last_text(r), "зооняня 3 ч: 1 800 + 100 за крупную = 1 900 ₽")
+    ok("от 1 900 ₽" in last_text(r) and "3 ч × 600 ₽" not in last_text(r),
+       "зооняня 3 ч: клиент видит только вилку «от 1 900 ₽» (1 800 + 100 за крупную), без расчёта")
     await click(CLIENT, "Отмена")
     await say(CLIENT, "/menu")
     await click(CLIENT, "Заказать")
@@ -449,8 +452,10 @@ async def main():
     r = await click(CLIENT, "Шереметьево")
     t = last_text(r)
     ok("Подача: ул. Ленина" in t and "Куда: Москва" in t, "такси: точки А и Б на экране подтверждения")
-    ok("за мкад" in last_text(r).lower() and "Ориентировочная" in last_text(r), "такси в аэропорт: «за МКАД» определено по карте само")
+    ok("Ориентировочная" in last_text(r) and "за мкад" not in last_text(r).lower(), "такси в аэропорт: клиенту только вилка, без строки про МКАД")
     await click(CLIENT, "Подтвердить")
+    ok((await db.fetch_one("SELECT outside_mkad FROM orders WHERE address_to IS NOT NULL"))["outside_mkad"] == 1,
+       "такси в аэропорт: «за МКАД» определено по карте само (для администратора)")
     ok(await db.fetch_one("SELECT 1 FROM orders WHERE address_to IS NOT NULL") is not None, "заказ такси создан с точкой Б")
     r = await say(ADMIN, "/cancel 2 клиент передумал")
     ok("Отменён" in last_text(r, ADMIN), "админ отменил заказ")
@@ -558,7 +563,7 @@ async def main():
     r = await click(CLIENT, "Зеленоград, корпус 1105")
     t = last_text(r)
     ok("Адрес: Зеленоград, корпус 1105, кв. 12" in t, "после подтверждения адрес с карты и квартира на экране заказа")
-    ok("за мкад" in last_text(r).lower() and "Ориентировочная" in last_text(r), "«за МКАД» определено по координатам точки")
+    ok("Ориентировочная" in last_text(r) and "за мкад" not in last_text(r).lower(), "адрес с карты: клиенту только вилка цены")
     r = await click(CLIENT, "Подтвердить")
     o = await db.fetch_one("SELECT * FROM orders ORDER BY id DESC LIMIT 1")
     ok(o["address_unverified"] == 0 and o["outside_mkad"] == 1, "заказ: адрес подтверждён картой, за МКАД")
@@ -642,7 +647,7 @@ async def main():
     t = last_text(r)
     ok("Ориентировочная стоимость: от 1 170 ₽ до 1 350 ₽" in t, "цена показана диапазоном: от расчёта до +15 %")
     ok("Итого" not in t, "точный «Итого» на экране заказа не показывается")
-    ok("Крупная собака" in t and "Ночное" in t, "что учтено в расчёте — видно")
+    ok("Крупная собака" not in t and "Ночное" not in t and "Что учтено" not in t, "расчёт и надбавки клиенту не показываются")
     ok("подобрать специалиста" in t.lower() and "правки" in t, "вопрос: подбирать специалиста или внести правки")
     labels = " | ".join(b.text for b in _buttons(r[-1]))
     ok("Подтвердить" in labels and "Внести правки" in labels and "За МКАД" not in labels,
@@ -738,9 +743,6 @@ async def main():
     ok("кв. 46" in str(_buttons(r[-1])) and "46" in last_text(r), "номер квартиры после вариантов добавлен к вариантам")
     r = await click(LEAD, "Ленина, 1, Москва")
     ok(not any(m["to"] == ADMIN for m in r), "после адреса админу ничего не приходит")
-    await click(LEAD, "Telegram")
-    ok((await db.fetch_one("SELECT contact_pref FROM users WHERE tg_id=?", (LEAD,)))["contact_pref"] == "telegram",
-       "способ связи «Telegram» сохранён")
     r = await say(LEAD, "Бублик")
     r = await say(LEAD, "кошка")
     ok("Порода" in last_text(r), "вид питомца словом «кошка» понятен без кнопки")
@@ -1066,19 +1068,15 @@ async def main():
     # профиль: только главное, остальное в подменю
     r = await say(NEW, "/profile")
     btns = [b.text for b in _buttons(r[-1])]
-    ok("Связь:" in last_text(r), "в профиле виден способ связи")
+    ok("Связь:" not in last_text(r), "в профиле способ связи не показываем")
     ok(len(btns) == 4 and any("Питомцы" in b for b in btns) and any("Настройки" in b for b in btns),
        "в профиле 4 кнопки: данные, питомцы, настройки, меню: " + str(btns))
     ok(not any("Удалить" in b or "акции" in b.lower() or "Способ связи" in b for b in btns), "удаление, рассылки и способ связи убраны из профиля")
     r = await click(NEW, "Настройки")
     ok("Уведомления о заказах: включены" in last_text(r), "в настройках видны уведомления")
     sb = [b.text for b in _buttons(r[-1])]
-    ok(any("Способ связи" in b for b in sb) and any("Удалить" in b for b in sb) and any("акции" in b.lower() for b in sb),
-       "в настройках: способ связи, рассылки, удаление данных")
-    r = await click(NEW, "Способ связи")
-    r = await click(NEW, "СМС")
-    ok((await db.fetch_one("SELECT contact_pref FROM users WHERE tg_id=?", (NEW,)))["contact_pref"] == "sms"
-       and "СМС" in last_text(r), "способ связи меняется из настроек")
+    ok(not any("Способ связи" in b for b in sb) and any("Удалить" in b for b in sb) and any("акции" in b.lower() for b in sb),
+       "в настройках: рассылки и удаление данных, способа связи нет")
     r = await say(NEW, "/profile")
     r = await click(NEW, "Настройки")
     r = await click(NEW, "Удалить")
@@ -1229,7 +1227,6 @@ async def main():
     await contact(REG, "79005550000")
     await say(REG, "ул. Ленина, 1")
     await click(REG, "Ленина, 1, Москва")
-    await click(REG, "Telegram")
     await say(REG, "Барон")
     await click(REG, "Собака")
     await say(REG, "лабрадор")

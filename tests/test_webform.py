@@ -22,7 +22,7 @@ import webform  # noqa: E402
 import webserver  # noqa: E402
 
 GOOD = {"service_id": "1", "name": "Анна", "phone": "8 900 777-88-99", "address": "Москва, ул. Ленина, 1",
-        "when": "завтра в 10:00", "pet": "Дымок, лабрадор", "comment": "домофон 12", "contact": "sms",
+        "when": "завтра в 10:00", "pet": "Дымок, лабрадор", "comment": "домофон 12",
         "consent": "on", "site": ""}
 
 
@@ -31,7 +31,7 @@ class ValidateTest(unittest.TestCase):
         clean, errors = webform.validate(dict(GOOD))
         self.assertEqual(errors, {})
         self.assertEqual(clean["phone"], "+79007778899")
-        self.assertEqual(clean["contact"], "sms")
+        self.assertNotIn("contact", clean)  # способ связи больше не спрашиваем
 
     def test_requires_consent_phone_name_address(self):
         for field in ("consent", "phone", "name", "address", "service_id"):
@@ -40,11 +40,9 @@ class ValidateTest(unittest.TestCase):
             _, errors = webform.validate(d)
             self.assertIn(field, errors, field)
 
-    def test_bad_phone_and_contact_fallback(self):
-        d = dict(GOOD, phone="123", contact="pigeon")
-        clean, errors = webform.validate(d)
+    def test_bad_phone(self):
+        clean, errors = webform.validate(dict(GOOD, phone="123"))
         self.assertIn("phone", errors)
-        self.assertEqual(clean["contact"], "call")
 
     def test_limits_length_and_strips(self):
         d = dict(GOOD, comment="я" * 5000, name="  Анна  ")

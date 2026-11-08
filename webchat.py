@@ -93,7 +93,7 @@ def serialize_markup(markup) -> dict:
                     out.append({"t": b.text})
             if out:
                 rows.append(out)
-        return {"reply": rows}
+        return {"reply": rows, "once": bool(markup.one_time_keyboard)}  # «один раз»: после ответа панель убираем
     if isinstance(markup, ReplyKeyboardRemove):
         return {"reply": None}
     return {}

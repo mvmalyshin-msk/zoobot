@@ -247,7 +247,7 @@ class Conditions(unittest.TestCase):
 
 
 class Card(unittest.TestCase):
-    def test_comment_and_contact_pref_on_staff_card(self):
+    def test_comment_on_staff_card_without_contact_line(self):
         async def go():
             await reset()
             u = await repo.get_or_create_user(U(7, "max"))
@@ -263,14 +263,11 @@ class Card(unittest.TestCase):
             o = await orders.get_order_full(oid)
             staff = orders.order_card(o, for_staff=True)
             self.assertIn("Комментарий: Домофон не работает, звоните", staff)
-            self.assertIn("Связь: звонок", staff)
+            self.assertNotIn("Связь:", staff)  # способ связи администратор выбирает сам
             client = orders.order_card(o)
             self.assertIn("Комментарий", client)
             self.assertNotIn("Связь:", client)
         asyncio.run(go())
-
-    def test_contact_pref_labels(self):
-        self.assertEqual(texts.CONTACT_LABELS, {"call": "звонок", "sms": "СМС", "telegram": "Telegram"})
 
 
 class AdminHelpers(unittest.TestCase):

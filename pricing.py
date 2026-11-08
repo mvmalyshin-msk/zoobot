@@ -165,8 +165,13 @@ def price_range(total: int) -> tuple[int, int]:
     return total, high
 
 
-def format_range(total: int) -> str:
+def format_range_short(total: int) -> str:
+    """«от 896 ₽ до 1 040 ₽» — то, что видит клиент вместо цены и расчёта."""
     from utils import rub
 
     low, high = price_range(total)
-    return f"Ориентировочная стоимость: от {rub(low)} до {rub(high)}"
+    return f"от {rub(low)} до {rub(high)}"
+
+
+def format_range(total: int) -> str:
+    return f"Ориентировочная стоимость: {format_range_short(total)}"

@@ -13,6 +13,7 @@ from aiogram.exceptions import TelegramForbiddenError
 
 import db
 import payinfo
+import pricing
 import keyboards as kb
 import texts
 import traits
@@ -73,7 +74,10 @@ def price_note(breakdown: list, total: int) -> str:
 
 def order_card(o: dict, *, for_staff: bool = False) -> str:
     """Текстовая карточка заказа. for_staff=True добавляет контакты клиента и заметки о питомце."""
-    lines = [f"Заказ №{o['id']} · {texts.STATUS_LABELS[o['status']]}", f"Услуга: {o['service_name']}"]
+    lines = [f"Заказ №{o['id']} · {texts.STATUS_LABELS[o['status']]}"]
+    if for_staff and o.get("created_at"):  # когда заказ появился: сверху, чтобы было видно сразу
+        lines.append(f"Зарегистрирован: {fmt_local(o['created_at'])}")
+    lines.append(f"Услуга: {o['service_name']}")
     when = fmt_local(o["start_at"])
     if o["end_at"] and o["unit"] in ("час", "сутки"):
         when += f" → {fmt_local(o['end_at'])}"
@@ -105,8 +109,11 @@ def order_card(o: dict, *, for_staff: bool = False) -> str:
                 lines.append(f"Здоровье и особенности: {o['pet_notes']}")
     if for_staff:
         lines.append(f"Клиент: {o['client_name']}, {o['client_phone']}")
-        lines.append(f"Связь: {texts.CONTACT_LABELS.get(o.get('client_contact_pref'), 'Telegram')}")
-    lines.append(f"Сумма: {rub(o['price_total'])}")
+    if for_staff:
+        lines.append(f"Вилка для клиента: {pricing.format_range_short(o['price_total'])}")
+        lines.append(f"Сумма (расчёт): {rub(o['price_total'])}")
+    else:
+        lines.append(f"Стоимость: {pricing.format_range_short(o['price_total'])}")
     if for_staff:
         breakdown = o.get("price_breakdown")
         if isinstance(breakdown, str):
@@ -122,7 +129,7 @@ def format_my_orders(rows: list[dict]) -> str:
     done = [r for r in rows if r["status"] not in ACTIVE_STATUSES]
 
     def line(r, mark):
-        return (f"{mark} №{r['id']} · {r['name']} · {fmt_local(r['start_at'])} · {rub(r['price_total'])}\n"
+        return (f"{mark} №{r['id']} · {r['name']} · {fmt_local(r['start_at'])} · {pricing.format_range_short(r['price_total'])}\n"
                 f"      {texts.STATUS_LABELS[r['status']]}")
     out = ["📋 Ваши заказы"]
     if active:

@@ -120,7 +120,6 @@ def settings(marketing_on: bool, tg_url: str | None = None, site_url: str | None
     if site_url:
         top.append([Btn(text=texts.SITE_LOGIN_BUTTON, url=site_url)])
     return _kb(top + [
-        [Btn(text="📞 Способ связи", callback_data="cp:menu")],
         [Btn(text=mk, callback_data="mk:off" if marketing_on else "mk:on")],
         [Btn(text="🗑 Удалить мои данные", callback_data="del:ask")],
         [Btn(text="⬅️ Профиль", callback_data="menu:profile")],
@@ -308,12 +307,6 @@ def breed_options(options: list[str], can_keep: bool) -> InlineKeyboardMarkup:
 def erase_confirm() -> InlineKeyboardMarkup:
     return _kb([[Btn(text="🗑 Да, удалить мои данные", callback_data="del:yes")],
                 [Btn(text="Отмена", callback_data="del:no")]])
-
-
-def contact_pref(prefix: str = "cp") -> InlineKeyboardMarkup:
-    return _kb([[Btn(text="📞 Звонок", callback_data=f"{prefix}:call"),
-                 Btn(text="✉️ СМС", callback_data=f"{prefix}:sms"),
-                 Btn(text="💬 Telegram", callback_data=f"{prefix}:telegram")]])
 
 
 def recognize_skip() -> InlineKeyboardMarkup:
