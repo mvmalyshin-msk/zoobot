@@ -13,6 +13,7 @@ import cabinet
 from config import config
 import policy
 import portal
+import seo
 import webchat
 import webform
 import contact
@@ -29,7 +30,9 @@ async def _map(request: web.Request) -> web.Response:
 
 async def _index(request: web.Request) -> web.Response:
     """Главная: описание сервиса и три входа для заявки. Лёгкая страница без внешних скриптов."""
-    page = (WEBAPP_DIR / "home.html").read_text(encoding="utf-8").replace("__BOT__", config.bot_username)
+    page = ((WEBAPP_DIR / "home.html").read_text(encoding="utf-8").replace("__BOT__", config.bot_username)
+            .replace("__DESC__", seo.DESCRIPTION).replace("__SEO__", seo.head_tags(seo.base_url(request)))
+            .replace("__FAQ__", seo.faq_html()))
     return web.Response(text=page, content_type="text/html", headers={"Cache-Control": "no-cache"})
 
 
@@ -82,6 +85,7 @@ def make_app() -> web.Application:
     webchat.setup(app)
     cabinet.setup(app)
     portal.setup(app)
+    seo.setup(app)
     import analytics
     analytics.setup(app)
     import phoneverify
