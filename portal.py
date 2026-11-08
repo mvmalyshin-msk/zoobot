@@ -114,7 +114,10 @@ def admin_page(handler):
                 return web.json_response({"error": "login"}, status=401)
             return _html_resp(login_page())
         _NEW_N.set(await _new_count())
-        return await handler(request, uid)
+        resp = await handler(request, uid)
+        import analytics                              # поздний импорт: analytics сам импортирует portal
+        await analytics.mark_owner(request, resp)     # свои заходы владельца в аналитику не идут
+        return resp
     return wrapper
 
 
