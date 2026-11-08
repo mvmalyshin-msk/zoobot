@@ -110,12 +110,15 @@ async def calculate_price(service_id: int, params: dict) -> tuple[int, list[tupl
         breakdown = [(label, base_total)]
     total = sum(amount for _, amount in breakdown)
 
-    rules = await db.fetch_all(
+    all_rules = await db.fetch_all(
         """SELECT * FROM price_rules
-           WHERE active=1 AND (service_id IS NULL OR service_id=?)
+           WHERE service_id IS NULL OR service_id=?
            ORDER BY CASE effect_type WHEN 'fixed' THEN 0 ELSE 1 END, sort_order, id""",
         (service_id,),
     )
+    # своё правило услуги ЗАМЕНЯЕТ общее с тем же условием (выключенное своё отключает общее для этой услуги)
+    own = {r["condition_type"] for r in all_rules if r["service_id"] is not None}
+    rules = [r for r in all_rules if r["active"] and (r["service_id"] is not None or r["condition_type"] not in own)]
     for rule in rules:
         check = CONDITIONS.get(rule["condition_type"])
         if check is None:

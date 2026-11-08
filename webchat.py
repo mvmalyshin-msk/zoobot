@@ -11,6 +11,7 @@ import contextvars
 import hashlib
 import json
 import math
+import re
 import logging
 import secrets
 import time
@@ -359,7 +360,7 @@ def _chat_html(admin: bool) -> str:
             .replace("__API__", "/portal/bot" if admin else "/chat")
             .replace("__LOGOUT__", "/portal/logout" if admin else "/chat/logout"))
     if admin:  # админский и клиентский интерфейсы не смешиваем: «Кабинет» — клиентский
-        html = html.replace('<a href="/cabinet">Кабинет</a>', "")
+        html = html.replace('<a href="/cabinet">Кабинет</a>', '<a href="/">🏠 Главная страница</a><a href="/portal">Заявки</a>')
         # на экране «Домой» — приложение администратора (открывает портал), а не клиентский чат
         html = (html.replace('href="/manifest.webmanifest"', 'href="/manifest-admin.webmanifest"')
                 .replace('apple-mobile-web-app-title" content="Зооконсьерж"', 'apple-mobile-web-app-title" content="ЗК Админ"')
@@ -388,8 +389,96 @@ async def page_admin_chat(request: web.Request) -> web.Response:
     return _html_page(_chat_html(admin=True))
 
 
+_login_codes: dict[str, dict] = {}   # телефон -> {h, uid, to, exp, tries, sent}; живёт в памяти, код действует 10 минут
+CODE_TTL, CODE_COOLDOWN, CODE_TRIES = 600, 60, 5
+
+
+def _login_shell(inner: str) -> web.Response:
+    import brand
+    page = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+            f"<title>{brand.NAME} — вход</title>{brand.HEAD}<body>{ribbons.html(ribbons.CLIENT)}"
+            "<div style='max-width:420px;margin:6vh auto;padding:16px'>"
+            f"{brand.backrow('/')}<div style='text-align:center;font-size:26px'>{brand.LOGO}</div>{inner}</div></body>")
+    return web.Response(text=page, content_type="text/html", headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
+
+
+def _phone_form(msg: str = "") -> web.Response:
+    note = f"<p style='color:#b3261e'>{msg}</p>" if msg else ""
+    return _login_shell(
+        "<h2 style='text-align:center'>Вход для клиентов</h2>"
+        "<p>Введите номер телефона, который вы указывали у нас. Мы пришлём код в Telegram — и откроем ваши заказы и данные.</p>"
+        f"{note}<form method=post action=\"/chat/login/phone\"><label>Телефон</label>"
+        "<input name=\"phone\" type=tel inputmode=tel autocomplete=tel placeholder='+7 900 000-00-00' required style='width:100%'>"
+        "<button class='btn' style='width:100%;margin-top:12px'>Получить код</button></form>"
+        "<p class=muted style='margin-top:18px'>Нет Telegram или вы у нас впервые? "
+        "<a href=\"/request\">Оставьте заявку без входа</a> — администратор свяжется с вами.</p>")
+
+
+def _code_form(phone: str, msg: str = "") -> web.Response:
+    import html as _h
+    note = f"<p style='color:#b3261e'>{msg}</p>" if msg else ""
+    return _login_shell(
+        "<h2 style='text-align:center'>Введите код</h2>"
+        "<p>Если этот номер есть у нас и привязан к Telegram, код уже там (в чате с ботом). Он действует 10 минут.</p>"
+        f"{note}<form method=post action=\"/chat/login/code\"><input type=hidden name=phone value='{_h.escape(phone, quote=True)}'>"
+        "<input name=\"code\" inputmode=numeric autocomplete=one-time-code maxlength=6 placeholder='6 цифр' required style='width:100%'>"
+        "<button class='btn' style='width:100%;margin-top:12px'>Войти</button></form>"
+        "<p class=muted style='margin-top:18px'><a href=\"/chat/login\">Другой номер</a></p>")
+
+
+async def post_login_phone(request: web.Request) -> web.Response:
+    import portal
+    from utils import normalize_phone
+    if not portal._same_origin(request):
+        return web.Response(status=403, text="Нет доступа")
+    phone = normalize_phone(str((await request.post()).get("phone", "")))
+    if phone is None:
+        return _phone_form("Проверьте номер: нужен российский, например +7 900 000-00-00.")
+    now = time.time()
+    old = _login_codes.get(phone)
+    if old and now - old["sent"] < CODE_COOLDOWN:
+        return _code_form(phone)                      # слишком часто: новый код не шлём, старый ещё действует
+    user = await db.fetch_one(
+        "SELECT * FROM users WHERE phone=? AND erased_at IS NULL ORDER BY (tg_id>0) DESC, id LIMIT 1", (phone,))
+    to = None
+    if user and user["tg_id"] not in config.admin_ids:
+        to = user["tg_id"] if user["tg_id"] > 0 else user["verified_tg_id"]
+    entry = {"h": "", "uid": None, "to": None, "exp": now + CODE_TTL, "tries": 0, "sent": now}
+    if user and to and to not in config.admin_ids:
+        import orders
+        code = f"{secrets.randbelow(10**6):06d}"
+        if await orders.notify(request.app["bot"], to, f"Код для входа на сайт Зооконсьерж: {code}\n"
+                               "Никому его не сообщайте. Если это были не вы — просто проигнорируйте."):
+            entry.update(h=_hash(f"{phone}:{code}"), uid=user["tg_id"], to=to)
+    _login_codes[phone] = entry                       # для неизвестных номеров запись пустая: ответ тот же, угадать нечего
+    return _code_form(phone)
+
+
+async def post_login_code(request: web.Request) -> web.Response:
+    import portal
+    from utils import normalize_phone
+    if not portal._same_origin(request):
+        return web.Response(status=403, text="Нет доступа")
+    form = await request.post()
+    phone = normalize_phone(str(form.get("phone", ""))) or ""
+    entry = _login_codes.get(phone)
+    code = re.sub(r"\D", "", str(form.get("code", "")))
+    if not entry or not entry["h"] or entry["exp"] < time.time() or entry["tries"] >= CODE_TRIES:
+        return _code_form(phone, "Код не подошёл или устарел. Запросите новый.")
+    entry["tries"] += 1
+    if not secrets.compare_digest(entry["h"], _hash(f"{phone}:{code}")):
+        return _code_form(phone, "Неверный код.")
+    _login_codes.pop(phone, None)                     # код одноразовый
+    token = await new_session(entry["uid"], device=device_label(request.headers.get("User-Agent")))
+    resp = web.Response(status=302, headers={"Location": "/chat"})
+    _set_cookie(request, resp, token)
+    return resp
+
+
 async def page_login(request: web.Request) -> web.Response:
     import html as _h
+    if not request.query.get("t"):
+        return _phone_form()
     t = _h.escape(request.query.get("t", ""), quote=True)
     n = "portal" if request.query.get("n") == "portal" else "chat"
     import brand
@@ -398,7 +487,7 @@ async def page_login(request: web.Request) -> web.Response:
     page = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
             f"<title>{brand.NAME} — вход</title>{brand.HEAD_ADMIN if n == 'portal' else brand.HEAD}<body>{ribbons.html(ribbons.ADMIN if n == 'portal' else ribbons.CLIENT)}"
             "<div style='max-width:420px;margin:6vh auto;padding:16px'>"
-            f"<div class=backrow>{brand.back('/')}</div><div style='text-align:center;font-size:26px'>{brand.LOGO}</div>"
+            f"{brand.backrow('/')}<div style='text-align:center;font-size:26px'>{brand.LOGO}</div>"
             f"<h2 style='text-align:center'>{title}</h2><p>{text}</p>"
             f"<form method=post action=/chat/login><input type=hidden name=t value='{t}'><input type=hidden name=n value='{n}'>"
             "<button class='btn' style='width:100%'>Войти</button></form></div></body>")
@@ -605,6 +694,8 @@ def setup(app: web.Application) -> None:
     app.router.add_get("/chat", page_chat)
     app.router.add_get("/chat/login", page_login)
     app.router.add_post("/chat/login", post_login)
+    app.router.add_post("/chat/login/phone", post_login_phone)
+    app.router.add_post("/chat/login/code", post_login_code)
     app.router.add_get("/chat/logout", logout)
     app.router.add_get("/chat/api/history", api_history)
     app.router.add_get("/chat/api/poll", api_poll)

@@ -11,8 +11,39 @@ from email.message import EmailMessage
 log = logging.getLogger(__name__)
 
 
+REQUIRED = ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD")
+PASSWORD_PAGES = (("gmail", "Gmail", "https://myaccount.google.com/apppasswords"),
+                  ("yandex", "Яндекс Почта", "https://id.yandex.ru/security/app-passwords"),
+                  ("mail.ru", "Mail.ru", "https://account.mail.ru/user/2-step-auth/passwords"))
+
+
 def configured() -> bool:
-    return all(os.getenv(k) for k in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"))
+    return all(os.getenv(k) for k in REQUIRED)
+
+
+def missing() -> list[str]:
+    """Каких переменных не хватает (только имена: значения никуда не выводим)."""
+    return [k for k in REQUIRED if not os.getenv(k)]
+
+
+def password_help() -> tuple[str, str] | None:
+    """(название почты, адрес, где создать пароль приложения) по SMTP_HOST; None — почта незнакомая."""
+    host = (os.getenv("SMTP_HOST") or "").lower()
+    for key, name, url in PASSWORD_PAGES:
+        if key in host:
+            return name, url
+    return None
+
+
+def explain(exc: Exception) -> str:
+    """Причина отказа простыми словами (без адресов и паролей)."""
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        return "почтовый сервис не принял пароль: нужен пароль приложения (не обычный пароль от почты), а SMTP_USER — полный адрес ящика"
+    if isinstance(exc, (TimeoutError, OSError, smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected)):
+        return "не удалось соединиться с почтовым сервером: проверьте SMTP_HOST и SMTP_PORT (465 или 587)"
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+        return "почтовый сервис не принял адрес получателя"
+    return f"неизвестная ошибка ({type(exc).__name__})"
 
 
 def _send_sync(to: str, subject: str, body: str) -> None:
@@ -34,12 +65,17 @@ def _send_sync(to: str, subject: str, body: str) -> None:
             s.send_message(msg)
 
 
-async def send(to: str, subject: str, body: str) -> bool:
+async def send_checked(to: str, subject: str, body: str) -> tuple[bool, str]:
+    """(получилось, причина простыми словами). Пароль и текст письма в журнал не попадают."""
     if not configured():
-        return False
+        return False, "не хватает: " + ", ".join(missing())
     try:
         await asyncio.to_thread(_send_sync, to, subject, body)
-        return True
-    except Exception as e:  # пароль/сервер неверные — в журнал без подробностей письма
+        return True, ""
+    except Exception as e:
         log.warning("Письмо не отправлено: %s", type(e).__name__)
-        return False
+        return False, explain(e)
+
+
+async def send(to: str, subject: str, body: str) -> bool:
+    return (await send_checked(to, subject, body))[0]

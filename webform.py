@@ -79,7 +79,7 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — заявка</title>
 {brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.CLIENT)}<main>
-<div class="backrow">{brand.back("/")}</div>
+{brand.backrow("/")}
 <div class="top">{brand.LOGO}</div>
 <div class="chips" style="justify-content:center"><span class="chip walk">Выгул</span><span class="chip nanny">Зооняня</span><span class="chip boarding">Передержка</span><span class="chip taxi">Зоотакси</span></div>
 <h1>Заявка на услугу</h1>
@@ -101,7 +101,7 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
 def render_done(request_id: int) -> str:
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — заявка принята</title>
-{brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.CLIENT)}<main><div class="backrow">{brand.back("/")}</div><div class="top">{brand.LOGO}</div><h1>✅ Заявка принята</h1>
+{brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.CLIENT)}<main>{brand.backrow("/")}<div class="top">{brand.LOGO}</div><h1>✅ Заявка принята</h1>
 <p>Номер заявки: <b>№{request_id}</b>. Мы свяжемся с вами по указанному телефону, уточним детали и сообщим цену.</p>
 <p class="hint">Данные используются только для выполнения заявки. Удалить их можно, написав нам.</p>
 <p><a href="/request">Отправить ещё одну заявку</a></p></main></body></html>"""

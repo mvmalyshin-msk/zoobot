@@ -484,11 +484,11 @@ async def main():
     ok("800" in last_text(r), "/price_set меняет цену без правки кода")
     await say(ADMIN, "/rule_add 0 holiday percent 20 Праздничный день тест")
     rules = await db.fetch_all("SELECT * FROM price_rules WHERE active=1")
-    ok(len(rules) == 6, "/rule_add добавил правило")
+    ok(len(rules) == 7, "/rule_add добавил правило")
     r = await say(ADMIN, "/rule_add 0 nonsense fixed 10 Плохое")
     ok("Условия:" in last_text(r), "неизвестное условие отклоняется")
-    await say(ADMIN, "/rule_del 6")
-    ok(len(await db.fetch_all("SELECT * FROM price_rules WHERE active=1")) == 5, "/rule_del отключил правило")
+    await say(ADMIN, "/rule_del 7")
+    ok(len(await db.fetch_all("SELECT * FROM price_rules WHERE active=1")) == 6, "/rule_del отключил правило")
     r = await say(ADMIN, "/stats")
     ok("Заявок: 3" in last_text(r) and "Отмен: 2" in last_text(r), "/stats: " + last_text(r).replace("\n", " | ")[:160])
     r = await say(ADMIN, "/orders")
@@ -507,7 +507,7 @@ async def main():
     ok("Что нужно вашему питомцу" in last_text(r), "обычному клиенту админ-команды недоступны")
 
     bad = await db.fetch_all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT IN "
-                             "('schema_version','holidays','kv','sqlite_sequence') AND name NOT LIKE 'sqlite_%'")
+                             "('schema_version','holidays','kv','sqlite_sequence','passkeys') AND name NOT LIKE 'sqlite_%'")
     for t in bad:
         cols = [c["name"] for c in await db.fetch_all(f"PRAGMA table_info({t['name']})")]
         ok("updated_at" in cols, f"updated_at есть в {t['name']}")
