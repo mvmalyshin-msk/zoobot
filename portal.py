@@ -324,6 +324,8 @@ def _row_html(r: dict) -> str:
                 f'<div class="row" style="margin-top:6px">{chip}{src}</div>'
                 f'<div class="sub">{_e(fmt_local(r["start_at"]))} · {_e(r["phone"] or "—")} · {rub(r["price_total"])}</div></a>')
     st = f'<span class="badge" style="background:{"var(--coral)" if r["status"] == "new" else "#8a8178"}">{REQ_STATUSES.get(r["status"], r["status"])}</span>'
+    if str(r.get("address") or "").startswith("Сайт "):  # заявка с сайта конструктора: показываем, с какого
+        src = f'<span class="src">{_e(r["address"])}</span>'
     return (f'<a class="item card" href="/portal/request/{r["id"]}"><div class="row"><span class="who">Заявка с сайта №{r["id"]} · {_e(r["name"])}</span>{st}</div>'
             f'<div class="row" style="margin-top:6px">{chip}{src}</div>'
             f'<div class="sub">{_e(r["when_text"] or "время не указано")} · {_e(r["phone"])}</div></a>')
