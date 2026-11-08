@@ -235,6 +235,17 @@ class Metrics(unittest.TestCase):
         self.assertEqual(m["pageviews"], 3)
         self.assertEqual(m["new_visitors"], 2)
 
+    def test_traffic_counted_without_any_order_or_client(self):
+        # посетители видны в трафике, даже если никто ничего не заказал
+        async def t():
+            await seed()
+            n_orders = (await db.fetch_one("SELECT COUNT(*) AS n FROM orders"))["n"]
+            return n_orders, await analytics.collect("web", "7")
+        n_orders, m = LOOP.run_until_complete(t())
+        self.assertEqual(n_orders, 0)
+        self.assertGreater(m["visitors"], 0)
+        self.assertGreater(m["pageviews"], 0)
+
     def test_web_average_time_uses_activity_gaps(self):
         m = self.collect("web")
         # A: 60→20 секунд назад = 40 с (все промежутки до минуты); B: 1 с  → среднее ≈ 20 с
