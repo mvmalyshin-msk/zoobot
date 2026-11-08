@@ -25,7 +25,7 @@ ADMIN_PHONE = os.getenv("ADMIN_PHONE", "")   # телефон администр
 MAX_MESSAGE = 500
 
 CSS = webform.CSS + """
-.ways{display:grid;gap:10px;margin:16px 0 8px}.way{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:16px;
+.ways{display:grid;gap:10px;margin:16px 0 8px}.way{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:999px;
 text-decoration:none;font-weight:700;min-height:56px}.way small{display:block;font-weight:400;opacity:.85}
 .way.tg{background:var(--coral);color:#fff}.way.tel{background:#fff;color:var(--coral);border:2px solid var(--coral)}
 .or{text-align:center;color:var(--mute);margin:18px 0 0}
@@ -50,7 +50,7 @@ def render_form(values: dict, errors: dict) -> str:
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — связаться с администратором</title>
 {brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.CLIENT)}<main>
 {brand.backrow("/")}
-<div class="top">{brand.LOGO}</div>
+<div class="top">{brand.LOGO}</div>{brand.STRAP}
 <h1>Написать администратору</h1>
 <p class="hint">Выберите, как вам удобнее. Отвечаем в рабочее время.</p>
 <div class="ways">
@@ -70,7 +70,7 @@ def render_form(values: dict, errors: dict) -> str:
 def render_done() -> str:
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — принято</title>
-{brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.CLIENT)}<main>{brand.backrow("/")}<div class="top">{brand.LOGO}</div>
+{brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.CLIENT)}<main>{brand.backrow("/")}<div class="top">{brand.LOGO}</div>{brand.STRAP}
 <h1>✅ Сообщение принято</h1><p>Администратор получил его сразу и свяжется с вами по указанному телефону.</p>
 <p><a class="btn" href="/">На главную</a></p></main></body></html>"""
 

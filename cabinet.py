@@ -122,7 +122,7 @@ def _html(body: str, status: int = 200) -> web.Response:
     page = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
             f"<title>{brand.NAME} — кабинет</title>{brand.HEAD}"
             "<body style='max-width:520px;margin:0 auto;padding:16px'>"
-            f"{brand.backrow('/')}<div style='text-align:center;font-size:26px'>{brand.LOGO}</div>{body}</body>")
+            f"{brand.backrow('/')}<div style='text-align:center;font-size:26px'>{brand.LOGO}</div>{brand.STRAP}{body}</body>")
     page = page.replace("<body style='max-width:520px", ribbons.html(ribbons.CLIENT) + "<body style='max-width:520px", 1)
     return web.Response(text=page, status=status, content_type="text/html",
                         headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
