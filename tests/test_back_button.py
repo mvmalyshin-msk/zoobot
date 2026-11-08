@@ -75,7 +75,7 @@ class BackButtonTest(unittest.IsolatedAsyncioTestCase):
     async def test_admin_can_reach_home_from_every_portal_page(self):
         for path in ("/portal", "/portal/clients", "/portal/executors", "/portal/settings", "/portal/tariffs", "/portal/bot"):
             _, t = await self.back_of(path, self.admin)
-            self.assertRegex(t, r'<a[^>]*href="/"[^>]*>[^<]*Главная', path)
+            self.assertRegex(t, r'<a[^>]*class="brand"[^>]*href="/"', path)    # на главную ведёт надпись ЗООКОНСЬЕРЖ
 
     async def test_start_pages_have_no_back(self):
         for path, hdr in (("/", None), ("/portal", self.admin)):
