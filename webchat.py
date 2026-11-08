@@ -440,10 +440,17 @@ _tg_logins: dict[str, dict] = {}   # токен ожидающего входа 
 TG_LOGIN_TTL = 600
 
 
+ADMIN_AS_CLIENT_TEXT = ("Этот Telegram — администратора, поэтому кабинет клиента с него не открывается. Администратор входит в портал. "
+                        "Чтобы посмотреть сайт глазами клиента, зайдите с другого Telegram или нажмите «Чат» на главной без входа.")
+
+
 async def confirm_tg_login(token: str, tg_id: int) -> bool:
     """Бот зовёт это, когда клиент нажал «Start» по ссылке входа. Админ так не входит: у него портал."""
     entry = _tg_logins.get(token)
-    if not entry or entry["exp"] < time.time() or tg_id in config.admin_ids or entry["tg"] is not None:
+    if entry and entry["exp"] >= time.time() and entry["tg"] is None and tg_id in config.admin_ids:
+        entry["admin"] = True
+        return False
+    if not entry or entry["exp"] < time.time() or entry["tg"] is not None:
         return False
     entry["tg"] = tg_id
     return True
@@ -462,7 +469,7 @@ async def page_login_tg(request: web.Request) -> web.Response:
         f"<p><a class=\"btn\" style='display:block;text-align:center' href=\"{link}\">Открыть Telegram</a></p>"
         "<p id=st class=muted>Ждём подтверждения…</p>"
         "<script>(function(){var t=" + json.dumps(token) + ";function p(){fetch('/chat/login/tg/poll?t='+encodeURIComponent(t),{credentials:'same-origin'})"
-        ".then(function(r){return r.json()}).then(function(j){if(j.ok){location.href='/chat'}else{setTimeout(p,2000)}})"
+        ".then(function(r){return r.json()}).then(function(j){if(j.ok){location.href='/chat'}else if(j.admin){document.getElementById('st').textContent=" + json.dumps(ADMIN_AS_CLIENT_TEXT) + "}else{setTimeout(p,2000)}})"
         ".catch(function(){setTimeout(p,4000)})}setTimeout(p,2000)})();</script>"
         "<p class=muted style='margin-top:18px'><a href=\"/chat/login\">Войти по номеру телефона</a></p>")
 
@@ -470,6 +477,8 @@ async def page_login_tg(request: web.Request) -> web.Response:
 async def poll_login_tg(request: web.Request) -> web.Response:
     token = request.query.get("t", "")
     entry = _tg_logins.get(token)
+    if entry and entry.get("admin") and entry["exp"] >= time.time():
+        return web.json_response({"ok": False, "admin": True})
     if not entry or entry["tg"] is None or entry["exp"] < time.time():
         return web.json_response({"ok": False})
     _tg_logins.pop(token, None)                       # одноразово
