@@ -160,6 +160,9 @@ MIGRATIONS: dict[int, str] = {
     """,
     # 16: доверенные устройства: вход запоминает название устройства (см. webchat.device_label), в портале его можно отозвать
     16: "ALTER TABLE web_sessions ADD COLUMN device TEXT;",
+    # 17: зоотакси по формуле Яндекс Такси («Эконом», Москва): цена услуги — посадка 189 ₽, дальше км и минуты
+    #     по маршруту (taxi.py). Меняем только старую стартовую цену 1200 — цену, заданную админом, не трогаем.
+    17: "UPDATE services SET base_price=189 WHERE code='taxi' AND base_price=1200;",
     # 14: шаги диалога (FSM) — в базе, чтобы переживать перезапуск бота (см. fsm_store.py)
     14: """
     CREATE TABLE IF NOT EXISTS fsm (

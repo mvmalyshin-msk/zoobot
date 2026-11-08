@@ -22,6 +22,7 @@ import pricing
 import repo
 import ribbons
 import talk
+import taxi
 import texts
 import traits
 from config import config
@@ -521,6 +522,16 @@ ADDR_STATES = {Profile.address.state: "profile", Order.point_a.state: "a",
                Order.point_b.state: "b", Order.edit_address.state: "edit"}
 
 
+def _ask_for(data: dict, target: str | None = None):
+    """Клавиатура «Найти на карте» для нужной точки такси: карта подписывает, что выбирают, и показывает подачу."""
+    target = target or data.get("addr_target")
+    if target == "a":
+        return kb.address_ask("a")
+    if target == "b":
+        return kb.address_ask("b", _pt(data.get("pt_a")))
+    return kb.address_ask()
+
+
 def _pick_prefix(target: str | None) -> str:
     """В такси два адреса: подсказываем, какой из них сейчас выбирают."""
     return {"a": texts.ADDR_PICK_A, "b": texts.ADDR_PICK_B}.get(target, "")
@@ -558,7 +569,7 @@ async def _address_input(m: Message, state: FSMContext, text: str, target: str, 
     fails = data.get("addr_fails", 0)
     _, flat = geo.split_flat(text)
     opts = [{"label": p.label + (f", кв. {flat}" if flat else ""), "district": p.district,
-             "outside": p.outside_mkad, "has_house": p.has_house} for p in places]
+             "outside": p.outside_mkad, "has_house": p.has_house, "lat": p.lat, "lon": p.lon} for p in places]
     await state.update_data(addr_target=target, addr_back=back, addr_text=text, addr_options=opts, addr_outside=False,
                             addr_fails=fails if opts else fails + 1)
     await state.set_state(Addr.pick)
@@ -588,7 +599,7 @@ async def cb_addr(cb: CallbackQuery, state: FSMContext) -> None:
     arg = cb.data[3:]
     if arg == "retry":
         await state.set_state(data["addr_back"])
-        await cb.message.answer("Напишите адрес ещё раз.", reply_markup=kb.address_ask())
+        await cb.message.answer("Напишите адрес ещё раз.", reply_markup=_ask_for(data))
         return
     if arg == "keep":
         if data.get("addr_fails", 0) < 2 or not data.get("addr_text") or data.get("addr_outside"):
@@ -605,10 +616,10 @@ async def cb_addr(cb: CallbackQuery, state: FSMContext) -> None:
     o = opts[int(arg)]
     if not o["has_house"]:
         await state.set_state(data["addr_back"])
-        await cb.message.answer(texts.ADDR_NO_HOUSE, reply_markup=kb.address_ask())
+        await cb.message.answer(texts.ADDR_NO_HOUSE, reply_markup=_ask_for(data))
         return
     await _address_done(cb.message, state, data["addr_target"], o["label"][:200], o["district"],
-                        o["outside"], True, cb.from_user)
+                        o["outside"], True, cb.from_user, lat=o.get("lat"), lon=o.get("lon"))
 
 
 @router.message(StateFilter(Profile.address, Order.point_a, Order.point_b, Order.edit_address, Addr.pick),
@@ -625,7 +636,8 @@ async def addr_location(m: Message, state: FSMContext) -> None:
     if not place.has_house:
         await m.answer(texts.ADDR_NO_HOUSE)
         return
-    opts = [{"label": place.label, "district": place.district, "outside": place.outside_mkad, "has_house": True}]
+    opts = [{"label": place.label, "district": place.district, "outside": place.outside_mkad, "has_house": True,
+             "lat": m.location.latitude, "lon": m.location.longitude}]
     await state.update_data(addr_target=target, addr_back=back, addr_text=place.label, addr_options=opts,
                             addr_fails=0)
     await state.set_state(Addr.pick)
@@ -641,23 +653,25 @@ async def addr_webapp(m: Message, state: FSMContext) -> None:
     target = ADDR_STATES.get(cur) or data.get("addr_target")
     pick = geo.parse_pick(m.web_app_data.data)
     if not pick:
-        await m.answer(texts.ADDR_WEB_BAD, reply_markup=kb.address_ask())
+        await m.answer(texts.ADDR_WEB_BAD, reply_markup=_ask_for(data, target))
         return
     place = await geo.reverse(pick["lat"], pick["lon"])  # район и МКАД; если карта молчит — по координатам
     outside = place.outside_mkad if place else geo.outside_by_coords(pick["lat"], pick["lon"])
     label = pick["label"][:200]
     # клиент должен увидеть выбранный адрес и подтвердить его (или сразу ввести заново), а не ехать дальше вслепую
     back = cur if cur in ADDR_STATES else data.get("addr_back")
-    opts = [{"label": label, "district": place.district if place else None, "outside": outside, "has_house": True}]
+    opts = [{"label": label, "district": place.district if place else None, "outside": outside, "has_house": True,
+             "lat": pick["lat"], "lon": pick["lon"]}]
     await state.update_data(addr_target=target, addr_back=back, addr_text=label, addr_options=opts,
                             addr_fails=0, addr_outside=False)
     await state.set_state(Addr.pick)
     check = {"a": texts.ADDR_CHECK_A, "b": texts.ADDR_CHECK_B}.get(target, texts.ADDR_CHECK)  # какой это адрес
-    await m.answer(check.format(label=label), reply_markup=kb.address_options([label], False))
+    await m.answer(check.format(label=label), reply_markup=kb.address_options([label], False, confirm=True))
 
 
 async def _address_done(msg: Message, state: FSMContext, target: str, label: str, district: str | None,
-                        outside: bool | None, verified: bool, tg_user) -> None:
+                        outside: bool | None, verified: bool, tg_user, lat: float | None = None,
+                        lon: float | None = None) -> None:
     """Адрес принят (проверен картой или оставлен как есть). Идём дальше по сценарию."""
     await state.update_data(addr_fails=0, addr_options=[])
     if target == "profile":
@@ -671,15 +685,16 @@ async def _address_done(msg: Message, state: FSMContext, target: str, label: str
         await state.set_state(Profile.contact)
         await msg.answer(texts.ASK_CONTACT, reply_markup=kb.contact_pref())
         return
+    point = [lat, lon] if lat is not None and lon is not None else None  # координаты нужны такси для маршрута
     if target in ("a", "edit"):
-        await state.update_data(address=label, out_a=bool(outside), unv_a=not verified)
+        await state.update_data(address=label, out_a=bool(outside), unv_a=not verified, pt_a=point)
     else:
-        await state.update_data(address_to=label, out_b=bool(outside), unv_b=not verified)
+        await state.update_data(address_to=label, out_b=bool(outside), unv_b=not verified, pt_b=point)
     data = await state.get_data()
     await state.update_data(outside_mkad=bool(data.get("out_a")) or bool(data.get("out_b")))
     if target == "a":
         await state.set_state(Order.point_b)
-        await msg.answer(texts.ASK_POINT_B, reply_markup=kb.address_ask())
+        await msg.answer(texts.ASK_POINT_B, reply_markup=kb.address_ask("b", _pt(data.get("pt_a"))))
     else:
         await show_confirm(msg, state, tg_user)
 
@@ -1119,9 +1134,9 @@ async def _accept_when(msg: Message, state: FSMContext, tg_user, dt) -> bool:
         await state.set_state(Order.point_a)
         if user["address"]:  # сохранённый адрес — одной кнопкой; другой — текстом, картой или геопозицией
             await msg.answer(texts.ASK_POINT_A, reply_markup=kb.use_profile_address(user["address"]))
-            await msg.answer(texts.ASK_POINT_A_OTHER, reply_markup=kb.address_ask())
+            await msg.answer(texts.ASK_POINT_A_OTHER, reply_markup=kb.address_ask("a"))
         else:
-            await msg.answer(texts.ASK_POINT_A_NO_SAVED, reply_markup=kb.address_ask())
+            await msg.answer(texts.ASK_POINT_A_NO_SAVED, reply_markup=kb.address_ask("a"))
     else:
         await show_confirm(msg, state, tg_user)
     return True
@@ -1220,11 +1235,11 @@ async def cb_point_a_profile(cb: CallbackQuery, state: FSMContext) -> None:
     await cb.answer()
     user = await repo.get_or_create_user(cb.from_user)
     await state.update_data(address=user["address"], out_a=bool(user["outside_mkad"]),
-                            unv_a=not user["address_verified"])
+                            unv_a=not user["address_verified"], pt_a=None)  # координат у сохранённого адреса нет — найдём при расчёте
     data = await state.get_data()
     await state.update_data(outside_mkad=bool(data.get("out_a")) or bool(data.get("out_b")))
     await state.set_state(Order.point_b)
-    await cb.message.answer(texts.ASK_POINT_B, reply_markup=kb.address_ask())
+    await cb.message.answer(texts.ASK_POINT_B, reply_markup=kb.address_ask("b"))
 
 
 @router.message(Order.point_a, F.text)
@@ -1252,6 +1267,46 @@ def compute_end(service: dict, start, qty: int):
     return None
 
 
+def _pt(raw) -> tuple[float, float] | None:
+    """Точка из данных диалога ([lat, lon]) → кортеж."""
+    try:
+        return float(raw[0]), float(raw[1])
+    except (TypeError, IndexError, ValueError):
+        return None
+
+
+async def _geocode_point(label: str | None) -> tuple[float, float] | None:
+    """Координаты адреса без сохранённой точки (сохранённый в профиле адрес, «оставить как написано»)."""
+    if not label:
+        return None
+    places = await geo.search(label)
+    for p in places or []:
+        if p.has_house:
+            return p.lat, p.lon
+    return None
+
+
+async def _ensure_route(state: FSMContext) -> dict:
+    """Для такси: маршрут от подачи до места назначения считается один раз на пару точек и хранится в данных диалога."""
+    data = await state.get_data()
+    if not data.get("address_to"):
+        return data
+    a, b = _pt(data.get("pt_a")), _pt(data.get("pt_b"))
+    if a is None:
+        a = await _geocode_point(data.get("address"))
+    if b is None:
+        b = await _geocode_point(data.get("address_to"))
+    if a is None or b is None:  # без координат цену по счётчику не посчитать — покажем посадку и животное
+        await state.update_data(pt_a=list(a) if a else None, pt_b=list(b) if b else None, route=None, route_key=None)
+        return await state.get_data()
+    key = [list(a), list(b)]
+    if data.get("route") and data.get("route_key") == key:
+        return data
+    r = await taxi.route(a, b)
+    await state.update_data(pt_a=list(a), pt_b=list(b), route=r.as_dict(), route_key=key)
+    return await state.get_data()
+
+
 async def _price_for(data: dict) -> tuple[int, list, dict, dict]:
     """Считает цену по данным из FSM. Возвращает (итог, разбивка, услуга, питомец)."""
     service = await db.fetch_one("SELECT * FROM services WHERE id=?", (data["service_id"],))
@@ -1266,13 +1321,14 @@ async def _price_for(data: dict) -> tuple[int, list, dict, dict]:
         "pet_traits": pet["traits"] if pet else None,
         "pet_notes": (pet["notes"] or "") if pet else "",
         "pet_species": pet["species"] if pet else None,
+        "route": data.get("route"),
     }
     total, breakdown = await pricing.calculate_price(service["id"], params)
     return total, breakdown, service, pet, params
 
 
 async def show_confirm(msg: Message, state: FSMContext, tg_user) -> None:
-    data = await state.get_data()
+    data = await _ensure_route(state)
     total, breakdown, service, pet, _ = await _price_for(data)
     user = await repo.get_or_create_user(tg_user)
     pets = await repo.list_pets(user["id"])
@@ -1283,6 +1339,10 @@ async def show_confirm(msg: Message, state: FSMContext, tg_user) -> None:
     lines = ["Проверьте заказ:", "", f"Услуга: {service['name']}", f"Когда: {when}"]
     if data.get("address_to"):
         lines += [f"Подача: {data['address']}", f"Куда: {data['address_to']}"]
+        route = taxi.Route.of(data.get("route"))
+        if route:
+            lines.append(f"Маршрут: ≈ {taxi.fmt_km(route.km)} км, ≈ {route.minutes} мин в пути"
+                         + ("" if route.by_road else " (оценка по прямой: карта маршрутов не ответила)"))
     else:
         lines.append(f"Адрес: {data['address']}")
     if pet:

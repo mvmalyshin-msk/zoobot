@@ -271,17 +271,25 @@ def executor_done(order_id: int) -> InlineKeyboardMarkup:
     return _kb([[Btn(text="✅ Завершил", callback_data=f"ex:done:{order_id}")]])
 
 
-def address_ask() -> ReplyKeyboardMarkup:
-    """Кнопка «отправить геопозицию» под строкой ввода (один раз)."""
+def address_ask(point: str | None = None, frm: tuple[float, float] | None = None) -> ReplyKeyboardMarkup:
+    """Кнопка «отправить геопозицию» под строкой ввода (один раз). point «a»/«b» — карта подпишет, какую точку
+    выбирают (откуда забрать / куда поедем); frm — подача, чтобы показать её на карте при выборе назначения."""
     rows = []
     if config.webapp_url:  # мини-приложение с картой и подсказками адреса
-        rows.append([KeyboardButton(text="🗺 Найти на карте", web_app=WebAppInfo(url=config.webapp_url.rstrip("/") + "/map"))])
+        url = config.webapp_url.rstrip("/") + "/map"
+        if point in ("a", "b"):
+            url += f"?pt={point}"
+            if frm and point == "b":
+                url += f"&from={frm[0]},{frm[1]}"
+        rows.append([KeyboardButton(text="🗺 Найти на карте", web_app=WebAppInfo(url=url))])
     rows.append([KeyboardButton(text="📍 Отправить геопозицию", request_location=True)])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True, one_time_keyboard=True)
 
 
-def address_options(labels: list[str], can_keep: bool) -> InlineKeyboardMarkup:
-    rows = [[Btn(text=f"📍 {lb if len(lb) <= 55 else lb[:52] + '…'}", callback_data=f"ad:{i}")]
+def address_options(labels: list[str], can_keep: bool, confirm: bool = False) -> InlineKeyboardMarkup:
+    """confirm — адрес уже выбран на карте: кнопка «✅ Да, верно» вместо повтора адреса."""
+    rows = [[Btn(text=(f"✅ Да, верно: {lb if len(lb) <= 40 else lb[:37] + '…'}" if confirm
+                       else f"📍 {lb if len(lb) <= 55 else lb[:52] + '…'}"), callback_data=f"ad:{i}")]
             for i, lb in enumerate(labels)]
     rows.append([Btn(text="✏️ Ввести заново", callback_data="ad:retry")])
     if can_keep:

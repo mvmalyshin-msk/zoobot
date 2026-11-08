@@ -85,19 +85,25 @@ async def calculate_price(service_id: int, params: dict) -> tuple[int, list[tupl
       is_urgent    — заказ «на сегодня»
       outside_mkad — выезд за МКАД
       pet_traits / pet_notes / pet_species — повадки, особенности здоровья и вид питомца (сложность работы)
+      route        — для такси: {"km", "minutes", "by_road"} от подачи до места назначения
     """
     service = await db.fetch_one("SELECT * FROM services WHERE id=? AND active=1", (service_id,))
     if service is None:
         raise ValueError(f"Услуга {service_id} не найдена или отключена")
 
     qty = params.get("quantity") or 1
-    base_total = round(service["base_price"] * qty)
-    if service["unit"] in UNIT_SHORT:
-        label = f"{service['name']}: {qty:g} {UNIT_SHORT[service['unit']]} × {service['base_price']} ₽"
+    if service["category"] == "taxi":  # такси — по маршруту, как Яндекс Такси (см. taxi.py)
+        import taxi
+        breakdown: list[tuple[str, int]] = taxi.fare(taxi.Route.of(params.get("route")), await taxi.get_tariff(),
+                                                     service["base_price"], service["name"])
     else:
-        label = service["name"]
-    breakdown: list[tuple[str, int]] = [(label, base_total)]
-    total = base_total
+        base_total = round(service["base_price"] * qty)
+        if service["unit"] in UNIT_SHORT:
+            label = f"{service['name']}: {qty:g} {UNIT_SHORT[service['unit']]} × {service['base_price']} ₽"
+        else:
+            label = service["name"]
+        breakdown = [(label, base_total)]
+    total = sum(amount for _, amount in breakdown)
 
     rules = await db.fetch_all(
         """SELECT * FROM price_rules
