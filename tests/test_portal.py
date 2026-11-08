@@ -284,6 +284,31 @@ class RequestTest(unittest.TestCase):
             self.assertEqual((await db.fetch_one("SELECT status FROM web_requests WHERE id=?", (f["wr"],)))["status"], "work")
         run(t)
 
+    def test_web_request_can_be_cancelled_with_one_button(self):
+        async def t(c, f):
+            url = f"/portal/request/{f['wr']}"
+            page = await (await c.get(url)).text()
+            self.assertIn("Отменить заявку", page)
+            self.assertIn('name="cancel"', page)
+            r = await c.post(url, data={"cancel": "1", "note": "клиент передумал"}, allow_redirects=False)
+            self.assertEqual(r.status, 303)
+            row = await db.fetch_one("SELECT status, admin_note FROM web_requests WHERE id=?", (f["wr"],))
+            self.assertEqual((row["status"], row["admin_note"]), ("rejected", "клиент передумал"))
+            page = await (await c.get(url)).text()
+            self.assertIn("Заявка отменена", page)
+            self.assertNotIn("Отменить заявку", page)
+            self.assertIn("Вернуть в работу", page)
+            await c.post(url, data={"restore": "1"}, allow_redirects=False)
+            self.assertEqual((await db.fetch_one("SELECT status FROM web_requests WHERE id=?", (f["wr"],)))["status"], "new")
+        run(t)
+
+    def test_cancel_unknown_request_is_404(self):
+        async def t(c, f):
+            r = await c.post("/portal/request/999999", data={"cancel": "1"}, allow_redirects=False)
+            self.assertIn(r.status, (303, 404))
+            self.assertIsNone(await db.fetch_one("SELECT 1 FROM web_requests WHERE id=999999"))
+        run(t)
+
 
 class ChatTest(unittest.TestCase):
     def test_write_to_client_and_see_reply(self):
