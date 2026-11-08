@@ -44,9 +44,8 @@ def render_form(values: dict, errors: dict) -> str:
     v = lambda k: _e(values.get(k, ""))  # noqa: E731
     err = lambda k: f'<div class="err">{_e(errors[k])}</div>' if k in errors else ""  # noqa: E731
     checked = " checked" if values.get("consent") else ""
-    tel = _tel()
-    call = (f'<a class="way tel" href="tel:{_e(tel)}"><span>📞</span><span>Позвонить администратору'
-            f'<small>{_e(ADMIN_PHONE)}</small></span></a>') if tel else ""
+    call = ('<a class="way tel" href="/contact/call" rel="nofollow"><span>📞</span><span>Позвонить администратору'
+            '<small>обычный звонок по сотовой сети</small></span></a>') if _tel() else ""   # номера на странице нет: он отдаётся только при нажатии
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — связаться с администратором</title>
 {brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.CLIENT)}<main>
@@ -78,6 +77,14 @@ def render_done() -> str:
 
 async def get_page(request: web.Request) -> web.Response:
     return web.Response(text=render_form({}, {}), content_type="text/html", headers={"Cache-Control": "no-cache"})
+
+
+async def call(request: web.Request) -> web.Response:
+    """Нажатие «Позвонить»: номер отдаётся только сейчас, переходом на tel: — телефон звонит по сотовой сети."""
+    tel = _tel()
+    if not tel:
+        return web.Response(status=404, text="Номер не задан.")
+    return web.Response(status=302, headers={"Location": f"tel:{tel}", "Cache-Control": "no-store", "X-Robots-Tag": "noindex"})
 
 
 async def post_page(request: web.Request) -> web.Response:

@@ -77,6 +77,7 @@ def make_app() -> web.Application:
     app.router.add_post("/request", webform.post_form)
     app.router.add_get("/contact", contact.get_page)
     app.router.add_post("/contact", contact.post_page)
+    app.router.add_get("/contact/call", contact.call)
     app.router.add_post("/api/site-lead", siteleads.post_lead)
     webchat.setup(app)
     cabinet.setup(app)
