@@ -38,6 +38,13 @@ class ContactTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('class="btn go chatbtn" href="/contact"', t)
         self.assertIn("Написать администратору", t)
 
+    async def test_home_buttons_stack_evenly_on_phone(self):
+        t = await (await self.client.get("/")).text()
+        self.assertIn('<div class="cta">', t)
+        self.assertIn(".cta{display:flex", t)
+        self.assertIn("@media (max-width:560px){.cta{flex-direction:column", t)
+        self.assertNotIn("margin-left:6px", t)                     # раньше вторая кнопка «съезжала» вбок
+
     async def test_page_has_three_ways_no_phone_link_without_number(self):
         r = await self.client.get("/contact")
         self.assertEqual(r.status, 200)
