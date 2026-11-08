@@ -82,7 +82,7 @@ class EmailLoginFlowTest(unittest.TestCase):
         self.assertIn("код уже в почте", stranger)           # и ответ тот же — по нему не угадать адрес
         self.assertIn("код уже в почте", page)
         self.assertEqual(sent[-1][0], "owner@example.com")
-        self.assertEqual((status, location), (303, "/portal"))
+        self.assertEqual((status, location), (303, "/portal/face"))  # ключей Face ID ещё нет — сразу предлагаем
 
     def test_without_mail_server_the_page_says_what_is_missing(self):
         async def go():

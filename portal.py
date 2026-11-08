@@ -476,9 +476,24 @@ async def post_verify(request: web.Request) -> web.Response:
         return _html_resp(login_page("Код не подошёл или устарел. Запросите новый.", code_form=True))
     _fails.pop(_ip(request), None)
     token = await webchat.new_session(row["tg_id"], device=webchat.device_label(request.headers.get("User-Agent")))
-    resp = web.Response(status=303, headers={"Location": "/portal"})
+    # первый вход по коду: сразу предлагаем Face ID одной кнопкой (как у «Моего помощника»), если ключей ещё нет
+    nxt = "/portal" if await passkeys.list_for(row["tg_id"]) else "/portal/face"
+    resp = web.Response(status=303, headers={"Location": nxt})
     webchat._set_cookie(request, resp, token, admin=True)
     return resp
+
+
+@admin_page
+async def face_page(request: web.Request, uid: int) -> web.Response:
+    """Одна кнопка: включить Face ID на этом устройстве. Если ключ здесь уже создан — сразу в портал."""
+    skip = ('<script>try{if(localStorage.getItem("zc_passkey")&&!location.search)location.replace("/portal")}'
+            'catch(x){}</script>')
+    body = (f'{skip}<h1>Вход по Face ID</h1><div class="card" style="padding:16px">'
+            f'<p>В следующий раз не нужен код из Telegram или почты: телефон узнает вас по лицу или отпечатку.</p>'
+            f'<button class="btn" id="pkon" type="button" style="width:100%;font-size:18px">Включить Face ID</button>'
+            f'<p id="pkst" class="muted" style="margin-top:8px"></p>'
+            f'<a class="btn ghost" href="/portal" style="width:100%;margin-top:8px;text-align:center">Не сейчас</a></div>{PASSKEY_JS}')
+    return _html_resp(page("Face ID", body, "settings", back=None))
 
 
 async def logout(request: web.Request) -> web.Response:
@@ -1240,6 +1255,7 @@ def setup(app: web.Application) -> None:
     app.router.add_get("/portal", list_page)
     app.router.add_post("/portal/code", post_code)
     app.router.add_post("/portal/verify", post_verify)
+    app.router.add_get("/portal/face", face_page)
     app.router.add_get("/portal/logout", logout)
     app.router.add_get("/portal/order/{oid}", order_page)
     app.router.add_post("/portal/order/{oid}", order_action)
