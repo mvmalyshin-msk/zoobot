@@ -414,11 +414,14 @@ def _phone_form(msg: str = "") -> web.Response:
     note = f"<p style='color:#b3261e'>{msg}</p>" if msg else ""
     return _login_shell(
         "<h2 style='text-align:center'>Вход для клиентов</h2>"
-        "<p>Введите номер телефона, который вы указывали у нас. Мы пришлём код в Telegram — и откроем ваши заказы и данные.</p>"
+        "<p>Самый надёжный способ — через Telegram: нажмите кнопку, в Telegram «Запустить» — и кабинет откроется здесь.</p>"
+        "<p><a class=\"btn\" style='display:block;text-align:center' href=\"/chat/login/tg\">✈️ Войти через Telegram</a></p>"
+        "<p class=muted style='text-align:center;margin:18px 0 8px'>или по номеру телефона</p>"
+        "<p class=muted style='font-size:.9em'>Код придёт в Telegram только если номер уже есть у нас и вы раньше открывали бота. "
+        "СМС мы не отправляем.</p>"
         f"{note}<form method=post action=\"/chat/login/phone\"><label>Телефон</label>"
         "<input name=\"phone\" type=tel inputmode=tel autocomplete=tel placeholder='+7 900 000-00-00' required style='width:100%'>"
-        "<button class='btn' style='width:100%;margin-top:12px'>Получить код</button></form>"
-        "<p style='margin-top:18px'><a class=\"btn ghost\" style='display:block;text-align:center' href=\"/chat/login/tg\">✈️ Войти через Telegram</a></p>"
+        "<button class='btn ghost' style='width:100%;margin-top:12px'>Получить код</button></form>"
         "<p class=muted style='margin-top:18px'>Нет Telegram или вы у нас впервые? "
         "<a href=\"/request\">Оставьте заявку без входа</a> — администратор свяжется с вами.</p>")
 
