@@ -151,8 +151,55 @@ function tick(){fetch('/portal/api/summary',{credentials:'same-origin'}).then(fu
  save(j);
 }).catch(function(){})}
 tick();setInterval(tick,20000);
-var n=document.getElementById('perm');
-if(n&&window.Notification&&Notification.permission==='default'){n.hidden=false;n.onclick=function(e){e.preventDefault();Notification.requestPermission().then(function(){n.hidden=true})}}
+try{if(navigator.clearAppBadge)navigator.clearAppBadge()}catch(e){}
+// Уведомления, которые приходят при закрытом приложении (Web Push). Подписка хранится в браузере/приложении,
+// поэтому её нужно создать там, где человек пользуется порталом: на iPhone — в приложении с экрана «Домой».
+var H={'X-Zc':'1','Content-Type':'application/json'};
+var canPush='serviceWorker' in navigator&&'PushManager' in window&&!!window.Notification;
+function keyBytes(k){k=k.replace(/-/g,'+').replace(/_/g,'/');while(k.length%4)k+='=';var b=atob(k),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a}
+function pushOn(){
+  if(!canPush)return Promise.resolve(false);
+  return navigator.serviceWorker.register('/sw.js').then(function(){return navigator.serviceWorker.ready}).then(function(reg){
+    return reg.pushManager.getSubscription().then(function(sub){
+      if(sub)return sub;
+      return fetch('/portal/bot/api/push/key',{credentials:'same-origin'}).then(function(r){return r.json()}).then(function(j){
+        return reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:keyBytes(j.key)})});
+    });
+  }).then(function(sub){
+    return fetch('/portal/bot/api/push/subscribe',{method:'POST',headers:H,body:JSON.stringify(sub.toJSON()),credentials:'same-origin'})
+      .then(function(r){return r.ok});
+  }).catch(function(){return false});
+}
+var perm=document.getElementById('perm'),st=document.getElementById('pushst');
+function say(t){if(st)st.textContent=t}
+function why(){
+  if(!canPush)return /iPhone|iPad/.test(navigator.userAgent)?'На iPhone уведомления работают только в приложении с экрана «Домой»: «Поделиться» → «На экран „Домой“», откройте его оттуда и нажмите 🔔 ещё раз.':'Этот браузер не умеет уведомления для сайтов.';
+  if(Notification.permission==='denied')return 'Уведомления запрещены. iPhone: Настройки → Уведомления → ЗК Админ → Разрешить. Затем нажмите 🔔 ещё раз.';
+  return '';
+}
+function enable(e){
+  if(e)e.preventDefault();
+  var w=why();if(w){say(w);if(!st)alert(w);return}
+  Notification.requestPermission().then(function(p){
+    if(p!=='granted'){say(why()||'Разрешение не получено.');return}
+    pushOn().then(function(ok){if(perm)perm.hidden=ok;say(ok?'Уведомления включены на этом устройстве ✅':'Не получилось включить уведомления: попробуйте ещё раз.')});
+  });
+}
+if(perm){
+  perm.onclick=enable;
+  if(canPush&&Notification.permission==='granted')pushOn().then(function(ok){perm.hidden=ok});
+  else perm.hidden=false;
+}
+var on=document.getElementById('pushon'),test=document.getElementById('pushtest');
+if(on)on.onclick=enable;
+if(test)test.onclick=function(e){
+  e.preventDefault();say('Отправляю…');
+  fetch('/portal/api/push/test',{method:'POST',headers:H,credentials:'same-origin'}).then(function(r){return r.json()}).then(function(j){
+    if(!j.total)say('Ни на одном устройстве уведомления не включены. Нажмите «Включить на этом устройстве».');
+    else if(j.sent)say('Отправлено на устройств: '+j.sent+' из '+j.total+'. Если на телефоне ничего не появилось: Настройки → Уведомления → ЗК Админ.');
+    else say('Не отправилось ('+(j.removed?'подписка устарела, нажмите «Включить на этом устройстве» ещё раз':'сервис уведомлений не ответил')+').');
+  }).catch(function(){say('Нет связи с сервером.')});
+};
 })();</script>"""
 
 
@@ -166,7 +213,7 @@ def page(title: str, body: str, active: str = "", flash: str | None = None) -> s
             f'<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
             f'<title>{brand.NAME} — {_e(title)}</title>{brand.HEAD_ADMIN}<style>{CSS}</style></head><body>{ribbons.html(ribbons.ADMIN)}'
             f'<div class="top"><a href="/portal" class="brand" style="text-decoration:none"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</a>'
-            f'<nav>{nav}<a href="#" id="perm" hidden>🔔</a><a href="/portal/logout">Выйти</a></nav></div>'
+            f'<nav>{nav}<a href="#" id="perm" hidden>🔔 Уведомления</a><a href="/portal/logout">Выйти</a></nav></div>'
             f'<main>{fl}{body}</main><a id="newbar" class="btn" href="">.</a>{NOTIFY_JS}</body></html>')
 
 
@@ -612,6 +659,13 @@ async def api_summary(request: web.Request, uid: int) -> web.Response:
     })
 
 
+@admin_page
+async def api_push_test(request: web.Request, uid: int) -> web.Response:
+    """Проверочное уведомление на все устройства администратора; в ответе — сколько дошло."""
+    import webpush
+    return web.json_response(await webpush.notify(uid, "🔔 Проверка: уведомления работают."))
+
+
 # ---------- Настройки входа: почта ----------
 
 @admin_page
@@ -648,6 +702,14 @@ async def settings_page(request: web.Request, uid: int) -> web.Response:
     devices = (f'<div class="card" style="padding:14px;margin-top:10px"><b>Доверенные устройства</b>'
                f'<p class="muted">Устройства, на которых вы вошли по коду. Повторный код с них не нужен, пока вход не отозван.</p>'
                f'{rows or "<p class=muted>Пока нет.</p>"}{others}</div>')
+    n_push = (await db.fetch_one("SELECT COUNT(*) AS n FROM push_subs WHERE uid=?", (uid,)))["n"]
+    push_card = (f'<div class="card" style="padding:14px;margin-top:10px"><b>Уведомления</b>'
+                 f'<p>Устройств с уведомлениями: {n_push}</p>'
+                 f'<p class="muted">Включайте в том приложении, которым пользуетесь: на iPhone — открыв «ЗК Админ» с экрана «Домой». '
+                 f'Каждое устройство включается отдельно.</p>'
+                 f'<button class="btn" id="pushon" type="button">Включить на этом устройстве</button> '
+                 f'<button class="btn" id="pushtest" type="button">Проверить уведомления</button>'
+                 f'<p id="pushst" class="muted" style="margin-top:8px"></p></div>')
     body = (f'<h1>Вход и почта</h1><div class="card pre">Вы вошли как администратор (Telegram ID {uid}).\n'
             f'Почта для входа: {_e(email) if email else "не добавлена"}\n{_e(mail_state)}</div>'
             f'<form method="post" action="/portal/settings" class="card" style="padding:14px;margin-top:10px">'
@@ -655,7 +717,7 @@ async def settings_page(request: web.Request, uid: int) -> web.Response:
             f'<input id="email" name="email" type="email" required value="{_e(email or "")}" style="width:100%">'
             f'<button class="btn" style="margin-top:10px">Прислать код для проверки</button></form>{confirm}'
             f'<p class="muted">После проверки почты входите в портал с любого устройства без VPN: «Прислать код на почту».</p>'
-            + devices)
+            + push_card + devices)
     return _html_resp(page("Вход и почта", body, "settings", request.query.get("m")))
 
 
@@ -712,6 +774,7 @@ def setup(app: web.Application) -> None:
     app.router.add_get("/portal/api/chat/{tg}", api_chat)
     app.router.add_post("/portal/api/chat/{tg}", api_chat)
     app.router.add_get("/portal/api/summary", api_summary)
+    app.router.add_post("/portal/api/push/test", api_push_test)
     app.router.add_get("/portal/settings", settings_page)
     app.router.add_post("/portal/settings", settings_action)
 

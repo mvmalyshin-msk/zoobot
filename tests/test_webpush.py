@@ -237,6 +237,120 @@ class ServiceWorkerTest(unittest.TestCase):
         self.assertIn("API+'/api/push/key'", html)
 
 
+class DeliveryReportTest(unittest.TestCase):
+    """notify() сообщает, что вышло, а журнал показывает успешные отправки: раньше «не пришло» нельзя было разобрать."""
+
+    def _post_returns(self, status):
+        return SendTest._post_returns(self, status)
+
+    def test_report_counts_sent_removed_failed(self):
+        async def go():
+            ok = _sub("https://web.push.apple.com/ok")
+            gone = _sub("https://fcm.googleapis.com/fcm/send/gone2")
+            await webpush.save_subscription(7710, ok)
+            await webpush.save_subscription(7710, gone)
+            answers = {"https://web.push.apple.com/ok": 201, "https://fcm.googleapis.com/fcm/send/gone2": 410}
+            cms = []
+            for status in (201, 410):
+                cms.append(self._post_returns(status)[0])
+            with mock.patch.object(webpush.aiohttp, "ClientSession", side_effect=cms):
+                rep = await webpush.notify(7710, "привет")
+            return rep, answers
+        rep, _ = run(go)
+        self.assertEqual((rep["total"], rep["sent"], rep["removed"], rep["failed"]), (2, 1, 1, 0))
+
+    def test_report_for_user_without_subscriptions(self):
+        rep = run(lambda: webpush.notify(7711, "привет"))
+        self.assertEqual(rep, {"total": 0, "sent": 0, "removed": 0, "failed": 0})
+
+    def test_network_error_is_failed_not_exception(self):
+        async def go():
+            await webpush.save_subscription(7712, _sub("https://web.push.apple.com/down"))
+            with mock.patch.object(webpush.aiohttp, "ClientSession", side_effect=OSError("down")):
+                return await webpush.notify(7712, "привет")
+        rep = run(go)
+        self.assertEqual((rep["total"], rep["sent"], rep["failed"]), (1, 0, 1))
+
+    def test_successful_send_is_logged(self):
+        async def go():
+            await webpush.save_subscription(7713, _sub("https://web.push.apple.com/logme"))
+            scm, _ = self._post_returns(201)
+            with mock.patch.object(webpush.aiohttp, "ClientSession", return_value=scm):
+                with self.assertLogs("webpush", level="INFO") as cap:
+                    await webpush.notify(7713, "привет")
+            return cap.output
+        out = " ".join(run(go))
+        self.assertIn("web.push.apple.com", out)
+        self.assertIn("201", out)
+
+
+class AdminPushTest(unittest.TestCase):
+    """Приложение «ЗК Админ» с экрана «Домой» открывается на /portal: подписка и проверка уведомлений — там же."""
+
+    def test_portal_pages_subscribe_the_device(self):
+        async def go(c):
+            at = await webchat.new_session(min(config.admin_ids))
+            c.session.cookie_jar.update_cookies({webchat.ADMIN_COOKIE: at})
+            return [await (await c.get(p)).text() for p in ("/portal", "/portal/settings", "/portal/clients")]
+        for html in run_client(go):
+            self.assertIn("serviceWorker.register('/sw.js')", html)
+            self.assertIn("/portal/bot/api/push/subscribe", html)
+            self.assertIn("/portal/bot/api/push/key", html)
+            self.assertIn('id="perm"', html)
+
+    def test_settings_shows_devices_and_test_button(self):
+        async def go(c):
+            uid = min(config.admin_ids)
+            at = await webchat.new_session(uid)
+            c.session.cookie_jar.update_cookies({webchat.ADMIN_COOKIE: at})
+            before = await (await c.get("/portal/settings")).text()
+            await webpush.save_subscription(7730, _sub("https://fcm.googleapis.com/fcm/send/someone-else"))  # чужие не в счёт
+            await webpush.save_subscription(uid, _sub("https://web.push.apple.com/dev1"))
+            await webpush.save_subscription(uid, _sub("https://fcm.googleapis.com/fcm/send/dev2"))
+            after = await (await c.get("/portal/settings")).text()
+            return before, after
+        before, after = run_client(go)
+        self.assertIn("Уведомления", before)
+        self.assertIn("Устройств с уведомлениями: 0", before)
+        self.assertIn("Устройств с уведомлениями: 2", after)
+        self.assertIn("Проверить уведомления", after)
+
+    def test_test_push_reports_result_to_the_page(self):
+        async def go(c):
+            uid = min(config.admin_ids)
+            at = await webchat.new_session(uid)
+            c.session.cookie_jar.update_cookies({webchat.ADMIN_COOKIE: at})
+            none = await (await c.post("/portal/api/push/test", headers=H)).json()
+            await webpush.save_subscription(uid, _sub("https://web.push.apple.com/t1"))
+            scm, session = SendTest._post_returns(self, 201)
+            with mock.patch.object(webpush.aiohttp, "ClientSession", return_value=scm):
+                ok = await (await c.post("/portal/api/push/test", headers=H)).json()
+            return none, ok, session.post.call_count
+        none, ok, calls = run_client(go)
+        self.assertEqual((none["total"], none["sent"]), (0, 0))
+        self.assertEqual((ok["total"], ok["sent"]), (1, 1))
+        self.assertEqual(calls, 1)
+
+    def test_test_push_is_admin_only_and_same_origin(self):
+        async def go(c):
+            anon = await c.post("/portal/api/push/test", headers=H)
+            ct = await webchat.new_session(7720)
+            client = await c.post("/portal/api/push/test", headers={**H, "Cookie": f"{webchat.ADMIN_COOKIE}={ct}"})
+            at = await webchat.new_session(min(config.admin_ids))
+            c.session.cookie_jar.update_cookies({webchat.ADMIN_COOKIE: at})
+            evil = await c.post("/portal/api/push/test", headers={**H, "Origin": "https://evil.example"})
+            return anon.status, client.status, evil.status
+        self.assertEqual(run_client(go), (403, 403, 403))
+
+    def test_worker_sets_app_badge_and_page_clears_it(self):
+        sw = (ROOT / "webapp" / "sw.js").read_text(encoding="utf-8")
+        self.assertIn("navigator.setAppBadge();", sw)
+        check = subprocess.run(["node", "--check", str(ROOT / "webapp" / "sw.js")], capture_output=True, text=True)
+        self.assertEqual(check.returncode, 0, check.stderr)
+        import portal
+        self.assertIn("clearAppBadge", portal.NOTIFY_JS)
+
+
 def tearDownModule():
     LOOP.close()
 
