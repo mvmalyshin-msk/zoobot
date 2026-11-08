@@ -191,6 +191,18 @@ WHERE NOT EXISTS (SELECT 1 FROM price_rules WHERE condition_type='always');
     ALTER TABLE web_sessions ADD COLUMN ip TEXT;
     ALTER TABLE web_sessions ADD COLUMN seen_at TEXT;
     """,
+    # 21: методика цен (ноябрь 2026): база — рыночная цена исполнителя (Dogsy, Яндекс Услуги, «Наша няня»), клиент платит
+    #     базу + наценку сервиса 30 %. Меняем только прежние стартовые значения — цены, заданные админом, не трогаем.
+    21: """
+UPDATE services SET base_price=700  WHERE code='walk30'         AND base_price=400;
+UPDATE services SET base_price=1000 WHERE code='walk60'         AND base_price=700;
+UPDATE services SET base_price=800  WHERE code='sitter_visit'   AND base_price=600;
+UPDATE services SET base_price=3000 WHERE code='sitter_live'    AND base_price=2500;
+UPDATE services SET base_price=1600 WHERE code='boarding_hotel' AND base_price=1800;
+UPDATE price_rules SET effect_type='percent', value=20  WHERE condition_type='pet_size_l'   AND effect_type='fixed' AND value=100 AND service_id IS NULL;
+UPDATE price_rules SET value=300 WHERE condition_type='urgent_today' AND effect_type='fixed' AND value=200 AND service_id IS NULL;
+UPDATE price_rules SET value=30  WHERE condition_type='always' AND effect_type='percent' AND value=0 AND service_id IS NULL;
+""",
     # 14: шаги диалога (FSM) — в базе, чтобы переживать перезапуск бота (см. fsm_store.py)
     14: """
     CREATE TABLE IF NOT EXISTS fsm (

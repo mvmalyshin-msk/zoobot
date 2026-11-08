@@ -225,17 +225,17 @@ CREATE TABLE IF NOT EXISTS admin_log (
 -- Начальные данные (цены — стартовые, меняются через /price_set)
 -- ============================================================
 INSERT OR IGNORE INTO services (code, category, name, base_price, unit) VALUES
-    ('walk30',         'walk',     'Выгул 30 минут',                    400,  'выгул'),
-    ('walk60',         'walk',     'Выгул 60 минут',                    700,  'выгул'),
-    ('sitter_visit',   'sitter',   'Зооняня приходящая',                600,  'час'),
-    ('sitter_live',    'sitter',   'Зооняня с проживанием',             2500, 'сутки'),
+    ('walk30',         'walk',     'Выгул 30 минут',                    700,  'выгул'),
+    ('walk60',         'walk',     'Выгул 60 минут',                    1000,  'выгул'),
+    ('sitter_visit',   'sitter',   'Зооняня приходящая',                800,  'час'),
+    ('sitter_live',    'sitter',   'Зооняня с проживанием',             3000, 'сутки'),
     ('boarding_home',  'boarding', 'Передержка в частном доме',         1500, 'сутки'),
-    ('boarding_hotel', 'boarding', 'Передержка в зоогостинице',         1800, 'сутки'),
+    ('boarding_hotel', 'boarding', 'Передержка в зоогостинице',         1600, 'сутки'),
     ('taxi',           'taxi',     'Зоотакси',                          189,  'поездка');  -- посадка, дальше по маршруту (taxi.py)
 
 INSERT OR IGNORE INTO price_rules (id, service_id, name, condition_type, effect_type, value, sort_order) VALUES
-    (1, NULL, 'Крупная собака',          'pet_size_l',   'fixed',   100, 10),
-    (2, NULL, 'Срочно (сегодня)',        'urgent_today', 'fixed',   200, 20),
+    (1, NULL, 'Крупная собака',          'pet_size_l',   'percent', 20, 10),
+    (2, NULL, 'Срочно (сегодня)',        'urgent_today', 'fixed',   300, 20),
     (3, NULL, 'Выезд за МКАД',           'outside_mkad', 'fixed',   150, 30),
     (4, NULL, 'Ночное время 22:00–07:00','night',        'percent', 30,  40),
     (5, NULL, 'Праздничный день',        'holiday',      'percent', 20,  50);

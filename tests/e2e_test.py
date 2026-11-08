@@ -228,6 +228,7 @@ def ok(cond, title):
 
 async def main():
     await db.init_db()
+    await db.execute("UPDATE price_rules SET value=0 WHERE condition_type='always'")  # расчёт по правилам без наценки сервиса
     tomorrow = (datetime.now() + timedelta(days=1)).strftime("%d.%m.%Y")  # для проверки формата даты
 
     print("1. Согласие на ПДн")
@@ -338,21 +339,20 @@ async def main():
     ok("с 06:00 до 22:00" in last_text(r), "ночью (вне 06:00–22:00) заказ не принимается")
     r = await say(CLIENT, "послезавтра 06:30")  # рабочие часы, но ещё «ночной» тариф (до 07:00)
     txt = last_text(r)
-    # (700 + 100 за крупную собаку) × 1.3 ночью = 1040
-    ok("от 1 040 ₽" in txt and "Крупная собака" not in txt and "Ночное" not in txt and "Наценк" not in txt,
-       "клиент видит только вилку «от 1 040 ₽», без разбивки и наценки")
+    # (1000 + 20 % за крупную собаку) × 1.3 ночью = 1560 (наценка сервиса в этом тесте 0)
+    ok("от 1 560 ₽" in txt and "Крупная собака" not in txt and "Ночное" not in txt and "Наценк" not in txt,
+       "клиент видит только вилку «от 1 560 ₽», без разбивки и наценки")
     r = await edit_click(CLIENT, "За МКАД")
-    ok("(700 + 100 + 150) × 1.3" or "1 235 ₽" in last_text(r), "за МКАД пересчитывает")
-    ok("1 235 ₽" in last_text(r), "итог за МКАД = 1 235 ₽")
+    ok("от 1 794 ₽" in last_text(r), "итог за МКАД: (1000 + 150) × 1,2 × 1,3 = 1 794 ₽")
     await edit_click(CLIENT, "За МКАД")
     r = await click(CLIENT, "Подтвердить")
     ok("принята" in last_text(r, CLIENT), "клиент получил подтверждение заявки")
     ok(any(m["to"] == ADMIN and "Новая заявка" in m["text"] for m in r), "админ получил уведомление")
     adm = next((m["text"] for m in r if m["to"] == ADMIN and "Новая заявка" in m["text"]), "")
-    ok("Вилка для клиента: от 1 040 ₽" in adm and "Зарегистрирован:" in adm and "Крупная собака" in adm,
-       "админу в заявке: вилка для клиента, время регистрации и расчёт (база + L + ночь = 1 040 ₽)")
+    ok("Вилка для клиента: от 1 560 ₽" in adm and "Зарегистрирован:" in adm and "Крупная собака" in adm,
+       "админу в заявке: вилка для клиента, время регистрации и расчёт (база + L + ночь = 1 560 ₽)")
     o = await db.fetch_one("SELECT * FROM orders WHERE id=1")
-    ok(o["status"] == "created" and o["price_total"] == 1040, "заказ создан, цена зафиксирована")
+    ok(o["status"] == "created" and o["price_total"] == 1560, "заказ создан, цена зафиксирована")
 
     print("4. Статусы, оплата, исполнитель (админ)")
     r = await say(ADMIN, "/confirm 1")
@@ -389,7 +389,7 @@ async def main():
     ok("добавлен" in last_text(r), "физлицо 15–17 лет с согласием родителей добавлено")
     r = await say(ADMIN, "/assign 1 1")
     txt = last_text(r, ADMIN)
-    ok("Ваша маржа: 312 ₽" in txt and "Вознаграждение: 728 ₽" in txt, "маржа: 1040 − 70% = 312 ₽ → " + txt.splitlines()[-1])
+    ok("Ваша маржа: 468 ₽" in txt and "Вознаграждение: 1 092 ₽" in txt, "маржа: 1560 − 70% = 468 ₽ → " + txt.splitlines()[-1])
     ok(any(m["to"] == EXEC and "Вам назначен заказ" in m["text"] for m in r), "исполнитель уведомлён")
     ok(any(m["to"] == CLIENT and "Мария" in m["text"] for m in r), "клиент уведомлён о назначении")
     await db.execute("UPDATE reminders SET send_at=datetime('now','-1 minute')")
@@ -438,8 +438,8 @@ async def main():
     future = (datetime.now() + timedelta(days=3)).strftime("%d.%m %H:%M")
     r = await say(CLIENT, future.replace(future[-5:], "11:00"))
     r = await click(CLIENT, "3")
-    ok("от 1 900 ₽" in last_text(r) and "3 ч × 600 ₽" not in last_text(r),
-       "зооняня 3 ч: клиент видит только вилку «от 1 900 ₽» (1 800 + 100 за крупную), без расчёта")
+    ok("от 2 880 ₽" in last_text(r) and "3 ч × 800 ₽" not in last_text(r),
+       "зооняня 3 ч: клиент видит только вилку «от 2 880 ₽» (2 400 + 20 % за крупную), без расчёта")
     await click(CLIENT, "Отмена")
     await say(CLIENT, "/menu")
     await click(CLIENT, "Заказать")
@@ -645,7 +645,7 @@ async def main():
     await svc(CLIENT, "Выгул 60")
     r = await say(CLIENT, f"{day} 06:30")  # рабочие часы, «ночной» тариф до 07:00
     t = last_text(r)
-    ok("Ориентировочная стоимость: от 1 170 ₽ до 1 350 ₽" in t, "цена показана диапазоном: от расчёта до +15 %")
+    ok("Ориентировочная стоимость: от 1 248 ₽ до 1 440 ₽" in t, "цена показана диапазоном: от расчёта до +15 % (800 + 20 % за крупную, ночью ×1,3)")
     ok("Итого" not in t, "точный «Итого» на экране заказа не показывается")
     ok("Крупная собака" not in t and "Ночное" not in t and "Что учтено" not in t, "расчёт и надбавки клиенту не показываются")
     ok("подобрать специалиста" in t.lower() and "правки" in t, "вопрос: подбирать специалиста или внести правки")
@@ -656,7 +656,7 @@ async def main():
     labels = " | ".join(b.text for b in _buttons(r[-1]))
     ok(all(x in labels for x in ("За МКАД", "Изменить адрес", "Изменить время", "Назад")), "в правках: МКАД, адрес, время, назад")
     r = await click(CLIENT, "За МКАД")
-    ok("от 1 365 ₽ до 1 570 ₽" in last_text(r), "после правки диапазон пересчитан (1 365 → 1 570)")
+    ok("от 1 482 ₽ до 1 710 ₽" in last_text(r), "после правки диапазон пересчитан (1 482 → 1 710)")
     await click(CLIENT, "Внести правки")
     r = await click(CLIENT, "Назад")
     ok("Ориентировочная стоимость" in last_text(r), "«Назад» возвращает на экран заказа")
