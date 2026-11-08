@@ -10,6 +10,7 @@ from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import CallbackQuery, Message
 
 import db
+import exports
 import keyboards as kb
 import orders
 import payinfo
@@ -63,6 +64,8 @@ HELP = """Команды админа
 /portal — портал администратора: все заявки, клиенты, исполнители, переписка (вход по ссылке или коду)
 /webadmin — одноразовая ссылка, чтобы открыть бота в браузере под своим аккаунтом (без Telegram и VPN)
 /stats — статистика за месяц
+/base — вся база клиентов и заказов в Excel (то же — кнопка «📥 База клиентов» в /admin)
+/statuses — отчёт по статусам заказов (то же — кнопка «📈 Отчёт по статусам»)
 /report [ГГГГ-ММ-ДД] — Excel: новые клиенты и заказы за день (сам приходит в 23:55)
 /broadcast <текст> — рассылка тем, кто дал согласие"""
 
@@ -433,6 +436,25 @@ async def _send_report(m: Message, day) -> None:
         await m.answer("Не получилось отправить отчёт, подробности в журнале.")
 
 
+@router.message(Command("base"))
+async def cmd_base(m: Message) -> None:
+    await _send_database(m)
+
+
+@router.message(Command("statuses"))
+async def cmd_statuses(m: Message) -> None:
+    await m.answer(await exports.status_report_text())
+
+
+async def _send_database(m: Message) -> None:
+    """Вся база в Excel по запросу: клиенты, заказы, заявки с сайта, история статусов, сводка по статусам."""
+    from aiogram.types import BufferedInputFile
+    data = await exports.build_database_xlsx()
+    stamp = to_local(now_utc()).strftime("%Y-%m-%d_%H%M")
+    await m.answer_document(BufferedInputFile(data, filename=f"baza_klientov_{stamp}.xlsx"),
+                            caption="База клиентов: клиенты, заказы, заявки с сайта, история и сводка по статусам.")
+
+
 @router.message(Command("stats"))
 async def cmd_stats(m: Message) -> None:
     now_l = to_local(now_utc())
@@ -692,6 +714,10 @@ async def cb_admin_menu(cb: CallbackQuery) -> None:
         await cmd_orders(msg)
     elif where == "report":
         await _send_report(msg, None)
+    elif where == "base":
+        await _send_database(msg)
+    elif where == "statuses":
+        await msg.answer(await exports.status_report_text())
     elif where == "services":
         await cmd_services(msg)
     elif where == "rules":

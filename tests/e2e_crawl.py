@@ -28,7 +28,7 @@ import webserver  # noqa: E402
 from bot import build_dispatcher  # noqa: E402
 
 FAILS = []
-SKIP = ("/portal/logout", "/chat/logout", "/healthz", "t.me")
+SKIP = ("/portal/logout", "/chat/logout", "/healthz", "t.me", "/export/")  # файлы для скачивания, не страницы
 NO_BACK_OK = {"/", "/portal"}
 
 

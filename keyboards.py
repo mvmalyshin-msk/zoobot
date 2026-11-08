@@ -366,6 +366,8 @@ def admin_menu() -> InlineKeyboardMarkup:
         *([[Btn(text="🖥 Портал администратора", url=f"{config.webapp_url}/portal")]] if config.webapp_url else []),
         [Btn(text="📋 Активные заказы", callback_data="adm:orders")],
         [Btn(text="📊 Отчёт за сегодня", callback_data="adm:report")],
+        [Btn(text="📥 База клиентов (Excel)", callback_data="adm:base")],
+        [Btn(text="📈 Отчёт по статусам", callback_data="adm:statuses")],
         [Btn(text="💰 Услуги и цены", callback_data="adm:services")],
         [Btn(text="⚙️ Наценки", callback_data="adm:rules")],
         [Btn(text="👷 Исполнители", callback_data="adm:execs")],
