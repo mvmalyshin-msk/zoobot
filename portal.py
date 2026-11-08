@@ -280,7 +280,7 @@ def _seg(active: str) -> str:
     n = _NEW_N.get()
     cnt = f'<b class="cnt">{n}</b>' if n else ""
     items = (("orders", "/portal", "Заявки" + cnt), ("clients", "/portal/clients", "Клиенты"),
-             ("executors", "/portal/executors", "Исполнители"))
+             ("executors", "/portal/executors", "Исполнители"), ("stats", "/portal/analytics", "📊"))
     return '<nav class="seg" aria-label="Разделы">' + "".join(
         f'<a {"class=\"on\" " if key == active else ""}href="{href}">{label}</a>' for key, href, label in items) + "</nav>"
 
@@ -288,7 +288,8 @@ def _seg(active: str) -> str:
 def page(title: str, body: str, active: str = "", flash: str | None = None, back: str | None = "/portal") -> str:
     nav = "".join(f'<a href="{href}" class="{"on" if key == active else ""}">{label}</a>' for key, href, label in (
         ("orders", "/portal", "Заявки"), ("clients", "/portal/clients", "Клиенты"),
-        ("executors", "/portal/executors", "Исполнители"), ("tariffs", "/portal/tariffs", "Тарифы"), ("settings", "/portal/settings", "Вход и почта"),
+        ("executors", "/portal/executors", "Исполнители"), ("stats", "/portal/analytics", "📊 Аналитика"),
+        ("tariffs", "/portal/tariffs", "Тарифы"), ("settings", "/portal/settings", "Вход и почта"),
         ("bot", "/portal/bot", "Бот")))
     fl = f'<div class="flash">{_e(flash)}</div>' if flash else ""
     return (f'<!doctype html><html lang="ru"><head><meta charset="utf-8">'
@@ -1226,6 +1227,8 @@ def setup(app: web.Application) -> None:
     app.router.add_post("/portal/passkey/err", passkey_err)
     import tariffs_web
     tariffs_web.setup(app)
+    import analytics
+    analytics.setup_portal(app)
     app.router.add_get("/portal/settings", settings_page)
     app.router.add_post("/portal/settings", settings_action)
 

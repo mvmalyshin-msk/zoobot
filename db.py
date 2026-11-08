@@ -203,6 +203,23 @@ UPDATE price_rules SET effect_type='percent', value=20  WHERE condition_type='pe
 UPDATE price_rules SET value=300 WHERE condition_type='urgent_today' AND effect_type='fixed' AND value=200 AND service_id IS NULL;
 UPDATE price_rules SET value=30  WHERE condition_type='always' AND effect_type='percent' AND value=0 AND service_id IS NULL;
 """,
+    # 22: собственная аналитика посещений сайта и бота (см. analytics.py): события, без имён и текстов сообщений
+    22: """
+CREATE TABLE IF NOT EXISTS analytics_events (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts      TEXT NOT NULL DEFAULT (datetime('now')),
+    source  TEXT NOT NULL,          -- 'web' | 'bot'
+    vid     TEXT NOT NULL,          -- посетитель: случайный код из браузера или tg:<id>
+    sid     TEXT NOT NULL,          -- сессия (до 30 минут тишины)
+    type    TEXT NOT NULL,          -- web: pv click scroll ping leave focus submit; bot: cmd btn msg
+    path    TEXT, target TEXT, value INTEGER, state TEXT,
+    device  TEXT, browser TEXT, os TEXT, ref TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_an_src_ts ON analytics_events(source, ts);
+CREATE INDEX IF NOT EXISTS idx_an_sid ON analytics_events(sid);
+CREATE INDEX IF NOT EXISTS idx_an_vid ON analytics_events(vid, ts);
+""",
     # 14: шаги диалога (FSM) — в базе, чтобы переживать перезапуск бота (см. fsm_store.py)
     14: """
     CREATE TABLE IF NOT EXISTS fsm (

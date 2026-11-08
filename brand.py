@@ -12,10 +12,12 @@ HEAD = (f'<meta name="theme-color" content="#FC6751">'
         f'<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">'
         f'<link rel="manifest" href="/manifest.webmanifest">'
         f'<link rel="stylesheet" href="/brand.css">')
+TRACK = '<script defer src="/a.js"></script>'  # собственный счётчик посещений (analytics.py); в портале админа его нет
+HEAD = HEAD + TRACK
 
 # Админ на экране «Домой» — отдельное приложение: открывает портал (не клиентский чат) и называется иначе.
 ADMIN_TITLE = "ЗК Админ"
-HEAD_ADMIN = (HEAD.replace('href="/manifest.webmanifest"', 'href="/manifest-admin.webmanifest"')
+HEAD_ADMIN = (HEAD.replace(TRACK, "").replace('href="/manifest.webmanifest"', 'href="/manifest-admin.webmanifest"')
               .replace(f'apple-mobile-web-app-title" content="{NAME}"', f'apple-mobile-web-app-title" content="{ADMIN_TITLE}"')
               .replace(f'application-name" content="{NAME}"', f'application-name" content="{ADMIN_TITLE}"')
               .replace('theme-color" content="#FC6751"', 'theme-color" content="#d62b2b"'))

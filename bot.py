@@ -124,6 +124,10 @@ def _make_dispatcher() -> Dispatcher:
     dp = Dispatcher(storage=fsm_store.SQLiteStorage(), events_isolation=SimpleEventIsolation())
     dp.message.filter(F.chat.type == "private")
     dp.update.outer_middleware(webchat.tg_origin_middleware)  # что копировать в чат на сайте, см. WebRouterSession
+    import analytics
+    stats = analytics.BotStatsMiddleware()  # счётчик действий в боте: до проверки согласия, чтобы видеть и тех, кто на нём остановился
+    dp.message.outer_middleware(stats)
+    dp.callback_query.outer_middleware(stats)
     consent = ConsentMiddleware()
     dp.message.outer_middleware(consent)
     dp.callback_query.outer_middleware(consent)

@@ -9,6 +9,7 @@ from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import db
+import analytics
 import report
 import texts
 from config import config
@@ -68,4 +69,6 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     # отчёт в Excel в конце дня по Москве (пустой день пропускается)
     scheduler.add_job(report.send_daily_report, "cron", hour=23, minute=55, timezone=config.tz, args=[bot],
                       id="daily_report", max_instances=1, coalesce=True, misfire_grace_time=600)
+    scheduler.add_job(analytics.cleanup, "cron", hour=3, minute=20, timezone=config.tz,
+                      id="analytics_cleanup", max_instances=1, coalesce=True)  # журнал аналитики старше 2 лет
     return scheduler
