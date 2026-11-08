@@ -59,6 +59,27 @@ class TgLoginTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row["uid"], 555)
         self.assertEqual((await (await self.poll(token)).json())["ok"], False)      # одноразово
 
+    async def test_after_login_chat_and_cabinet_open(self):
+        _, _, token = await self.start()
+        await webchat.confirm_tg_login(token, 556)
+        r = await self.poll(token)
+        cookie = {webchat.COOKIE: r.cookies[webchat.COOKIE].value}
+        for path in ("/chat", "/cabinet"):
+            g = await self.client.get(path, cookies=cookie, allow_redirects=False)
+            self.assertEqual(g.status, 200, f"{path}: {g.status} {g.headers.get('Location')}")
+
+    async def test_logged_in_client_skips_login_pages(self):
+        _, _, token = await self.start()
+        await webchat.confirm_tg_login(token, 557)
+        r = await self.poll(token)
+        cookie = {webchat.COOKIE: r.cookies[webchat.COOKIE].value}
+        for path in ("/chat/login", "/chat/login/tg"):
+            g = await self.client.get(path, cookies=cookie, allow_redirects=False)
+            self.assertEqual((g.status, g.headers.get("Location")), (302, "/chat"), path)   # уже вошёл: сразу в кабинет
+        self.client.session.cookie_jar.clear()
+        g = await self.client.get("/chat/login", allow_redirects=False)
+        self.assertEqual(g.status, 200)                                                    # гостю — форма входа
+
     async def test_unknown_token_admin_and_expired_refused(self):
         self.assertFalse(await webchat.confirm_tg_login("nope", 555))
         _, _, token = await self.start()

@@ -460,6 +460,8 @@ async def confirm_tg_login(token: str, tg_id: int) -> bool:
 
 
 async def page_login_tg(request: web.Request) -> web.Response:
+    if await session_uid(request) is not None:        # уже вошёл — кабинет, а не повторный вход
+        return web.Response(status=302, headers={"Location": "/chat"})
     now = time.time()
     for k in [k for k, v in _tg_logins.items() if v["exp"] < now]:
         _tg_logins.pop(k, None)
@@ -543,6 +545,8 @@ async def post_login_code(request: web.Request) -> web.Response:
 async def page_login(request: web.Request) -> web.Response:
     import html as _h
     if not request.query.get("t"):
+        if await session_uid(request) is not None:    # «Войти как клиент» с главной у вошедшего ведёт сразу в кабинет
+            return web.Response(status=302, headers={"Location": "/chat"})
         return _phone_form()
     t = _h.escape(request.query.get("t", ""), quote=True)
     n = "portal" if request.query.get("n") == "portal" else "chat"
