@@ -57,6 +57,13 @@ REQ_CLASS = {"new": "st-new", "work": "st-work", "done": "st-done", "rejected": 
 TICK = '<i class="tick">✓</i>'
 
 
+def request_label(r: dict) -> str:
+    """Статус заявки с сайта словами: отмену клиентом видно сразу."""
+    if r["status"] == "rejected" and str(r.get("admin_note") or "").startswith("Отменена клиентом"):
+        return "Отменена клиентом"
+    return REQ_STATUSES.get(r["status"], r["status"])
+
+
 def cancel_label(actor: str | None) -> str:
     """Кто отменил: «Отменил клиент» / «Отменил администратор» / просто «Отменён»."""
     a = actor or ""
@@ -591,7 +598,7 @@ def _row_html(r: dict) -> str:
                 f'<div class="row"><span class="who">№{r["id"]} · {_e(r["name"] or "—")}</span><span class="stt">{st}</span></div>'
                 f'<div class="row" style="margin-top:6px">{chip}{src}</div>'
                 f'<div class="sub">На {_e(fmt_local(r["start_at"]))} · {_e(r["phone"] or "—")} · {rub(r["price_total"])}</div></div></a>')
-    st = f'<span class="badge" style="background:{"var(--coral)" if r["status"] == "new" else "#8a8178"}">{REQ_STATUSES.get(r["status"], r["status"])}</span>'
+    st = f'<span class="badge" style="background:{"var(--coral)" if r["status"] == "new" else "#8a8178"}">{request_label(r)}</span>'
     if r["status"] == "done":
         st = TICK + st
     if str(r.get("address") or "").startswith("Сайт "):  # заявка с сайта конструктора: показываем, с какого

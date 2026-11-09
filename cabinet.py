@@ -9,6 +9,7 @@ from aiohttp import web
 
 import brand
 import ribbons
+import db
 import orders
 import pricing
 import repo
@@ -75,6 +76,23 @@ async def _orders_html(rows: list[dict]) -> str:
     return "<ul>" + "".join(items) + "</ul>"
 
 
+async def _requests_html(uid: int, tg: int) -> str:
+    """Заявки с сайта этого клиента: пока не взяты в работу, их можно отменить."""
+    rows = await db.fetch_all(
+        "SELECT r.*, s.name AS service FROM web_requests r LEFT JOIN services s ON s.id=r.service_id "
+        "WHERE r.web_uid IN (?, ?) ORDER BY r.id DESC LIMIT 20", (uid, tg))
+    if not rows:
+        return ""
+    items = []
+    for r in rows:
+        label = ("Отменена" if r["status"] == "rejected" else {"new": "Принята", "work": "В работе", "done": "Выполнена"}.get(r["status"], r["status"]))
+        btn = (f"<form method=post action='/request/cancel/{r['id']}' onsubmit=\"return confirm('Отменить заявку №{r['id']}?')\">"
+               "<button class='btn small ghost'>Отменить заявку</button></form>") if r["status"] in ("new", "work") else ""
+        items.append(f"<li>№{_e(r['id'])} · {_e(r['service'] or 'услуга')} · {_e(r['when_text'] or 'время не указано')}"
+                     f"<br><b>{_e(label)}</b>{btn}</li>")
+    return "<h3>Заявки с сайта</h3><ul>" + "".join(items) + "</ul>"
+
+
 async def order_action(request: web.Request) -> web.Response:
     """Отмена и заявки по заказу с сайта. Защита от чужих страниц: Origin должен совпадать с нашим адресом."""
     uid = await webchat.session_uid(request)
@@ -114,6 +132,7 @@ async def page(request: web.Request) -> web.Response:
     note = request.query.get("m")
     body = (f"<h2>Ваш кабинет</h2>{f'<p><b>{_e(note)}</b></p>' if note else ''}"
             f"<h3>Питомцы</h3>{_pets_html(pets)}"
+            f"{await _requests_html(uid, tg)}"
             f"<h3>История заказов</h3>{await _orders_html(rows)}"
             f"<p><a href='/chat'>💬 Чат</a></p>")
     return _html(body)
