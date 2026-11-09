@@ -4,6 +4,7 @@
           (из любого незавершённого можно уйти в cancelled)
 Платёж:   pending → link_sent → paid → refunded
 """
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta
@@ -174,8 +175,36 @@ async def notify_admins(bot: Bot, text: str, reply_markup=None) -> None:
         log.error("ADMIN_IDS не задан: некому отправить уведомление")
     for admin_id in config.admin_ids:
         await _push_admin(admin_id, text)  # пуш на телефон — первым и независимо от Telegram
+        _bg(_mail_admin(admin_id, text))    # копия письмом: в фоне, чтобы не задерживать ответ клиенту
         if not await notify(bot, admin_id, text, reply_markup):
             log.error("Не удалось отправить уведомление админу %s (он нажал /start у бота?)", admin_id)
+
+
+_tasks: set = set()
+
+
+def _bg(coro) -> None:
+    t = asyncio.ensure_future(coro)
+    _tasks.add(t)
+    t.add_done_callback(_tasks.discard)
+
+
+async def _mail_admin(admin_id: int, text: str) -> None:
+    """Копия уведомления письмом на почту админа (ADMIN_EMAIL или адрес из «Вход и почта»). Нужны SMTP_* в Railway."""
+    import mailer
+    import portal
+    try:
+        if not mailer.configured():
+            return
+        to = await portal.admin_email(admin_id)
+        if not to:
+            return
+        first = (text.strip().splitlines() or ["Уведомление"])[0][:90]
+        ok, why = await mailer.send_checked(to, f"Зооконсьерж: {first}", text)
+        if not ok:
+            log.error("Письмо админу не отправлено: %s", why)
+    except Exception:
+        log.exception("Письмо админу не отправлено")
 
 
 async def _push_admin(admin_id: int, text: str) -> None:
