@@ -79,7 +79,7 @@ async def post_lead(request: web.Request) -> web.Response:
     text = f"🌐 Заявка с сайта «{lead['site']}» №{rid}\n{lead['comment'].split(chr(10), 1)[1]}\n" \
            "Свяжитесь с клиентом по телефону."
     try:
-        await orders.notify_admins(request.app["bot"], text[:3900])
+        await orders.notify_admins(request.app["bot"], text[:3900], copy_helper=False)  # владельцу заявку сайта конструктора уже прислал сам workbot
     except Exception:  # noqa: BLE001 — заявка уже записана, админ увидит её в портале
         log.exception("Не удалось уведомить админа о заявке с сайта №%s", rid)
     return web.json_response({"id": rid})

@@ -55,7 +55,7 @@ class HttpTest(unittest.TestCase):
             await db.init_db()
             sent = []
 
-            async def fake(bot, text, reply_markup=None):
+            async def fake(bot, text, reply_markup=None, **kw):
                 sent.append(text)
             orig = orders.notify_admins
             orders.notify_admins = fake
