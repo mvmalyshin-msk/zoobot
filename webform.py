@@ -77,7 +77,7 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
         groups.append(f'<optgroup label="{_e(texts.CATEGORY_TITLES[cat])}">{rows}</optgroup>')
     checked = " checked" if values.get("consent") else ""
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — заявка</title><meta name="description" content="Оставьте заявку на выгул, зоонаню, передержку или зоотакси в Химках и Москве — подберём несколько вариантов.">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — заявка</title><meta name="description" content="Оставьте заявку на выгул, зоонаню, передержку или зоотакси в Москве и Московской области — подберём несколько вариантов.">
 {brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.CLIENT)}<main>
 {brand.backrow("/")}
 <div class="top">{brand.LOGO}</div>{brand.STRAP}

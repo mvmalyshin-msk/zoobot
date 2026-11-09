@@ -64,7 +64,7 @@ class SeoTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_home_mentions_places_and_services_for_search_phrases(self):
         t = await (await self.client.get("/")).text()
-        for must in ("Химки", "Москв", "выгул собак", "передержка", "зоотакси"):
+        for must in ("Московск", "Москв", "выгул собак", "передержка", "зоотакси"):
             self.assertIn(must.lower(), t.lower())
 
     async def test_private_sections_are_noindex(self):
