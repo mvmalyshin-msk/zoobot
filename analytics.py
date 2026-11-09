@@ -119,6 +119,44 @@ def _int(value, hi: int = 86400) -> int | None:
         return None
 
 
+OWNER_COOKIE = "zno"   # метка «это устройство владельца»: ставится при заходе в портал, живёт год, заходы с неё не считаются
+_ignore_cache: dict[int, tuple[float, bool]] = {}
+
+
+async def is_ignored(tg_id: int) -> bool:
+    """Администратор и учётки, помеченные владельцем (его клиентский профиль), в аналитику не попадают."""
+    if tg_id in config.admin_ids:
+        return True
+    now = time.time()
+    hit = _ignore_cache.get(tg_id)
+    if hit and now - hit[0] < 60:
+        return hit[1]
+    row = await db.fetch_one("SELECT 1 AS x FROM analytics_ignore WHERE tg_id=?", (tg_id,))
+    _ignore_cache[tg_id] = (now, bool(row))
+    return bool(row)
+
+
+async def ignore_user(tg_id: int) -> None:
+    """Пометить учётку как свою: дальше её не считаем, а уже записанные действия в боте стираем."""
+    await db.execute("INSERT OR IGNORE INTO analytics_ignore (tg_id) VALUES (?)", (tg_id,))
+    await db.execute("DELETE FROM analytics_events WHERE source='bot' AND vid=?", (f"tg:{tg_id}",))
+    _ignore_cache[tg_id] = (time.time(), True)
+
+
+async def mark_owner(request: web.Request, resp: web.StreamResponse) -> None:
+    """Вызывается на страницах портала: помечает устройство владельца и его клиентскую учётку в этом же браузере."""
+    try:
+        secure = request.headers.get("X-Forwarded-Proto", request.scheme) == "https"
+        if not request.cookies.get(OWNER_COOKIE):
+            resp.set_cookie(OWNER_COOKIE, "1", max_age=60 * 60 * 24 * 365, httponly=True, secure=secure,
+                            samesite="Lax", path="/")
+        uid = await webchat.session_uid(request)             # клиентская учётка в том же браузере
+        if uid and not await is_ignored(uid):
+            await ignore_user(uid)
+    except Exception:
+        log.exception("Не удалось пометить устройство владельца")
+
+
 async def post_event(request: web.Request) -> web.Response:
     if request.content_length and request.content_length > MAX_BODY:
         return web.Response(status=413)
@@ -133,8 +171,12 @@ async def post_event(request: web.Request) -> web.Response:
     except (ValueError, KeyError, TypeError, UnicodeDecodeError):
         return web.Response(status=400)
     ua = request.headers.get("User-Agent", "")
-    if is_robot(ua) or request.cookies.get(webchat.ADMIN_COOKIE):   # роботов и администратора не считаем
-        return web.Response(status=204)
+    if is_robot(ua) or request.cookies.get(webchat.ADMIN_COOKIE) or request.cookies.get(OWNER_COOKIE):
+        return web.Response(status=204)                  # роботов, администратора и устройства владельца не считаем
+    if request.cookies.get(webchat.COOKIE):
+        uid = await webchat.session_uid(request)
+        if uid and await is_ignored(uid):                # клиентская учётка владельца
+            return web.Response(status=204)
     fwd = request.headers.get("X-Forwarded-For", "")
     if _limited((fwd.split(",")[0].strip() or request.remote or "?")[:64]):
         return web.Response(status=429)
@@ -188,9 +230,9 @@ async def _bot_session(tg_id: int) -> str:
 
 async def bot_event(tg_id: int, kind: str, target: str | None, state: str | None = None) -> None:
     """Одно действие человека в боте. Никогда не ломает бота: любая ошибка только в журнал."""
-    if tg_id in config.admin_ids:
-        return
     try:
+        if await is_ignored(tg_id):
+            return
         sid = await _bot_session(tg_id)
         await db.execute("INSERT INTO analytics_events (source, vid, sid, type, target, state) VALUES ('bot',?,?,?,?,?)",
                          (f"tg:{tg_id}", sid, kind, _clip(target, 60), _clip(state, 60)))

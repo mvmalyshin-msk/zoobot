@@ -220,6 +220,13 @@ CREATE INDEX IF NOT EXISTS idx_an_src_ts ON analytics_events(source, ts);
 CREATE INDEX IF NOT EXISTS idx_an_sid ON analytics_events(sid);
 CREATE INDEX IF NOT EXISTS idx_an_vid ON analytics_events(vid, ts);
 """,
+    # 24: свои учётки владельца, которые аналитика не считает (см. analytics.ignore_user)
+    24: """
+CREATE TABLE IF NOT EXISTS analytics_ignore (
+    tg_id INTEGER PRIMARY KEY,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+""",
     # 23: почта клиента — вход и регистрация по коду из письма (webchat.post_login_email)
     23: """
 ALTER TABLE users ADD COLUMN email TEXT;
