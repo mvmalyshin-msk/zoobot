@@ -136,7 +136,7 @@ def _site() -> str:
     return config.webapp_url or "https://zk-pomosh.up.railway.app"
 
 
-async def notify(uid: int, text: str) -> dict:
+async def notify(uid: int, text: str, title: str | None = None) -> dict:
     """Уведомление на все браузеры, где человек включил уведомления. Ошибки не роняют бота.
     Возвращает итог: total — подписок, sent — принято push-сервисом, removed — подписка устарела и удалена,
     failed — не отправилось (сеть или отказ). Каждая отправка пишется в журнал: так видно, почему «не пришло»."""
@@ -149,7 +149,7 @@ async def notify(uid: int, text: str) -> dict:
     body = (text or "Новое сообщение").strip()
     if len(body) > MAX_BODY:
         body = body[:MAX_BODY - 1] + "…"
-    payload = json.dumps({"title": "Зооконсьерж", "body": body, "url": url}, ensure_ascii=False).encode()
+    payload = json.dumps({"title": title or "Зооконсьерж", "body": body, "url": url}, ensure_ascii=False).encode()
     key = await _vapid_key()
     public = b64u(_raw_public(key))
     for sub in subs:
