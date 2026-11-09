@@ -86,6 +86,8 @@ def make_app() -> web.Application:
     cabinet.setup(app)
     portal.setup(app)
     seo.setup(app)
+    import servicepages
+    servicepages.setup(app)
     import analytics
     analytics.setup(app)
     import phoneverify
