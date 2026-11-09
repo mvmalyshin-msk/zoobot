@@ -264,8 +264,8 @@ class Metrics(unittest.TestCase):
         m = self.collect("web")
         self.assertEqual(m["clicks"][0]["target"], "Оставить заявку → /request")
         self.assertEqual(m["scroll"][50], 1)
-        self.assertEqual({d["name"]: d["n"] for d in m["devices"]}, {"mobile": 1, "desktop": 1})
-        self.assertEqual({d["name"]: d["n"] for d in m["sources"]}, {"yandex.ru": 1, "Напрямую": 1})
+        self.assertEqual({d["name"]: d["n"] for d in m["devices"]}, {"Телефон": 1, "Компьютер": 1})
+        self.assertEqual({d["name"]: d["n"] for d in m["sources"]}, {"Яндекс (поиск)": 1, "Напрямую (адрес или закладка)": 1})
 
     def test_web_form_funnel_shows_where_people_stopped(self):
         m = self.collect("web")
@@ -315,7 +315,7 @@ class Page(unittest.TestCase):
             await seed()
             html = await (await c.get("/portal/analytics?src=web&p=7")).text()
             for word in ("Посетители", "Сессии", "Средняя длительность", "Популярные страницы", "Куда нажимали",
-                         "Где уходят", "Заполнение формы", "Устройства", "Откуда пришли"):
+                         "Где уходят", "До какого вопроса дошли", "С каких устройств", "Откуда пришли"):
                 self.assertIn(word, html)
             self.assertIn("/portal/analytics?src=bot", html)
             bot = await (await c.get("/portal/analytics?src=bot&p=7")).text()

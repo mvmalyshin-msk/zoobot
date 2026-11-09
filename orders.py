@@ -173,8 +173,18 @@ async def notify_admins(bot: Bot, text: str, reply_markup=None) -> None:
     if not config.admin_ids:
         log.error("ADMIN_IDS не задан: некому отправить уведомление")
     for admin_id in config.admin_ids:
+        await _push_admin(admin_id, text)  # пуш на телефон — первым и независимо от Telegram
         if not await notify(bot, admin_id, text, reply_markup):
             log.error("Не удалось отправить уведомление админу %s (он нажал /start у бота?)", admin_id)
+
+
+async def _push_admin(admin_id: int, text: str) -> None:
+    """Пуш на телефон админа (Web Push): сбой не мешает Telegram."""
+    import webpush
+    try:
+        await webpush.notify(admin_id, text, title="🔔 Зооконсьерж: для вас")
+    except Exception:
+        log.exception("Пуш админу %s не отправлен", admin_id)
 
 
 # ---------- Создание заказа ----------

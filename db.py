@@ -227,6 +227,13 @@ CREATE TABLE IF NOT EXISTS analytics_ignore (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """,
+    # 25: устройства владельца в браузере: код посетителя (zc_a) помечается как «свой», его заходы не считаются
+    25: """
+CREATE TABLE IF NOT EXISTS analytics_ignore_vid (
+    vid TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+""",
     # 23: почта клиента — вход и регистрация по коду из письма (webchat.post_login_email)
     23: """
 ALTER TABLE users ADD COLUMN email TEXT;

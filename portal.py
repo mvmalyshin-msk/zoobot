@@ -288,6 +288,12 @@ def _seg(active: str) -> str:
         f'<a {"class=\"on\" " if key == active else ""}href="{href}">{label}</a>' for key, href, label in items) + "</nav>"
 
 
+# браузер владельца сообщает свой код посетителя сайта: аналитика стирает его прошлые заходы и больше не считает
+OWN_VID_JS = ("<script>try{var zv=(JSON.parse(localStorage.getItem('zc_a')||'{}')).v;"
+              "if(zv&&!sessionStorage.getItem('zc_own')){fetch('/portal/api/analytics/own',{method:'POST',credentials:'same-origin',"
+              "headers:{'Content-Type':'application/json'},body:JSON.stringify({v:zv})}).then(function(){sessionStorage.setItem('zc_own','1')})}}catch(e){}</script>")
+
+
 def page(title: str, body: str, active: str = "", flash: str | None = None, back: str | None = "/portal") -> str:
     nav = "".join(f'<a href="{href}" class="{"on" if key == active else ""}">{label}</a>' for key, href, label in (
         ("orders", "/portal", "Заявки"), ("clients", "/portal/clients", "Клиенты"),
@@ -301,7 +307,7 @@ def page(title: str, body: str, active: str = "", flash: str | None = None, back
             f'<title>{brand.NAME} — {_e(title)}</title>{brand.HEAD_ADMIN}<style>{CSS}</style></head><body>{ribbons.html(ribbons.ADMIN)}'
             f'<div class="top">{brand.LOGO}'
             f'<details class="menu"><summary>☰ Меню</summary><nav>{nav}<a href="#" id="perm" hidden>🔔 Уведомления</a><form method="post" action="/portal/as-client" class="asclient"><button>👤 Как клиент</button></form><a href="/portal/logout">Выйти</a></nav></details>{_seg(active)}</div>'
-            f'<main>{brand.backrow(back) if back else ""}{fl}{body}</main><a id="newbar" class="btn" href="">.</a>{NOTIFY_JS}</body></html>')
+            f'<main>{brand.backrow(back) if back else ""}{fl}{body}</main><a id="newbar" class="btn" href="">.</a>{NOTIFY_JS}{OWN_VID_JS}</body></html>')
 
 
 # ---------- Вход ----------

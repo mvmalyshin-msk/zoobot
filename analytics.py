@@ -89,6 +89,24 @@ def classify_ua(ua: str) -> tuple[str, str, str]:
     return dev, br, os_
 
 
+DIRECT = "Напрямую (адрес или закладка)"
+_SOURCES = (("yandex", "Яндекс (поиск)"), ("ya.ru", "Яндекс (поиск)"), ("google", "Google (поиск)"),
+            ("t.me", "Telegram"), ("telegram", "Telegram"), ("vk.com", "ВКонтакте"), ("vk", "ВКонтакте"),
+            ("avito", "Авито"), ("profi", "Профи"), ("2gis", "2ГИС"))
+DEVICE_NAMES = {"mobile": "Телефон", "tablet": "Планшет", "desktop": "Компьютер"}
+
+
+def source_label(ref: str | None) -> str:
+    """Понятное имя источника: адрес сайта или метка utm_source → «Яндекс (поиск)», «Telegram», «Напрямую»."""
+    ref = (ref or "").strip().lower()
+    if not ref:
+        return DIRECT
+    for key, name in _SOURCES:
+        if key in ref:
+            return name
+    return ref
+
+
 # ---------- Приём событий сайта ----------
 
 _hits: dict[str, list[float]] = {}
@@ -143,6 +161,40 @@ async def ignore_user(tg_id: int) -> None:
     _ignore_cache[tg_id] = (time.time(), True)
 
 
+_ignored_vids: set[str] = set()
+
+
+async def is_ignored_vid(vid: str) -> bool:
+    if vid in _ignored_vids:
+        return True
+    if await db.fetch_one("SELECT 1 AS x FROM analytics_ignore_vid WHERE vid=?", (vid,)):
+        _ignored_vids.add(vid)
+        return True
+    return False
+
+
+@portal.admin_page
+async def api_own_vid(request: web.Request, uid: int) -> web.Response:
+    """Браузер владельца присылает свой код посетителя: прошлые заходы с него стираются, новые не считаются."""
+    try:
+        vid = str((await request.json())["v"])
+    except (ValueError, KeyError, TypeError):
+        return web.json_response({"error": "bad"}, status=400)
+    if not _ID.match(vid):
+        return web.json_response({"error": "bad"}, status=400)
+    await db.execute("INSERT OR IGNORE INTO analytics_ignore_vid (vid) VALUES (?)", (vid,))
+    await db.execute("DELETE FROM analytics_events WHERE source='web' AND vid=?", (vid,))
+    _ignored_vids.add(vid)
+    return web.json_response({"ok": True})
+
+
+@portal.admin_page
+async def api_reset(request: web.Request, uid: int) -> web.Response:
+    """Начать с чистого листа: стирает журнал посещений сайта (бота не трогает); свои устройства остаются помеченными."""
+    await db.execute("DELETE FROM analytics_events WHERE source='web'")
+    return web.json_response({"ok": True})
+
+
 async def mark_owner(request: web.Request, resp: web.StreamResponse) -> None:
     """Вызывается на страницах портала: помечает устройство владельца и его клиентскую учётку в этом же браузере."""
     try:
@@ -173,6 +225,8 @@ async def post_event(request: web.Request) -> web.Response:
     ua = request.headers.get("User-Agent", "")
     if is_robot(ua) or request.cookies.get(webchat.ADMIN_COOKIE) or request.cookies.get(OWNER_COOKIE):
         return web.Response(status=204)                  # роботов, администратора и устройства владельца не считаем
+    if await is_ignored_vid(vid):
+        return web.Response(status=204)                  # браузер владельца по коду посетителя
     if request.cookies.get(webchat.COOKIE):
         uid = await webchat.session_uid(request)
         if uid and await is_ignored(uid):                # клиентская учётка владельца
@@ -285,6 +339,31 @@ async def _all(sql, params=()):
     return await db.fetch_all(sql, tuple(params))
 
 
+FORM_FIELDS = (("service_id", "Услуга"), ("when", "Когда нужно"), ("address", "Адрес"), ("pet", "Питомец"),
+               ("name", "Имя"), ("phone", "Телефон"), ("comment", "Комментарий"))
+
+
+def _summary_web(m: dict) -> list[str]:
+    if not m["visitors"]:
+        return ["За этот период на сайт пока никто не заходил."]
+    out = [f"Сайт посмотрели {m['visitors']} уникальных посетителей, всего визитов: {m['sessions']}."]
+    if m["sources"]:
+        out.append("Откуда пришли: " + ", ".join(f"{r['name']} — {r['n']}" for r in m["sources"][:3]) + ".")
+    if m["devices"]:
+        out.append("С каких устройств: " + ", ".join(f"{d['name']} {d['pct']}%" for d in m["devices"]) + ".")
+    steps = dict(m["form_steps"])
+    out.append(f"Форму заявки открыли {steps['Открыли форму заявки']}, заявку отправили {steps['Отправили заявку']}.")
+    return out
+
+
+def _summary_bot(m: dict) -> list[str]:
+    if not m["visitors"]:
+        return ["За этот период в бота пока никто не писал."]
+    f = dict(m["funnel"])
+    return [f"Бота открыли {m['visitors']} человек.",
+            f"Нажали «Заказать услугу»: {f['Нажали «Заказать услугу»']}, оформили заказ: {f['Оформили заказ']}."]
+
+
 async def collect(source: str, period: str = "7") -> dict:
     since = since_for(period)
     src = (source, since)
@@ -316,9 +395,11 @@ async def collect(source: str, period: str = "7") -> dict:
     m["hours"] = await _all(
         f"SELECT CAST(strftime('%H', ts, '{off:+d} seconds') AS INTEGER) AS h, COUNT(DISTINCT sid) AS n "
         "FROM analytics_events WHERE source=? AND ts>=? GROUP BY h ORDER BY h", src)
-    m["devices"] = await _all(
+    devs = await _all(
         "SELECT device AS name, COUNT(DISTINCT sid) AS n FROM analytics_events WHERE source='web' AND ts>=? AND device IS NOT NULL "
         "GROUP BY device ORDER BY n DESC", (since,)) if source == "web" else []
+    dev_total = sum(d["n"] for d in devs) or 1
+    m["devices"] = [{"name": DEVICE_NAMES.get(d["name"], d["name"]), "n": d["n"], "pct": round(d["n"] / dev_total * 100)} for d in devs]
     m["browsers"] = await _all(
         "SELECT browser || ' · ' || os AS name, COUNT(DISTINCT sid) AS n FROM analytics_events WHERE source='web' AND ts>=? "
         "AND browser IS NOT NULL GROUP BY name ORDER BY n DESC LIMIT 8", (since,)) if source == "web" else []
@@ -340,17 +421,20 @@ async def collect(source: str, period: str = "7") -> dict:
         m["scroll"] = {r["value"]: r["n"] for r in await _all(
             "SELECT value, COUNT(DISTINCT sid || path) AS n FROM analytics_events WHERE source='web' AND ts>=? AND type='scroll' "
             "GROUP BY value", (since,))}
-        srcs = await _all(
-            """SELECT COALESCE(NULLIF(ref, ''), 'Напрямую') AS name, COUNT(*) AS n FROM analytics_events e WHERE source='web' AND ts>=?
+        first_pv = await _all(
+            """SELECT COALESCE(ref, '') AS ref, COUNT(*) AS n FROM analytics_events e WHERE source='web' AND ts>=?
                AND type='pv' AND id=(SELECT MIN(id) FROM analytics_events x WHERE x.sid=e.sid AND x.type='pv')
-               GROUP BY name ORDER BY n DESC LIMIT 10""", (since,))
-        m["sources"] = srcs
+               GROUP BY ref""", (since,))
+        by_src: dict[str, int] = {}
+        for r in first_pv:
+            by_src[source_label(r["ref"])] = by_src.get(source_label(r["ref"]), 0) + r["n"]
+        m["sources"] = [{"name": k, "n": v} for k, v in sorted(by_src.items(), key=lambda kv: (-kv[1], kv[0]))[:10]]
         m["fields"] = await _all(
             "SELECT target, COUNT(DISTINCT sid) AS n FROM analytics_events WHERE source='web' AND ts>=? AND type='focus' AND target IS NOT NULL "
             "GROUP BY target ORDER BY n DESC LIMIT 12", (since,))
 
-        def sess(where):
-            return db.fetch_one(f"SELECT COUNT(DISTINCT sid) AS n FROM analytics_events WHERE source='web' AND ts>=? AND {where}", (since,))
+        def sess(where, extra=()):
+            return db.fetch_one(f"SELECT COUNT(DISTINCT sid) AS n FROM analytics_events WHERE source='web' AND ts>=? AND {where}", (since, *extra))
         m["funnel"] = [
             ("Зашли на главную", (await sess("type='pv' AND path='/'"))["n"]),
             ("Открыли форму заявки", (await sess("type='pv' AND path='/request'"))["n"]),
@@ -358,6 +442,13 @@ async def collect(source: str, period: str = "7") -> dict:
             ("Отправили заявку", (await sess("type='submit' AND path='/request'"))["n"]),
         ]
         m["stops"] = []
+        form = (await sess("type='pv' AND path='/request'"))["n"]
+        steps = [("Открыли форму заявки", form)]
+        for field, label in FORM_FIELDS:
+            steps.append((label, (await sess("type='focus' AND path='/request' AND target=?", (field,)))["n"]))
+        steps.append(("Отправили заявку", (await sess("type='submit' AND path='/request'"))["n"]))
+        m["form_steps"] = steps
+        m["summary"] = _summary_web(m)
     else:
         m["buttons"] = await _all(
             "SELECT target, COUNT(*) AS n FROM analytics_events WHERE source='bot' AND ts>=? AND type='btn' GROUP BY target ORDER BY n DESC LIMIT 15", (since,))
@@ -380,6 +471,7 @@ async def collect(source: str, period: str = "7") -> dict:
             ("Дошли до подтверждения", (await users("target='ord:ok'"))["n"]),
             ("Оформили заказ", orders_n),
         ]
+        m["summary"] = _summary_bot(m)
     return m
 
 
@@ -474,7 +566,9 @@ def render(m: dict) -> str:
     cards.append(("Новые", m["new_visitors"], "впервые за всё время"))
     if src == "web":
         cards.append(("Быстро ушли", m["quick"], "1 страница и меньше 10 секунд"))
-    html = [CSS, f'<div class="an-tabs">{srcs}</div><div class="an-tabs">{tabs}</div>',
+    short = '<div class="an-block"><h2>Коротко</h2><div class="card" style="padding:10px 14px">' + "".join(
+        f"<p style=\"margin:4px 0\">{portal._e(x)}</p>" for x in m["summary"]) + "</div></div>"
+    html = [CSS, f'<div class="an-tabs">{srcs}</div><div class="an-tabs">{tabs}</div>', short,
             '<div class="an-cards">' + "".join(f'<div class="an-card"><b>{v}</b>{portal._e(k)}<br><span>{portal._e(h)}</span></div>' for k, v, h in cards) + "</div>",
             _block("Посетители по дням", _days_chart(m["days"])), _block("В какое время заходят", _hours_chart(m["hours"]), "число визитов по часам (местное время)")]
     if src == "web":
@@ -483,12 +577,13 @@ def render(m: dict) -> str:
                    "просмотры; рядом — сколько людей и сколько секунд в среднем провели"),
             _block("Куда нажимали", _rows(m["clicks"], "target", "n", extra=lambda i: f"{i['people']} чел."), "кнопки и ссылки: текст → куда ведёт"),
             _block("Где уходят", _rows(m["exits"], "path"), "последняя страница визита: на ней человек остановился"),
-            _block("Заполнение формы заявки", _funnel(m["funnel"]) + _rows(m["fields"], "target", fmt=lambda i: "поле «" + i["target"] + "»"),
-                   "сколько дошли до формы и какие поля начинали заполнять (значения полей не сохраняются)"),
+            _block("До какого вопроса дошли", _funnel(m["form_steps"]),
+                   "сколько человек открыли форму, дошли до каждого вопроса и отправили заявку (что вписано в поля — не сохраняется)"),
             _block("Прокрутка", _rows([{"name": f"дочитали до {k}%", "n": m["scroll"].get(k, 0)} for k in (25, 50, 75, 100)], "name"),
                    "сколько страниц были прокручены до этой глубины"),
-            _block("Откуда пришли", _rows(m["sources"], "name")),
-            _block("Устройства", _rows(m["devices"], "name") + _rows(m["browsers"], "name"))]
+            _block("Откуда пришли", _rows(m["sources"], "name"), "первая страница визита: из поиска, Telegram, Авито или напрямую"),
+            _block("С каких устройств", _rows(m["devices"], "name", extra=lambda i: f"{i['pct']}%") + _rows(m["browsers"], "name"),
+                   "визиты: телефон, компьютер, планшет; ниже — браузеры")]
     else:
         html += [
             _block("Путь клиента", _funnel(m["funnel"]), "сколько людей дошли до каждого шага заказа"),
@@ -499,6 +594,9 @@ def render(m: dict) -> str:
                    "последнее действие визита: где человек перестал отвечать"),
             _block("Сообщения", _rows(m["messages"], "target", fmt=lambda i: {"text": "текст", "photo": "фото", "location": "геопозиция", "contact": "контакт", "voice": "голосовое"}.get(i["target"], i["target"])),
                    "тип сообщений; сам текст не сохраняется")]
+    html.append('<p><button class="btn small ghost" type="button" id="anreset">🧹 Начать с чистого листа</button></p>'
+                '<script>document.getElementById("anreset").onclick=function(){if(!confirm("Стереть всю статистику сайта и начать заново? Это нельзя отменить."))return;'
+                'fetch("/portal/api/analytics/reset",{method:"POST",credentials:"same-origin"}).then(function(){location.reload()})};</script>')
     html.append(f'<p><a class="btn small ghost" href="/portal/analytics.csv?p={per}">⬇️ Скачать журнал (CSV)</a></p>'
                 '<p class="muted" style="font-size:13px">Собственный счётчик: без сторонних сервисов, без имён, телефонов и текстов сообщений; '
                 'администратор и роботы не считаются; данные хранятся 2 года.</p>')
@@ -538,3 +636,5 @@ def setup(app: web.Application) -> None:
 def setup_portal(app: web.Application) -> None:
     app.router.add_get("/portal/analytics", analytics_page)
     app.router.add_get("/portal/analytics.csv", analytics_csv)
+    app.router.add_post("/portal/api/analytics/own", api_own_vid)
+    app.router.add_post("/portal/api/analytics/reset", api_reset)
