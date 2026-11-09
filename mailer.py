@@ -17,13 +17,42 @@ PASSWORD_PAGES = (("gmail", "Gmail", "https://myaccount.google.com/apppasswords"
                   ("mail.ru", "Mail.ru", "https://account.mail.ru/user/2-step-auth/passwords"))
 
 
+class ResendError(Exception):
+    """Resend отказал: код ответа (ключ и текст письма в сообщение не попадают)."""
+
+    def __init__(self, status: int):
+        super().__init__(f"Resend {status}")
+        self.status = status
+
+
+def _resend_on() -> bool:
+    return bool(os.getenv("RESEND_API_KEY"))
+
+
 def configured() -> bool:
-    return all(os.getenv(k) for k in REQUIRED)
+    return _resend_on() or all(os.getenv(k) for k in REQUIRED)
 
 
 def missing() -> list[str]:
     """Каких переменных не хватает (только имена: значения никуда не выводим)."""
+    if _resend_on():
+        return []
     return [k for k in REQUIRED if not os.getenv(k)]
+
+
+def resend_payload(to: str, subject: str, body: str) -> dict:
+    sender = os.getenv("RESEND_FROM") or "Зооконсьерж <onboarding@resend.dev>"
+    return {"from": sender, "to": [to], "subject": subject, "text": body}
+
+
+async def _resend(to: str, subject: str, body: str) -> None:
+    """Письмо через HTTPS (Resend, бесплатный тариф): Railway закрывает SMTP-порты, а HTTPS работает."""
+    import aiohttp
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as s:
+        async with s.post("https://api.resend.com/emails", json=resend_payload(to, subject, body),
+                          headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}"}) as r:
+            if r.status >= 300:
+                raise ResendError(r.status)
 
 
 def password_help() -> tuple[str, str] | None:
@@ -37,6 +66,9 @@ def password_help() -> tuple[str, str] | None:
 
 def explain(exc: Exception) -> str:
     """Причина отказа простыми словами (без адресов и паролей)."""
+    if isinstance(exc, ResendError):
+        return ("Resend не принял ключ RESEND_API_KEY" if exc.status in (401, 403)
+                else f"Resend отказал в отправке (код {exc.status}): письмо можно отправлять только на адрес, на который зарегистрирован Resend")
     if isinstance(exc, smtplib.SMTPAuthenticationError):
         return "почтовый сервис не принял пароль: нужен пароль приложения (не обычный пароль от почты), а SMTP_USER — полный адрес ящика"
     if isinstance(exc, (TimeoutError, OSError, smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected)):
@@ -70,7 +102,10 @@ async def send_checked(to: str, subject: str, body: str) -> tuple[bool, str]:
     if not configured():
         return False, "не хватает: " + ", ".join(missing())
     try:
-        await asyncio.to_thread(_send_sync, to, subject, body)
+        if _resend_on():
+            await _resend(to, subject, body)
+        else:
+            await asyncio.to_thread(_send_sync, to, subject, body)
         return True, ""
     except Exception as e:
         log.warning("Письмо не отправлено: %s", type(e).__name__)

@@ -5,6 +5,7 @@
 Платёж:   pending → link_sent → paid → refunded
 """
 import asyncio
+import os
 import json
 import logging
 from datetime import datetime, timedelta
@@ -170,9 +171,11 @@ async def pending_payment_orders() -> list[dict]:
            WHERE o.status='confirmed' AND p.status IN ('pending','link_sent') ORDER BY o.id""")
 
 
-async def notify_admins(bot: Bot, text: str, reply_markup=None) -> None:
+async def notify_admins(bot: Bot, text: str, reply_markup=None, copy_helper: bool = True) -> None:
     if not config.admin_ids:
         log.error("ADMIN_IDS не задан: некому отправить уведомление")
+    if copy_helper:
+        _bg(_helper_copy(text))  # копия в бот «Мой помощник»: в фоне, один раз на уведомление
     for admin_id in config.admin_ids:
         await _push_admin(admin_id, text)  # пуш на телефон — первым и независимо от Telegram
         _bg(_mail_admin(admin_id, text))    # копия письмом: в фоне, чтобы не задерживать ответ клиенту
@@ -187,6 +190,26 @@ def _bg(coro) -> None:
     t = asyncio.ensure_future(coro)
     _tasks.add(t)
     t.add_done_callback(_tasks.discard)
+
+
+async def _helper_post(url: str, text: str, key: str) -> int:
+    import aiohttp
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=8)) as s:
+        async with s.post(url, json={"text": text[:3800]}, headers={"X-Site-Key": key}) as r:
+            return r.status
+
+
+async def _helper_copy(text: str) -> None:
+    """Копия уведомления в «Мой помощник» (HELPER_NOTIFY_URL + тот же SITE_LEADS_KEY). Нет переменных или не https — выключено; сбой тихий."""
+    url, key = (os.getenv("HELPER_NOTIFY_URL") or "").strip(), os.getenv("SITE_LEADS_KEY") or ""
+    if not url.startswith("https://") or len(key) < 24:
+        return
+    try:
+        code = await _helper_post(url, text, key)
+        if code != 200:
+            log.warning("Копия в «Мой помощник»: ответ %s", code)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Копия в «Мой помощник» не ушла (%s)", type(e).__name__)
 
 
 async def _mail_admin(admin_id: int, text: str) -> None:
