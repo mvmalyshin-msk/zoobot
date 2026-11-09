@@ -88,6 +88,8 @@ def make_app() -> web.Application:
     seo.setup(app)
     import servicepages
     servicepages.setup(app)
+    import articles
+    articles.setup(app)
     import analytics
     analytics.setup(app)
     import phoneverify
