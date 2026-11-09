@@ -57,5 +57,53 @@ class AdminPushTest(unittest.TestCase):
         self.assertEqual(sorted(bot.sent), [111])
 
 
+class AdminMailTest(unittest.TestCase):
+    def run_case(self, address="admin@example.test", configured=True, boom=False):
+        import mailer
+        import portal
+        sent = []
+        saved = (mailer.configured, mailer.send_checked, portal.admin_email, webpush.notify)
+
+        async def fake_send(to, subject, body):
+            if boom:
+                raise RuntimeError("smtp down")
+            sent.append((to, subject, body))
+            return True, ""
+
+        async def fake_addr(uid):
+            return address
+
+        async def fake_push(uid, text, title=None):
+            return {}
+        mailer.configured, mailer.send_checked = (lambda: configured), fake_send
+        portal.admin_email, webpush.notify = fake_addr, fake_push
+        bot = FakeBot()
+
+        async def go():
+            await orders.notify_admins(bot, "🆕 Заявка №5 с сайта\nУслуга: выгул")
+            await asyncio.sleep(0.05)
+        try:
+            asyncio.run(go())
+        finally:
+            mailer.configured, mailer.send_checked, portal.admin_email, webpush.notify = saved
+        return sent, bot
+
+    def test_request_is_duplicated_by_email(self):
+        sent, _ = self.run_case()
+        self.assertEqual(len(sent), 1)
+        to, subject, body = sent[0]
+        self.assertEqual(to, "admin@example.test")
+        self.assertIn("Заявка №5", subject)
+        self.assertIn("Услуга: выгул", body)
+
+    def test_no_mail_without_address_or_smtp(self):
+        self.assertEqual(self.run_case(address=None)[0], [])
+        self.assertEqual(self.run_case(configured=False)[0], [])
+
+    def test_mail_error_does_not_break_telegram(self):
+        _, bot = self.run_case(boom=True)
+        self.assertEqual(bot.sent, [111])
+
+
 if __name__ == "__main__":
     unittest.main()
