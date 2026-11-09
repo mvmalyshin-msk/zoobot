@@ -96,6 +96,14 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
 <button class="btn" type="submit">Отправить заявку</button></form></main></body></html>"""
 
 
+def cancel_form(request_id: int) -> str:
+    """Кнопка «Отменить заявку» для самого клиента (проверяется, что заявка из этого же браузера)."""
+    if not request_id:
+        return ""
+    return (f'<form method="post" action="/request/cancel/{request_id}" onsubmit="return confirm(\'Отменить заявку №{request_id}?\')">'
+            '<button class="btn ghost" type="submit">Отменить заявку</button></form>')
+
+
 def render_done(request_id: int) -> str:
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — заявка принята</title>
@@ -104,7 +112,7 @@ def render_done(request_id: int) -> str:
 <p class="hint">Данные используются только для выполнения заявки. Удалить их можно, написав нам.</p>
 <p><a class="btn" href="/chat">💬 Открыть чат с администратором</a></p>
 <p class="hint">Администратор напишет вам в этот чат. Заходите с этого же телефона и браузера — мы вас узнаем.</p>
-<p><a href="/request">Отправить ещё одну заявку</a></p></main></body></html>"""
+<p><a href="/request">Отправить ещё одну заявку</a></p>{cancel_form(request_id)}</main></body></html>"""
 
 
 _client_ip = webchat.client_ip
@@ -181,3 +189,40 @@ async def post_form(request: web.Request) -> web.Response:
     if new_token:
         webchat._set_cookie(request, resp, new_token)
     return resp
+
+
+async def post_cancel(request: web.Request) -> web.Response:
+    """Клиент отменяет свою заявку: статус «Отменена клиентом», админ получает уведомление (Telegram, пуш, письмо)."""
+    from urllib.parse import quote, urlparse
+    origin = request.headers.get("Origin")
+    if origin and urlparse(origin).netloc != request.host:
+        return web.Response(status=403, text="Запрос отклонён.")
+    uid = await webchat.session_uid(request)
+    if uid is None:
+        return web.Response(status=401, text="Откройте сайт с того же телефона и браузера, где отправляли заявку.")
+    try:
+        rid = int(request.match_info["rid"])
+    except ValueError:
+        return web.Response(status=404)
+    async with db.transaction() as conn:
+        cur = await conn.execute(
+            f"UPDATE web_requests SET status='rejected', admin_note=?, {db.touch()} "
+            "WHERE id=? AND web_uid=? AND status IN ('new','work')", ("Отменена клиентом", rid, uid))
+        changed = cur.rowcount == 1
+    if changed:
+        row = await db.fetch_one("SELECT r.*, s.name AS service FROM web_requests r LEFT JOIN services s ON s.id=r.service_id WHERE r.id=?", (rid,))
+        try:
+            await orders.notify_admins(request.app["bot"], "\n".join(filter(None, [
+                f"❌ Клиент {row['name']} отменил заявку №{rid}",
+                f"Услуга: {row['service']}" if row["service"] else "", f"Телефон: {row['phone']}",
+                f"Когда: {row['when_text']}" if row["when_text"] else ""])))
+            await orders.notify(request.app["bot"], uid, f"❌ Заявка №{rid} отменена. Если передумаете, оставьте новую.")
+        except Exception:
+            log.exception("Не удалось уведомить админа об отмене заявки №%s", rid)
+        msg = f"Заявка №{rid} отменена."
+    else:
+        row = await db.fetch_one("SELECT status, web_uid FROM web_requests WHERE id=?", (rid,))
+        if not row or row["web_uid"] != uid:
+            return web.Response(status=404, text="Заявка не найдена.")
+        msg = "Эту заявку уже нельзя отменить самостоятельно — напишите нам в чат."
+    raise web.HTTPFound(f"/cabinet?m={quote(msg)}")
