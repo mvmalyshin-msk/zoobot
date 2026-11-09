@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 # Ключ IndexNow — не секрет: он лежит на сайте открытым файлом, так протокол доказывает, что сайт ваш.
 INDEXNOW_KEY = "7c3f1e9a5b2d4086a1f7e3c9b5d20a64"
 INDEXNOW_ENDPOINTS = ("https://yandex.com/indexnow", "https://www.bing.com/indexnow")
-PUBLIC_PAGES = ("/", "/request", "/contact", "/policy")
+PUBLIC_PAGES = ("/", "/request", "/contact", "/policy", "/vygul-sobak", "/zoonyanya", "/peredergka", "/zootaksi")
 CLOSED_PREFIXES = ("/portal", "/chat", "/map", "/cabinet", "/api/", "/export/", "/verify/", "/contact/call")
 DISALLOW = ("/portal", "/cabinet", "/api/", "/export/", "/verify/", "/chat/", "/contact/call")
 
