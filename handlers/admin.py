@@ -650,7 +650,7 @@ async def cb_approve(cb: CallbackQuery) -> None:
     elif action == "methods":
         sent = await _offer_methods(cb.bot, order_id)
         await cb.message.answer("✅ Способы оплаты отправлены клиенту." if sent else
-                                "Реквизиты не настроены: задайте PAY_SBP_PHONE или PAY_CARD в Railway → Variables.")
+                                "Реквизиты не настроены: задайте PAY_SBP_PHONE или PAY_CARD в переменных окружения хостинга.")
     elif action == "paid":
         ok, text = await orders.change_status(cb.bot, order_id, "paid", actor)
         if not ok:
@@ -728,7 +728,7 @@ async def cb_admin_menu(cb: CallbackQuery) -> None:
     elif where == "pay":
         have = payinfo.methods(0)
         await msg.answer("Дежурные способы оплаты: " + (", ".join({"sbp": "СБП", "card": "карта"}[k] for k in have)
-                         if have else "не настроены") + ".\nРеквизиты задаются в Railway → Variables: "
+                         if have else "не настроены") + ".\nРеквизиты задаются в переменных окружения хостинга: "
                          "PAY_SBP_PHONE, PAY_SBP_BANK, PAY_CARD, PAY_RECIPIENT (в чат их присылать не нужно).")
     elif where == "help":
         await msg.answer(HELP)
