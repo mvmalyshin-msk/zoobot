@@ -1,13 +1,12 @@
 meta:
   environment: docker
-  toolchain: docker
 
 build:
   dockerfile: Dockerfile
   skip: false
 
 run:
-  # Dockerfile запускает bot.py на PORT=8080.
-  containerPort: "8080"
-  # Постоянный том для SQLite и файлов, которые нельзя терять.
+  # Постоянное хранилище для SQLite и файлов приложения.
   persistenceMount: /data
+  # Совпадает с PORT=8080 в Dockerfile.
+  containerPort: "8080"
