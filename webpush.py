@@ -134,7 +134,9 @@ async def save_subscription(uid: int, sub: dict) -> None:
 
 def _site() -> str:
     # Не подставляем старый домен Railway: для push нужен фактический HTTPS-домен приложения.
-    return config.webapp_url.rstrip("/") if config.webapp_url else ""
+    # Читаем env и во время вызова, чтобы конфигурация тестов могла задавать URL после импорта.
+    value = os.getenv("WEBAPP_URL") or config.webapp_url or ""
+    return value.strip().rstrip("/")
 
 
 async def notify(uid: int, text: str, title: str | None = None) -> dict:
