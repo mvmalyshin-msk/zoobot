@@ -213,7 +213,7 @@ async def _helper_copy(text: str) -> None:
 
 
 async def _mail_admin(admin_id: int, text: str) -> None:
-    """Копия уведомления письмом на почту админа (ADMIN_EMAIL или адрес из «Вход и почта»). Нужны SMTP_* в Railway."""
+    """Копия уведомления письмом на почту админа (ADMIN_EMAIL или адрес из «Вход и почта»). Нужны SMTP_* в защищённых переменных хостинга."""
     import mailer
     import portal
     try:

@@ -150,7 +150,7 @@ async def main() -> None:
     dp = build_dispatcher()
 
     web_runner = None
-    if os.getenv("PORT"):  # Railway задаёт PORT: поднимаем страницу карты рядом с ботом
+    if os.getenv("PORT"):  # Хостинг передаёт PORT: поднимаем страницу карты рядом с ботом
         web_runner = await webserver.start(int(os.environ["PORT"]), bot, dp)
     scheduler = setup_scheduler(bot)
     scheduler.start()

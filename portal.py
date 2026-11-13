@@ -471,7 +471,7 @@ async def post_code(request: web.Request) -> web.Response:
     if via == "email":
         if not mailer.configured():
             return _html_resp(login_page("Почта для входа не настроена. Войдите через Telegram и откройте «Вход и почта» — "
-                                         "там написано, что добавить в Railway."))
+                                         "там указано, какие переменные добавить в настройках хостинга."))
         email = str(form.get("email", "")).strip().lower()[:200]
         for admin_id in config.admin_ids:
             if email and await admin_email(admin_id) == email:
@@ -763,7 +763,7 @@ async def order_action(request: web.Request, uid: int) -> web.Response:
         ok, msg = (await orders.send_payment(bot, oid, link, actor)) if _URL.match(link) else (False, "Нужна ссылка вида https://…")
     elif action == "methods":
         ok = await admin_h._offer_methods(bot, oid)
-        msg = "Способы оплаты отправлены клиенту." if ok else "Реквизиты не настроены (Railway → Variables)."
+        msg = "Способы оплаты отправлены клиенту." if ok else "Реквизиты не настроены в переменных хостинга."
     elif action == "room_open":
         ok, msg = await talk.open_room(bot, oid)
     elif action == "room_close":
@@ -1039,7 +1039,7 @@ async def passkey_options(request: web.Request) -> web.Response:
 
 
 async def passkey_err(request: web.Request) -> web.Response:
-    """Телефон сообщает, почему Face ID не сработал (только имя ошибки), — чтобы причину видно было в журнале Railway."""
+    """Телефон сообщает, почему Face ID не сработал (только имя ошибки), — чтобы причину видно было в журнале приложения."""
     if not _same_origin(request) or request.headers.get("X-Zc") != "1" or _limit(_pk_hits, _ip(request), 30, 600):
         return web.json_response({"error": "limit"}, status=429)
     body = await _pk_body(request) or {}
@@ -1089,7 +1089,7 @@ async def api_push_test(request: web.Request, uid: int) -> web.Response:
 # ---------- Настройки входа: почта ----------
 
 def _mail_card(email: str | None) -> str:
-    """Что нужно для писем с кодом: чего не хватает в Railway, где взять пароль приложения, кнопка проверки."""
+    """Что нужно для писем с кодом: чего не хватает в переменных хостинга, где взять пароль приложения, кнопка проверки."""
     import os
     miss = mailer.missing()
     if not miss:
@@ -1098,9 +1098,7 @@ def _mail_card(email: str | None) -> str:
                '<p class="muted">Добавьте почту для входа выше — и здесь появится проверка.</p>'
         return (f'<div class="card" style="padding:14px;margin-top:10px"><b>Отправка писем с кодом</b>'
                 f'<p>Настроена ✅ Письма уходят с адреса из SMTP_USER.</p>{test}</div>')
-    pid, sid = os.getenv("RAILWAY_PROJECT_ID"), os.getenv("RAILWAY_SERVICE_ID")
-    rw = (f'<a href="https://railway.com/project/{_e(pid)}/service/{_e(sid)}/variables" target="_blank" rel="noopener">'
-          f'Railway → Variables</a>') if pid and sid else "Railway → ваш сервис → Variables"
+    rw = "настройках хостинга → Переменные / Secrets"
     helper = mailer.password_help()
     how = (f'<li>Создайте пароль приложения: <a href="{_e(helper[1])}" target="_blank" rel="noopener">страница {_e(helper[0])}</a> '
            f'(нужна двухэтапная проверка в аккаунте). Название любое, например «Зооконсьерж».</li>') if helper else \
@@ -1108,9 +1106,9 @@ def _mail_card(email: str | None) -> str:
     return (f'<div class="card" style="padding:14px;margin-top:10px"><b>Отправка писем с кодом</b>'
             f'<p>Пока не настроена. Не хватает в {rw}: <b>{_e(", ".join(miss))}</b>.</p>'
             f'<ol style="padding-left:20px;margin:0">{how}'
-            f'<li>Откройте {rw}, нажмите «New Variable», имя <b>SMTP_PASSWORD</b>, в значение вставьте этот пароль и сохраните.</li>'
+            f'<li>Откройте {rw}, добавьте переменную <b>SMTP_PASSWORD</b> и сохраните её.</li>'
             f'<li>Подождите минуту, пока сервис перезапустится, и вернитесь сюда: появится кнопка «Проверить почту».</li></ol>'
-            f'<p class="muted">Пароль вставляйте только в Railway: в чат и на сайт его не отправляйте.</p></div>')
+            f'<p class="muted">Пароль вставляйте только в защищённые переменные хостинга: в чат и на сайт его не отправляйте.</p></div>')
 
 
 @admin_page
@@ -1188,7 +1186,7 @@ async def settings_action(request: web.Request, uid: int) -> web.Response:
                          (f"admin_email_pending:{uid}", email))
         code = await _issue_code(uid, "email_reg")
         sent = await mailer.send(email, f"{brand.NAME}: подтверждение почты", f"Код подтверждения почты: {code}\nДействует 10 минут.")
-        return _redirect("/portal/settings", "Код отправлен на почту." if sent else "Письмо не ушло: проверьте SMTP в Railway.")
+        return _redirect("/portal/settings", "Код отправлен на почту." if sent else "Письмо не ушло: проверьте SMTP или Resend в переменных хостинга.")
     if form.get("step") == "mailtest":
         email = await admin_email(uid)
         if not email:
@@ -1247,12 +1245,49 @@ async def reports_page(request: web.Request, uid: int) -> web.Response:
     clients = (await db.fetch_one("SELECT COUNT(*) AS n FROM users WHERE pdn_consent=1 OR id IN (SELECT user_id FROM orders)"))["n"]
     body = (f'<h1>Отчёты и база</h1><div class="card" style="padding:14px"><b>База клиентов в Excel</b>'
             f'<p class="muted">Клиенты ({clients}), заказы, заявки с сайта, история статусов и сводка. Файл собирается заново при каждом нажатии.</p>'
-            f'<a class="btn" href="/portal/export/database.xlsx">📥 Скачать базу (Excel)</a></div>'
+            f'<a class="btn" href="/portal/export/database.xlsx">📥 Скачать базу (Excel)</a>'
+            f'<hr style="border:0;border-top:1px solid var(--line);margin:14px 0">'
+            f'<b>Полная копия базы для переноса</b>'
+            f'<p class="muted">SQLite-файл содержит все записи, настройки, сессии и служебные ключи. Скачивайте только на своё доверенное устройство и не пересылайте третьим лицам.</p>'
+            f'<a class="btn ghost" href="/portal/export/database.sqlite3">📦 Скачать полную копию SQLite</a></div>'
             f'<h2>Заказы по статусам</h2><div class="card" style="padding:6px 10px;overflow-x:auto"><table class="stt-tab">'
             f'<tr><th>Статус</th><th>Сейчас</th><th>Сумма</th><th>Сегодня</th><th>7 дней</th></tr>{table}</table></div>'
             f'<style>.stt-tab{{width:100%;border-collapse:collapse}}.stt-tab th,.stt-tab td{{padding:8px 6px;text-align:left;border-bottom:1px solid var(--line)}}'
             f'.stt-tab th{{font-size:13px;color:var(--mute)}}</style>')
     return _html_resp(page("Отчёты и база", body, "reports"))
+
+
+def sqlite_backup_bytes(source_path: str) -> bytes:
+    """Consistent SQLite snapshot via the SQLite backup API; includes committed WAL data."""
+    import os
+    import sqlite3
+    import tempfile
+
+    if not os.path.isfile(source_path):
+        raise FileNotFoundError("Файл базы данных не найден")
+
+    fd, backup_path = tempfile.mkstemp(prefix="zoobot-backup-", suffix=".sqlite3")
+    os.close(fd)
+    source = target = None
+    try:
+        source = sqlite3.connect(source_path, timeout=30)
+        target = sqlite3.connect(backup_path, timeout=30)
+        source.backup(target, pages=256, sleep=0.1)
+        check = target.execute("PRAGMA integrity_check").fetchone()
+        if not check or check[0] != "ok":
+            raise sqlite3.DatabaseError("Копия базы не прошла проверку целостности")
+        target.commit()
+        with open(backup_path, "rb") as snapshot:
+            return snapshot.read()
+    finally:
+        if target is not None:
+            target.close()
+        if source is not None:
+            source.close()
+        try:
+            os.unlink(backup_path)
+        except FileNotFoundError:
+            pass
 
 
 @admin_page
@@ -1264,9 +1299,29 @@ async def export_database(request: web.Request, uid: int) -> web.Response:
         "Content-Disposition": f'attachment; filename="baza_klientov_{stamp}.xlsx"', "Cache-Control": "no-store"})
 
 
+@admin_page
+async def export_sqlite_database(request: web.Request, uid: int) -> web.Response:
+    """Полная копия БД для миграции: все таблицы, настройки, сессии и внутренние ключи."""
+    import asyncio
+
+    try:
+        data = await asyncio.to_thread(sqlite_backup_bytes, config.db_path)
+    except Exception:
+        log.exception("Не удалось собрать полную копию SQLite для миграции")
+        return web.Response(status=500, text="Не удалось собрать копию базы. Попробуйте ещё раз или обратитесь в поддержку.")
+    stamp = to_local(now_utc()).strftime("%Y-%m-%d_%H%M")
+    return web.Response(body=data, headers={
+        "Content-Type": "application/vnd.sqlite3",
+        "Content-Disposition": f'attachment; filename="zoobot_backup_{stamp}.sqlite3"',
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
 def setup(app: web.Application) -> None:
     app.router.add_get("/portal/reports", reports_page)
     app.router.add_get("/portal/export/database.xlsx", export_database)
+    app.router.add_get("/portal/export/database.sqlite3", export_sqlite_database)
     app.router.add_post("/portal/as-client", as_client)
     app.router.add_get("/portal", list_page)
     app.router.add_post("/portal/code", post_code)

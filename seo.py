@@ -1,7 +1,7 @@
 """Поисковая оптимизация: robots.txt, карта сайта, мета-теги главной, закрытые разделы, уведомление IndexNow.
 
 Всё бесплатно и без аккаунтов, кроме подтверждения прав в Яндекс Вебмастере, Google Search Console и Bing Webmaster:
-их коды берутся из переменных Railway (YANDEX_VERIFICATION, GOOGLE_VERIFICATION, BING_VERIFICATION) — это не секреты,
+их коды берутся из переменных окружения (YANDEX_VERIFICATION, GOOGLE_VERIFICATION, BING_VERIFICATION) — это не секреты,
 они и так видны в коде страницы."""
 import html
 import json

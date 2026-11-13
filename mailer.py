@@ -1,4 +1,4 @@
-"""Письма с кодом входа в портал. Почтовый ящик и пароль приложения задаются только в Railway → Variables:
+"""Письма с кодом входа в портал. Почтовый ящик и пароль приложения задаются в защищённых переменных хостинга:
 SMTP_HOST, SMTP_PORT (по умолчанию 465), SMTP_USER, SMTP_PASSWORD, SMTP_FROM (необязательно).
 Подходит бесплатная почта: Яндекс (smtp.yandex.ru), Mail.ru (smtp.mail.ru), Gmail (smtp.gmail.com) с паролем приложения."""
 import asyncio
@@ -46,7 +46,7 @@ def resend_payload(to: str, subject: str, body: str) -> dict:
 
 
 async def _resend(to: str, subject: str, body: str) -> None:
-    """Письмо через HTTPS (Resend, бесплатный тариф): Railway закрывает SMTP-порты, а HTTPS работает."""
+    """Письмо через HTTPS (Resend, бесплатный тариф): при выборе Resend используется HTTPS, а не SMTP."""
     import aiohttp
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as s:
         async with s.post("https://api.resend.com/emails", json=resend_payload(to, subject, body),

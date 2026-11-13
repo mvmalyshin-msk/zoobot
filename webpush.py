@@ -133,7 +133,10 @@ async def save_subscription(uid: int, sub: dict) -> None:
 # ---------- отправка ----------
 
 def _site() -> str:
-    return config.webapp_url or "https://zk-pomosh.up.railway.app"
+    # Не подставляем старый домен Railway: для push нужен фактический HTTPS-домен приложения.
+    # Читаем env и во время вызова, чтобы конфигурация тестов могла задавать URL после импорта.
+    value = os.getenv("WEBAPP_URL") or config.webapp_url or ""
+    return value.strip().rstrip("/")
 
 
 async def notify(uid: int, text: str, title: str | None = None) -> dict:
@@ -144,6 +147,12 @@ async def notify(uid: int, text: str, title: str | None = None) -> dict:
     subs = await db.fetch_all("SELECT * FROM push_subs WHERE uid=?", (uid,))
     report["total"] = len(subs)
     if not subs:
+        return report
+    site = _site()
+    parsed_site = urlparse(site)
+    if parsed_site.scheme != "https" or not parsed_site.netloc:
+        log.warning("Web Push не отправлен: задайте WEBAPP_URL с публичным HTTPS-доменом")
+        report["failed"] = len(subs)
         return report
     url = "/portal/bot" if uid in config.admin_ids else "/chat"
     body = (text or "Новое сообщение").strip()
@@ -159,7 +168,7 @@ async def notify(uid: int, text: str, title: str | None = None) -> dict:
             "Urgency": "high",
             "Content-Encoding": "aes128gcm",
             "Content-Type": "application/octet-stream",
-            "Authorization": f"vapid t={vapid_jwt(key, f'{u.scheme}://{u.netloc}', _site())}, k={public}",
+            "Authorization": f"vapid t={vapid_jwt(key, f'{u.scheme}://{u.netloc}', site)}, k={public}",
         }
         try:
             data = encrypt(payload, sub["p256dh"], sub["auth"])

@@ -16,7 +16,7 @@ import webchat  # noqa: E402
 import webserver  # noqa: E402
 
 ENV_BASE = {"SMTP_HOST": "smtp.gmail.com", "SMTP_USER": "me@gmail.com", "ADMIN_EMAIL": "me@gmail.com",
-            "RAILWAY_PROJECT_ID": "proj-1", "RAILWAY_SERVICE_ID": "svc-1"}
+}
 GONE = ("SMTP_PASSWORD", "SMTP_PORT", "SMTP_FROM")
 
 
@@ -71,7 +71,9 @@ class SettingsMailTest(unittest.IsolatedAsyncioTestCase):
             t = await self.page()
         self.assertIn("SMTP_PASSWORD", t)
         self.assertIn("https://myaccount.google.com/apppasswords", t)
-        self.assertIn("https://railway.com/project/proj-1/service/svc-1/variables", t)
+        self.assertIn("настройках хостинга", t)
+        self.assertIn("Переменные / Secrets", t)
+        self.assertNotIn("railway.com", t.lower())
         self.assertNotIn('value="mailtest"', t)       # проверять нечем, пока нет пароля
 
     async def test_configured_offers_test_and_reports_reason(self):
