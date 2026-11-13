@@ -471,7 +471,7 @@ async def post_code(request: web.Request) -> web.Response:
     if via == "email":
         if not mailer.configured():
             return _html_resp(login_page("Почта для входа не настроена. Войдите через Telegram и откройте «Вход и почта» — "
-                                         "там написано, что добавить в Railway."))
+                                         "там указано, какие переменные добавить в настройках хостинга."))
         email = str(form.get("email", "")).strip().lower()[:200]
         for admin_id in config.admin_ids:
             if email and await admin_email(admin_id) == email:
@@ -763,7 +763,7 @@ async def order_action(request: web.Request, uid: int) -> web.Response:
         ok, msg = (await orders.send_payment(bot, oid, link, actor)) if _URL.match(link) else (False, "Нужна ссылка вида https://…")
     elif action == "methods":
         ok = await admin_h._offer_methods(bot, oid)
-        msg = "Способы оплаты отправлены клиенту." if ok else "Реквизиты не настроены (Railway → Variables)."
+        msg = "Способы оплаты отправлены клиенту." if ok else "Реквизиты не настроены в переменных хостинга."
     elif action == "room_open":
         ok, msg = await talk.open_room(bot, oid)
     elif action == "room_close":
@@ -1039,7 +1039,7 @@ async def passkey_options(request: web.Request) -> web.Response:
 
 
 async def passkey_err(request: web.Request) -> web.Response:
-    """Телефон сообщает, почему Face ID не сработал (только имя ошибки), — чтобы причину видно было в журнале Railway."""
+    """Телефон сообщает, почему Face ID не сработал (только имя ошибки), — чтобы причину видно было в журнале приложения."""
     if not _same_origin(request) or request.headers.get("X-Zc") != "1" or _limit(_pk_hits, _ip(request), 30, 600):
         return web.json_response({"error": "limit"}, status=429)
     body = await _pk_body(request) or {}
@@ -1089,7 +1089,7 @@ async def api_push_test(request: web.Request, uid: int) -> web.Response:
 # ---------- Настройки входа: почта ----------
 
 def _mail_card(email: str | None) -> str:
-    """Что нужно для писем с кодом: чего не хватает в Railway, где взять пароль приложения, кнопка проверки."""
+    """Что нужно для писем с кодом: чего не хватает в переменных хостинга, где взять пароль приложения, кнопка проверки."""
     import os
     miss = mailer.missing()
     if not miss:
@@ -1098,9 +1098,7 @@ def _mail_card(email: str | None) -> str:
                '<p class="muted">Добавьте почту для входа выше — и здесь появится проверка.</p>'
         return (f'<div class="card" style="padding:14px;margin-top:10px"><b>Отправка писем с кодом</b>'
                 f'<p>Настроена ✅ Письма уходят с адреса из SMTP_USER.</p>{test}</div>')
-    pid, sid = os.getenv("RAILWAY_PROJECT_ID"), os.getenv("RAILWAY_SERVICE_ID")
-    rw = (f'<a href="https://railway.com/project/{_e(pid)}/service/{_e(sid)}/variables" target="_blank" rel="noopener">'
-          f'Railway → Variables</a>') if pid and sid else "Railway → ваш сервис → Variables"
+    rw = "настройках хостинга → Переменные / Secrets"
     helper = mailer.password_help()
     how = (f'<li>Создайте пароль приложения: <a href="{_e(helper[1])}" target="_blank" rel="noopener">страница {_e(helper[0])}</a> '
            f'(нужна двухэтапная проверка в аккаунте). Название любое, например «Зооконсьерж».</li>') if helper else \
@@ -1108,9 +1106,9 @@ def _mail_card(email: str | None) -> str:
     return (f'<div class="card" style="padding:14px;margin-top:10px"><b>Отправка писем с кодом</b>'
             f'<p>Пока не настроена. Не хватает в {rw}: <b>{_e(", ".join(miss))}</b>.</p>'
             f'<ol style="padding-left:20px;margin:0">{how}'
-            f'<li>Откройте {rw}, нажмите «New Variable», имя <b>SMTP_PASSWORD</b>, в значение вставьте этот пароль и сохраните.</li>'
+            f'<li>Откройте {rw}, добавьте переменную <b>SMTP_PASSWORD</b> и сохраните её.</li>'
             f'<li>Подождите минуту, пока сервис перезапустится, и вернитесь сюда: появится кнопка «Проверить почту».</li></ol>'
-            f'<p class="muted">Пароль вставляйте только в Railway: в чат и на сайт его не отправляйте.</p></div>')
+            f'<p class="muted">Пароль вставляйте только в защищённые переменные хостинга: в чат и на сайт его не отправляйте.</p></div>')
 
 
 @admin_page
@@ -1188,7 +1186,7 @@ async def settings_action(request: web.Request, uid: int) -> web.Response:
                          (f"admin_email_pending:{uid}", email))
         code = await _issue_code(uid, "email_reg")
         sent = await mailer.send(email, f"{brand.NAME}: подтверждение почты", f"Код подтверждения почты: {code}\nДействует 10 минут.")
-        return _redirect("/portal/settings", "Код отправлен на почту." if sent else "Письмо не ушло: проверьте SMTP в Railway.")
+        return _redirect("/portal/settings", "Код отправлен на почту." if sent else "Письмо не ушло: проверьте SMTP или Resend в переменных хостинга.")
     if form.get("step") == "mailtest":
         email = await admin_email(uid)
         if not email:
