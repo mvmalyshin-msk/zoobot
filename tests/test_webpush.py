@@ -8,6 +8,7 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -94,6 +95,12 @@ class EncryptionTest(unittest.TestCase):
 
 
 class VapidTest(unittest.TestCase):
+    def test_vapid_site_uses_configured_url_or_remains_empty(self):
+        for configured_url in ("", "https://zoo.example"):
+            with self.subTest(configured_url=configured_url):
+                with mock.patch.object(webpush, "config", SimpleNamespace(webapp_url=configured_url)):
+                    self.assertEqual(webpush._site(), configured_url)
+
     def test_key_is_created_once_and_kept_in_the_database(self):
         async def go():
             return await webpush.public_key_b64(), await webpush.public_key_b64()

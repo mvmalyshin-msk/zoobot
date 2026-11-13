@@ -915,7 +915,7 @@ async def main():
         ok(r and last_text(r), f"кнопка админ-меню «{label}» отвечает")
     r = await say(ADMIN, "/menu")
     r = await click(ADMIN, "Способы оплаты")
-    ok("СБП" in last_text(r) and "Railway" in last_text(r) and "2200" not in last_text(r), "способы оплаты: настроены, реквизиты в чат не выводятся")
+    ok("СБП" in last_text(r) and "Amvera" in last_text(r) and "2200" not in last_text(r), "способы оплаты: настроены, реквизиты в чат не выводятся")
     r = await say(ADMIN, "/menu")
     r = await click(ADMIN, "Наценки")
     ok("Наценки" in last_text(r) and "➕" in str(_buttons(r[-1])), "наценки — панель с кнопками ➖ ➕ 🗑")
