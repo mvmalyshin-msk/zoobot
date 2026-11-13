@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("BOT_TOKEN", "1:x")
 os.environ.setdefault("ADMIN_IDS", "111")
 os.environ["DB_PATH"] = "/tmp/zoobot_webpush_test.db"
+os.environ.setdefault("WEBAPP_URL", "https://zoo.example.test")
 for s in ("", "-wal", "-shm"):
     try:
         os.remove(os.environ["DB_PATH"] + s)
@@ -94,6 +95,9 @@ class EncryptionTest(unittest.TestCase):
 
 
 class VapidTest(unittest.TestCase):
+    def test_push_uses_the_configured_public_domain_not_railway(self):
+        self.assertEqual(webpush._site(), "https://zoo.example.test")
+
     def test_key_is_created_once_and_kept_in_the_database(self):
         async def go():
             return await webpush.public_key_b64(), await webpush.public_key_b64()
