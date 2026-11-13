@@ -1,3 +1,8 @@
-aiogram>=3.0
+aiogram>=3.13,<4
+aiohttp>=3.9,<4
+aiosqlite>=0.20
+APScheduler>=3.10,<4
+cryptography>=42
 httpx>=0.25
+openpyxl>=3.1
 python-dotenv>=1.0
