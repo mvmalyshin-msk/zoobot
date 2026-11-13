@@ -1245,12 +1245,49 @@ async def reports_page(request: web.Request, uid: int) -> web.Response:
     clients = (await db.fetch_one("SELECT COUNT(*) AS n FROM users WHERE pdn_consent=1 OR id IN (SELECT user_id FROM orders)"))["n"]
     body = (f'<h1>Отчёты и база</h1><div class="card" style="padding:14px"><b>База клиентов в Excel</b>'
             f'<p class="muted">Клиенты ({clients}), заказы, заявки с сайта, история статусов и сводка. Файл собирается заново при каждом нажатии.</p>'
-            f'<a class="btn" href="/portal/export/database.xlsx">📥 Скачать базу (Excel)</a></div>'
+            f'<a class="btn" href="/portal/export/database.xlsx">📥 Скачать базу (Excel)</a>'
+            f'<hr style="border:0;border-top:1px solid var(--line);margin:14px 0">'
+            f'<b>Полная копия базы для переноса</b>'
+            f'<p class="muted">SQLite-файл содержит все записи, настройки, сессии и служебные ключи. Скачивайте только на своё доверенное устройство и не пересылайте третьим лицам.</p>'
+            f'<a class="btn ghost" href="/portal/export/database.sqlite3">📦 Скачать полную копию SQLite</a></div>'
             f'<h2>Заказы по статусам</h2><div class="card" style="padding:6px 10px;overflow-x:auto"><table class="stt-tab">'
             f'<tr><th>Статус</th><th>Сейчас</th><th>Сумма</th><th>Сегодня</th><th>7 дней</th></tr>{table}</table></div>'
             f'<style>.stt-tab{{width:100%;border-collapse:collapse}}.stt-tab th,.stt-tab td{{padding:8px 6px;text-align:left;border-bottom:1px solid var(--line)}}'
             f'.stt-tab th{{font-size:13px;color:var(--mute)}}</style>')
     return _html_resp(page("Отчёты и база", body, "reports"))
+
+
+def sqlite_backup_bytes(source_path: str) -> bytes:
+    """Consistent SQLite snapshot via the SQLite backup API; includes committed WAL data."""
+    import os
+    import sqlite3
+    import tempfile
+
+    if not os.path.isfile(source_path):
+        raise FileNotFoundError("Файл базы данных не найден")
+
+    fd, backup_path = tempfile.mkstemp(prefix="zoobot-backup-", suffix=".sqlite3")
+    os.close(fd)
+    source = target = None
+    try:
+        source = sqlite3.connect(source_path, timeout=30)
+        target = sqlite3.connect(backup_path, timeout=30)
+        source.backup(target, pages=256, sleep=0.1)
+        check = target.execute("PRAGMA integrity_check").fetchone()
+        if not check or check[0] != "ok":
+            raise sqlite3.DatabaseError("Копия базы не прошла проверку целостности")
+        target.commit()
+        with open(backup_path, "rb") as snapshot:
+            return snapshot.read()
+    finally:
+        if target is not None:
+            target.close()
+        if source is not None:
+            source.close()
+        try:
+            os.unlink(backup_path)
+        except FileNotFoundError:
+            pass
 
 
 @admin_page
@@ -1262,9 +1299,29 @@ async def export_database(request: web.Request, uid: int) -> web.Response:
         "Content-Disposition": f'attachment; filename="baza_klientov_{stamp}.xlsx"', "Cache-Control": "no-store"})
 
 
+@admin_page
+async def export_sqlite_database(request: web.Request, uid: int) -> web.Response:
+    """Полная копия БД для миграции: все таблицы, настройки, сессии и внутренние ключи."""
+    import asyncio
+
+    try:
+        data = await asyncio.to_thread(sqlite_backup_bytes, config.db_path)
+    except Exception:
+        log.exception("Не удалось собрать полную копию SQLite для миграции")
+        return web.Response(status=500, text="Не удалось собрать копию базы. Попробуйте ещё раз или обратитесь в поддержку.")
+    stamp = to_local(now_utc()).strftime("%Y-%m-%d_%H%M")
+    return web.Response(body=data, headers={
+        "Content-Type": "application/vnd.sqlite3",
+        "Content-Disposition": f'attachment; filename="zoobot_backup_{stamp}.sqlite3"',
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
+
+
 def setup(app: web.Application) -> None:
     app.router.add_get("/portal/reports", reports_page)
     app.router.add_get("/portal/export/database.xlsx", export_database)
+    app.router.add_get("/portal/export/database.sqlite3", export_sqlite_database)
     app.router.add_post("/portal/as-client", as_client)
     app.router.add_get("/portal", list_page)
     app.router.add_post("/portal/code", post_code)
