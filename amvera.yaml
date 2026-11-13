@@ -1,8 +1,13 @@
 meta:
   environment: docker
+  toolchain: docker
+
+build:
+  dockerfile: Dockerfile
+  skip: false
 
 run:
-  # webserver.py слушает PORT; Dockerfile задаёт PORT=8080.
-  containerPort: 8080
-  # SQLite и другие изменяемые данные должны жить в постоянном томе Amvera.
+  # Dockerfile запускает bot.py на PORT=8080.
+  containerPort: "8080"
+  # Постоянный том для SQLite и файлов, которые нельзя терять.
   persistenceMount: /data
