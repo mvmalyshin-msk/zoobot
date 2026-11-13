@@ -1,0 +1,8 @@
+meta:
+  environment: docker
+
+run:
+  # webserver.py слушает PORT; Dockerfile задаёт PORT=8080.
+  containerPort: 8080
+  # SQLite и другие изменяемые данные должны жить в постоянном томе Amvera.
+  persistenceMount: /data
