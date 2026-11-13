@@ -27,9 +27,10 @@ class SqliteBackupTest(unittest.TestCase):
 
                 snapshot = sqlite_backup_bytes(source_path)
                 self.assertTrue(snapshot.startswith(b"SQLite format 3\x00"))
-                restored = sqlite3.connect(":memory:")
+                restored_path = str(Path(folder) / "restored.sqlite3")
+                Path(restored_path).write_bytes(snapshot)
+                restored = sqlite3.connect(restored_path)
                 try:
-                    restored.deserialize(snapshot)
                     self.assertEqual(restored.execute("SELECT value FROM sample").fetchone()[0], "сохранённая запись")
                     self.assertEqual(restored.execute("PRAGMA integrity_check").fetchone()[0], "ok")
                 finally:
