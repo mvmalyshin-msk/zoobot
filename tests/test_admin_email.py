@@ -1,5 +1,5 @@
-"""Вход администратора по почте: адрес из Railway (ADMIN_EMAIL) → код письмом → вход в портал.
-Адрес в тесте вымышленный: настоящий хранится только в Railway → Variables."""
+"""Вход администратора по почте: адрес из настроек проекта (ADMIN_EMAIL) → код письмом → вход в портал.
+Адрес в тесте вымышленный: настоящий хранится только в переменных проекта."""
 import asyncio
 import os
 import sys
@@ -39,7 +39,7 @@ def run(fn):
     return LOOP.run_until_complete(go())
 
 
-class AdminEmailFromRailwayTest(unittest.TestCase):
+class AdminEmailFromProjectTest(unittest.TestCase):
     def test_railway_email_belongs_to_the_admin_and_is_normalised(self):
         async def go():
             with mock.patch.dict(os.environ, {"ADMIN_EMAIL": "  Owner@Example.COM "}):

@@ -1,4 +1,4 @@
-"""Почта через HTTPS-сервис Resend: Railway не пропускает SMTP, а HTTPS проходит."""
+"""Почта через HTTPS-сервис Resend как альтернатива SMTP."""
 import asyncio
 import os
 import sys

@@ -43,7 +43,7 @@ class Text(unittest.TestCase):
     def test_discloses_map_services_and_hosting(self):
         t = policy.render_text(OP)
         self.assertIn("OpenStreetMap", t)
-        self.assertIn("Railway", t)
+        self.assertIn("Amvera", t)
 
     def test_chunks_fit_telegram_limit(self):
         parts = policy.chunks(policy.render_text(OP))

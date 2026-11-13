@@ -133,7 +133,7 @@ async def save_subscription(uid: int, sub: dict) -> None:
 # ---------- отправка ----------
 
 def _site() -> str:
-    return config.webapp_url or "https://zk-pomosh.up.railway.app"
+    return config.webapp_url
 
 
 async def notify(uid: int, text: str, title: str | None = None) -> dict:
