@@ -1,0 +1,40 @@
+name: Python checks
+
+on:
+  push:
+    branches:
+      - main
+      - "migration/**"
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    env:
+      BOT_TOKEN: "1:test-token"
+      ADMIN_IDS: "111"
+      DB_PATH: /tmp/zoobot-ci.db
+      WEBAPP_URL: https://zoo.example.test
+      TIMEZONE: Europe/Moscow
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Check installed packages
+        run: pip check
+      - name: Compile Python files
+        run: python -m compileall -q .
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -p "test_*.py" -v
