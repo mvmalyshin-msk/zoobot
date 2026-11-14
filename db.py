@@ -3,7 +3,9 @@
 Принцип: schema.sql = версия 1. Любое следующее изменение схемы — новая запись
 в MIGRATIONS (номер версии → SQL). При старте бот применяет всё, чего ещё нет.
 """
+import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -283,12 +285,82 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 }
 
 
-async def get_conn() -> aiosqlite.Connection:
-    """Открыть соединение. Row-фабрика позволяет обращаться к колонкам по имени."""
-    conn = await aiosqlite.connect(config.db_path)
+async def get_conn(daemon: bool = False) -> aiosqlite.Connection:
+    """Открыть соединение. Row-фабрика позволяет обращаться к колонкам по имени.
+    daemon=True — для долгоживущего общего соединения: его поток не держит процесс при перезапуске."""
+    pending = aiosqlite.connect(config.db_path)
+    if daemon and hasattr(pending, "_thread"):        # в тестах connect бывает подменён
+        pending._thread.daemon = True
+    conn = await pending
     conn.row_factory = aiosqlite.Row
     await conn.execute("PRAGMA foreign_keys = ON")
+    await conn.execute("PRAGMA busy_timeout = 5000")   # соседнее соединение пишет — подождать, а не падать
     return conn
+
+
+# Общее соединение для одиночных запросов (fetch_one/fetch_all/execute). Раньше каждый запрос открывал новое:
+# поток + открытие файла на сетевом диске хостинга — главная отвечала ~850 мс вместо ~200. Транзакции
+# (transaction()) по-прежнему идут на своём соединении. Файл базы заменили (тесты, восстановление из копии) —
+# соединение откроется заново.
+_shared: aiosqlite.Connection | None = None
+_shared_id: tuple | None = None
+_shared_loop = None
+_write_lock: asyncio.Lock | None = None
+_write_lock_loop = None
+
+
+def _wlock() -> asyncio.Lock:
+    """Записи на общем соединении — по одной: откат неудачной записи не должен задеть чужую незафиксированную."""
+    global _write_lock, _write_lock_loop
+    loop = asyncio.get_running_loop()
+    if _write_lock is None or _write_lock_loop is not loop:
+        _write_lock, _write_lock_loop = asyncio.Lock(), loop
+    return _write_lock
+
+
+def _file_id() -> tuple | None:
+    try:
+        st = os.stat(config.db_path)
+        return (st.st_dev, st.st_ino)
+    except OSError:
+        return None
+
+
+async def _conn() -> aiosqlite.Connection:
+    """Общее соединение. Открывается заново, если заменили файл базы, сменился цикл событий
+    (тесты) или поток соединения остановился — запросы не должны повиснуть навсегда."""
+    global _shared, _shared_id, _shared_loop
+    loop = asyncio.get_running_loop()
+    alive = _shared is not None and _shared._thread.is_alive()
+    if not alive or _file_id() != _shared_id or _shared_loop is not loop:
+        if alive and _shared_loop is loop:
+            await close_shared()
+        else:
+            _drop_shared()
+        _shared = await get_conn(daemon=True)
+        _shared_id, _shared_loop = _file_id(), loop
+    return _shared
+
+
+def _drop_shared() -> None:
+    """Бросить соединение из другого цикла событий: просим поток остановиться, не дожидаясь ответа."""
+    global _shared, _shared_id, _shared_loop
+    if _shared is not None:
+        try:
+            _shared.stop()                                 # закрыть sqlite и завершить поток (ответ не ждём)
+        except Exception:
+            pass
+    _shared, _shared_id, _shared_loop = None, None, None
+
+
+async def close_shared() -> None:
+    global _shared, _shared_id, _shared_loop
+    if _shared is not None:
+        old, _shared, _shared_id, _shared_loop = _shared, None, None, None
+        try:
+            await old.close()
+        except Exception:
+            pass
 
 
 async def current_version(conn: aiosqlite.Connection) -> int:
@@ -330,34 +402,32 @@ async def init_db() -> None:
 # ---------- Небольшие хелперы, чтобы не плодить boilerplate в хендлерах ----------
 
 async def fetch_one(sql: str, params: tuple = ()) -> dict | None:
-    conn = await get_conn()
-    try:
-        cur = await conn.execute(sql, params)
+    conn = await _conn()
+    async with conn.execute(sql, params) as cur:          # курсор закрыт сразу — чтение не держит блокировку
         row = await cur.fetchone()
-        return dict(row) if row else None
-    finally:
-        await conn.close()
+    return dict(row) if row else None
 
 
 async def fetch_all(sql: str, params: tuple = ()) -> list[dict]:
-    conn = await get_conn()
-    try:
-        cur = await conn.execute(sql, params)
-        return [dict(r) for r in await cur.fetchall()]
-    finally:
-        await conn.close()
+    conn = await _conn()
+    async with conn.execute(sql, params) as cur:
+        rows = await cur.fetchall()
+    return [dict(r) for r in rows]
 
 
 async def execute(sql: str, params: tuple = ()) -> int:
     """Выполнить запись. Возвращает lastrowid.
     updated_at обновляем явно в SQL там, где это UPDATE (см. touch())."""
-    conn = await get_conn()
-    try:
-        cur = await conn.execute(sql, params)
-        await conn.commit()
-        return cur.lastrowid
-    finally:
-        await conn.close()
+    async with _wlock():
+        conn = await _conn()
+        try:
+            async with conn.execute(sql, params) as cur:
+                rowid = cur.lastrowid
+            await conn.commit()
+            return rowid
+        except BaseException:
+            await conn.rollback()                         # не оставлять открытую транзакцию с блокировкой
+            raise
 
 
 @asynccontextmanager
