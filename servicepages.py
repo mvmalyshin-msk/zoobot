@@ -87,7 +87,7 @@ CSS = webform.CSS + """
 .lead{font-size:1.08rem;line-height:1.5;margin:6px 0 16px}ul.pts{padding-left:20px;margin:0 0 18px}ul.pts li{margin:8px 0;line-height:1.45}
 .ways{display:grid;gap:10px;margin:14px 0}.way{display:flex;align-items:center;justify-content:center;padding:14px 16px;border-radius:999px;
 text-decoration:none;font-weight:700;min-height:52px}.way.tg{background:var(--coral);color:#fff}.way.site{background:#fff;color:var(--coral);border:2px solid var(--coral)}
-.faq details{border-top:1px solid #eadfd6;padding:10px 0}.faq summary{font-weight:700;cursor:pointer}.also a{display:inline-block;margin:4px 10px 4px 0}
+.faq details{border-top:1.5px solid #c9b49a;padding:10px 0}.faq summary{font-weight:700;cursor:pointer}.also a{display:inline-block;margin:4px 10px 4px 0}
 h2{margin:22px 0 8px}
 """
 
