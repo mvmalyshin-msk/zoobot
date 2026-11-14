@@ -2,13 +2,17 @@
 import json
 import os
 import sys
+import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("BOT_TOKEN", "1:x")
 os.environ.setdefault("ADMIN_IDS", "111")
 
+import db  # noqa: E402
 import geo  # noqa: E402
 import webserver  # noqa: E402
 
@@ -54,11 +58,19 @@ class ParsePick(unittest.TestCase):
 class Server(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         from aiohttp.test_utils import TestClient, TestServer
+
+        self.db_dir = tempfile.TemporaryDirectory()
+        self.db_config = mock.patch.object(
+            db, "config", replace(db.config, db_path=str(Path(self.db_dir.name) / "health.db"))
+        )
+        self.db_config.start()
         self.client = TestClient(TestServer(webserver.make_app()))
         await self.client.start_server()
 
     async def asyncTearDown(self):
         await self.client.close()
+        self.db_config.stop()
+        self.db_dir.cleanup()
 
     async def test_index(self):
         r = await self.client.get("/map")
@@ -68,7 +80,31 @@ class Server(unittest.IsolatedAsyncioTestCase):
 
     async def test_vendor_and_health(self):
         self.assertEqual((await self.client.get("/vendor/leaflet.js")).status, 200)
-        self.assertEqual((await self.client.get("/healthz")).status, 200)
+        health = await self.client.get("/healthz")
+        self.assertEqual(health.status, 200)
+        self.assertEqual(await health.text(), "ok")
+
+    async def test_readiness_checks_database(self):
+        response = await self.client.get("/readyz")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(await response.text(), "ok")
+
+    async def test_readiness_failure_is_generic(self):
+        bad_path = Path(self.db_dir.name) / "missing" / "health.db"
+        with mock.patch.object(db, "config", replace(db.config, db_path=str(bad_path))):
+            response = await self.client.get("/readyz")
+        self.assertEqual(response.status, 503)
+        self.assertEqual(await response.text(), "not ready")
+        self.assertNotIn(str(bad_path), await response.text())
+
+    async def test_liveness_is_independent_of_database(self):
+        bad_path = Path(self.db_dir.name) / "missing" / "health.db"
+        with mock.patch.object(db, "config", replace(db.config, db_path=str(bad_path))):
+            health = await self.client.get("/healthz")
+            readiness = await self.client.get("/readyz")
+        self.assertEqual(health.status, 200)
+        self.assertEqual(await health.text(), "ok")
+        self.assertEqual(readiness.status, 503)
 
     async def test_no_path_traversal(self):
         r = await self.client.get("/vendor/../../config.py")
