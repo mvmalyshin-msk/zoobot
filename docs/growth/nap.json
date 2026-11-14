@@ -1,0 +1,12 @@
+{
+  "name": "Зооконсьерж",
+  "telegram": "https://t.me/zooconcierge_bot",
+  "site": "{SITE_URL}",
+  "area": "Москва и Московская область",
+  "hours": "ежедневно 06:00–22:00",
+  "address": "без адреса: выезд к клиенту (услуги на дому)",
+  "phone": "не публикуется: связь через Telegram-бот и форму на сайте",
+  "services": ["Выгул собак", "Зооняня", "Передержка", "Зоотакси"],
+  "must_contain": ["Зооконсьерж", "zooconcierge_bot"],
+  "must_not_contain": ["railway.app", "zk-pomosh", "zoobot-production", "workbot-production"]
+}

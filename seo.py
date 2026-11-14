@@ -14,6 +14,7 @@ from aiohttp import ClientSession, ClientTimeout, web
 
 import brand
 import db
+from citydata import PATHS as CITY_PATHS
 from config import config
 
 log = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ log = logging.getLogger(__name__)
 INDEXNOW_KEY = "7c3f1e9a5b2d4086a1f7e3c9b5d20a64"
 INDEXNOW_ENDPOINTS = ("https://yandex.com/indexnow", "https://www.bing.com/indexnow")
 PUBLIC_PAGES = ("/", "/request", "/contact", "/policy", "/vygul-sobak", "/zoonyanya", "/peredergka", "/zootaksi",
-                "/stati", "/stati/kak-vybrat-peredergku", "/stati/skolko-gulyat-s-sobakoi", "/stati/kak-podgotovit-koshku-k-otezdu")
+                "/stati", "/stati/kak-vybrat-peredergku", "/stati/skolko-gulyat-s-sobakoi", "/stati/kak-podgotovit-koshku-k-otezdu") + CITY_PATHS
 CLOSED_PREFIXES = ("/portal", "/chat", "/map", "/cabinet", "/api/", "/export/", "/verify/", "/contact/call")
 DISALLOW = ("/portal", "/cabinet", "/api/", "/export/", "/verify/", "/chat/", "/contact/call")
 
@@ -85,7 +86,8 @@ def head_tags(base: str) -> str:
     business = {
         "@context": "https://schema.org", "@type": "LocalBusiness", "name": brand.NAME, "url": url, "image": img,
         "description": DESCRIPTION, "areaServed": [{"@type": "AdministrativeArea", "name": "Московская область"}, {"@type": "City", "name": "Москва"}],
-        "knowsLanguage": "ru",
+        "knowsLanguage": "ru", "openingHours": "Mo-Su 06:00-22:00",
+        "sameAs": [f"https://t.me/{config.bot_username}"],
         "makesOffer": [{"@type": "Offer", "itemOffered": {"@type": "Service", "name": n}}
                        for n in ("Выгул собак", "Зооняня", "Передержка животных", "Зоотакси")],
     }

@@ -66,5 +66,6 @@ def public_footer() -> str:
             '<a href="/peredergka">Передержка</a><a href="/zootaksi">Зоотакси</a></nav>'
             '<nav aria-label="Информация"><a href="/contact">Связаться</a><a href="/stati">Статьи</a>'
             '<a href="/chat/login">Личный кабинет клиента</a><a href="/portal">Кабинет администратора</a>'
-            '<a href="/policy">Политика обработки данных</a></nav>'
+            '<a href="/policy">Политика обработки данных</a>'
+            '<a href="https://t.me/zooconcierge_bot">Telegram-бот @zooconcierge_bot</a></nav>'
             '<p class="site-footer-area">Работаем в Москве и Московской области</p></div></footer>')
