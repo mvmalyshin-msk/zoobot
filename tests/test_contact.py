@@ -35,14 +35,13 @@ class ContactTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_home_chat_button_leads_straight_to_contact(self):
         t = await (await self.client.get("/")).text()
-        self.assertIn('href="/contact">Связаться с нами</a>', t)
-        self.assertIn("Хотите сначала обсудить?", t)
+        self.assertIn('href="/contact">Связаться</a>', t)                 # в подвале; лишний блок с главной убран (14.11)
 
     async def test_home_buttons_stack_evenly_on_phone(self):
         t = await (await self.client.get("/")).text()
         self.assertIn(".hero-actions{display:flex", t)
         self.assertIn("@media(max-width:640px)", t)
-        self.assertIn(".hero-actions{align-items:stretch;flex-direction:column", t)
+        self.assertIn(".hero-actions{flex-direction:column;align-items:stretch", t)
 
     async def test_page_has_three_ways_no_phone_link_without_number(self):
         r = await self.client.get("/contact")

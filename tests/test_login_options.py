@@ -5,7 +5,6 @@
 4. Face ID (ключ доступа) для повторного входа клиента; ключ администратора клиентом не входит и наоборот.
 5. Кнопки входа — единого аккуратного вида, не крупные.
 Адреса, номера и ключи в тесте вымышленные."""
-import asyncio
 import dataclasses
 import hashlib
 import importlib
@@ -139,6 +138,8 @@ class Mail(unittest.IsolatedAsyncioTestCase):
         with no_mail_env(), mock.patch.dict(os.environ, {"RESEND_API_KEY": "k"}):
             self.assertFalse(mailer.client_mail_on())                         # resend.dev пишет только владельцу
             self.assertTrue(mailer.configured())                              # но код админу на его почту уходит
+        with no_mail_env(), mock.patch.dict(os.environ, {"RESEND_API_KEY": "k", "RESEND_FROM": "Зоо <onboarding@resend.dev>"}):
+            self.assertFalse(mailer.client_mail_on())                         # тестовый адрес Resend, даже если указан явно
         with no_mail_env(), mock.patch.dict(os.environ, {"RESEND_API_KEY": "k", "RESEND_FROM": "Зоо <hi@zoo.example>"}):
             self.assertTrue(mailer.client_mail_on())
 
