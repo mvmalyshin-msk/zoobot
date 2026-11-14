@@ -3,6 +3,7 @@
 Страница статическая и никаких данных клиентов не хранит: результат уходит обратно в бота через Telegram
 (WebApp.sendData). Порт задаётся переменной PORT, а публичный адрес — WEBAPP_URL.
 """
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -12,6 +13,7 @@ from aiohttp import web
 import cabinet
 import brand
 from config import config
+import db
 import policy
 import portal
 import seo
@@ -39,6 +41,30 @@ async def _index(request: web.Request) -> web.Response:
 
 
 async def _health(request: web.Request) -> web.Response:
+    return web.Response(text="ok")
+
+
+async def _database_ready() -> bool:
+    conn = await db.get_conn()
+    try:
+        cursor = await conn.execute("SELECT 1")
+        try:
+            row = await cursor.fetchone()
+            return row is not None and row[0] == 1
+        finally:
+            await cursor.close()
+    finally:
+        await conn.close()
+
+
+async def _ready(request: web.Request) -> web.Response:
+    try:
+        ready = await asyncio.wait_for(_database_ready(), timeout=2)
+    except Exception:
+        log.warning("Проверка готовности не пройдена")
+        ready = False
+    if not ready:
+        return web.Response(text="not ready", status=503)
     return web.Response(text="ok")
 
 
@@ -77,6 +103,7 @@ def make_app() -> web.Application:
     app.router.add_get("/", _index)
     app.router.add_get("/map", _map)
     app.router.add_get("/healthz", _health)
+    app.router.add_get("/readyz", _ready)
     app.router.add_get("/policy", _policy)
     app.router.add_get("/request", webform.get_form)
     app.router.add_post("/request", webform.post_form)
