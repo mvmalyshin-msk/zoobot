@@ -13,6 +13,7 @@ import servicepages
 from config import config
 
 PUBLISHED = "2026-11-09"
+UPDATED = "2026-11-14"  # дата последнего обновления: меняйте при каждой правке текста статьи
 BASE = "/stati"
 
 ARTICLES = {
@@ -23,6 +24,16 @@ ARTICLES = {
                  "Разбираем, чем частная передержка отличается от зоотеля и о чём спросить до того, как оставить животное."),
         "service": "/peredergka",
         "service_name": "Подобрать передержку",
+        "help": ("Мы подберём передержку под вашего питомца: учтём породу, возраст, характер и страхи и предложим три варианта — "
+                 "эконом, комфорт и комфорт с деталями. Проверку исполнителя и подбор берём на себя."),
+        "faq": [
+            ("Как заранее бронировать передержку?",
+             "Чем раньше, тем больше выбор. Перед праздниками и летом места заканчиваются быстрее, поэтому лучше договориться заранее."),
+            ("Можно ли сначала познакомиться с исполнителем?",
+             "Да, и это хорошая идея: короткая встреча до передержки помогает понять, подходят ли условия вашему питомцу."),
+            ("Что если питомец плохо переносит других животных?",
+             "Скажите об этом при заявке. Мы будем искать вариант, где ваш питомец будет один или отдельно от других животных."),
+        ],
         "sections": [
             {"h": "Частная передержка или зоотель",
              "body": ("У частного исполнителя питомец живёт в обычной квартире, внимание делится на одного-двух животных, но всё зависит "
@@ -48,6 +59,16 @@ ARTICLES = {
                  "что делать, если вы не успеваете гулять сами. Выгул подберём в Москве и Московской области."),
         "service": "/vygul-sobak",
         "service_name": "Подобрать выгул собаки",
+        "help": ("Мы подберём догситтера под график вашей собаки: утром, днём или вечером, разово или регулярно. Учтём характер, "
+                 "размер и привычки собаки и предложим три варианта по цене и уровню сервиса."),
+        "faq": [
+            ("Можно ли заказать выгул разово?",
+             "Да, выгул можно заказать один раз, например, если вы задерживаетесь на работе, или регулярно по графику."),
+            ("Сколько длится одна прогулка с догситтером?",
+             "Длительность выбираете вы при заявке. Для активных собак лучше брать прогулку подлиннее."),
+            ("Что рассказать догситтеру перед первой прогулкой?",
+             "Как собака ведёт себя с людьми и собаками, тянет ли поводок, подбирает ли с земли, чего боится и какие команды знает."),
+        ],
         "sections": [
             {"h": "От чего зависит время прогулки",
              "body": ("От возраста: щенкам и пожилым собакам обычно нужны более частые и короткие выходы.\n\nОт породы и энергии: "
@@ -72,6 +93,16 @@ ARTICLES = {
                  "выбрать передержку. Подбираем специалистов в Москве и Московской области."),
         "service": "/zoonyanya",
         "service_name": "Подобрать зооняню",
+        "help": ("Мы подберём зооняню, которая будет приходить к вашей кошке в удобное время, или передержку, если вас не будет долго. "
+                 "Учтём характер и привычки кошки и предложим три варианта на выбор."),
+        "faq": [
+            ("Как часто зооняня должна приходить к кошке?",
+             "Обычно хотя бы раз в день: покормить, поменять воду и наполнитель, поиграть. Если кошке нужны лекарства, визиты могут быть чаще."),
+            ("Можно ли оставить кошку одну на выходные?",
+             "Даже с запасом корма и воды лучше, чтобы кто-то заглянул: проверил, всё ли в порядке, и поменял наполнитель."),
+            ("Нужно ли оставлять ключи от квартиры?",
+             "Да, для приходящей зооняни. Как передать ключи и вернуть их, договариваемся заранее."),
+        ],
         "sections": [
             {"h": "Оставить дома или на передержку",
              "body": ("Многим кошкам лучше дома: знакомый запах, привычная лежанка, привычный распорядок. Тогда достаточно зооняни, "
@@ -98,7 +129,21 @@ def _e(v) -> str:
 CSS = servicepages.CSS + """
 .art p{line-height:1.6;margin:0 0 12px}.art h2{margin:24px 0 8px}.list a{display:block;padding:12px 0;border-top:1.5px solid #c9b49a;
 text-decoration:none;font-weight:700}.list p{margin:2px 0 0;font-weight:400;color:#5b5047}
+.dates{font-size:14px;color:#5b5047;margin:0 0 10px}.help{border:1.5px solid #c9b49a;border-radius:16px;padding:4px 16px 8px;margin:24px 0}
+.help h2{margin-top:12px}.svc{font-weight:700}
 """
+
+_MONTHS = ("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")
+
+
+def _ru_date(iso: str) -> str:
+    y, m, d = (int(x) for x in iso.split("-"))
+    return f"{d} {_MONTHS[m - 1]} {y}"
+
+
+def for_service(path: str) -> list[tuple[str, str]]:
+    """Статьи, которые работают на эту услугу: (адрес, заголовок) — для блока «Полезно почитать» на странице услуги."""
+    return [(k, v["h1"]) for k, v in ARTICLES.items() if v["service"] == path]
 
 
 def _head(title: str, desc: str, url: str, ld: str) -> str:
@@ -114,20 +159,30 @@ def render_article(path: str, base: str) -> str:
     a = ARTICLES[path]
     url = f"{base}{path}"
     data = {"@context": "https://schema.org", "@type": "Article", "headline": a["h1"], "description": a["lead"],
-            "inLanguage": "ru", "datePublished": PUBLISHED, "dateModified": PUBLISHED, "mainEntityOfPage": url,
+            "inLanguage": "ru", "datePublished": PUBLISHED, "dateModified": UPDATED, "mainEntityOfPage": url,
             "author": {"@type": "Organization", "name": brand.NAME},
             "publisher": {"@type": "Organization", "name": brand.NAME, "url": f"{base}/"}}
-    ld = '<script type="application/ld+json">' + json.dumps(data, ensure_ascii=False).replace("</", "<\\/") + "</script>"
+    faq_ld = {"@context": "https://schema.org", "@type": "FAQPage",
+              "mainEntity": [{"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": t}} for q, t in a["faq"]]}
+    ld = "".join('<script type="application/ld+json">' + json.dumps(d, ensure_ascii=False).replace("</", "<\\/") + "</script>"
+                 for d in (data, faq_ld))
+    faq = "".join(f"<details><summary>{_e(q)}</summary><p>{_e(t)}</p></details>" for q, t in a["faq"])
+    also = "".join(f'<a href="{_e(k)}">{_e(v["h1"])}</a>' for k, v in ARTICLES.items() if k != path)
     body = "".join(f"<h2>{_e(s['h'])}</h2>" + "".join(f"<p>{_e(p)}</p>" for p in s["body"].split("\n\n")) for s in a["sections"])
     return _head(a["title"], a["lead"], url, ld) + f"""<body>{brand.public_header()}<main class="public-main art">
 <p class="eyebrow">СТАТЬИ О ПИТОМЦАХ</p>
 <h1>{_e(a["h1"])}</h1>
+<p class="dates">Опубликовано {_ru_date(PUBLISHED)} · Обновлено {_ru_date(UPDATED)}</p>
 <p class="lead">{_e(a["lead"])}</p>
 {body}
+<h2>Частые вопросы</h2><div class="faq">{faq}</div>
+<div class="help"><h2>Как мы можем помочь</h2><p>{_e(a["help"])}</p>
+<p><a class="svc" href="{_e(a["service"])}">{_e(a["service_name"])} →</a></p></div>
 <div class="ways"><a class="way tg" href="https://t.me/{_e(config.bot_username)}">Оставить заявку в Telegram</a>
 <a class="way site" href="/request">Оставить заявку на сайте</a></div>
 <p class="hint"><a href="{_e(a["service"])}">{_e(a["service_name"])}</a> · <a href="{BASE}">Все статьи</a> ·
 <a href="/contact">Связаться с администратором</a></p>
+<h2>Читайте также</h2><p class="also">{also}</p>
 </main>{brand.public_footer()}</body></html>"""
 
 

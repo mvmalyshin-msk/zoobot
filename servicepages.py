@@ -99,6 +99,9 @@ def render(path: str, base: str) -> str:
     others = "".join(f'<a href="{_e(k)}">{_e(v["h1"])}</a>' for k, v in PAGES.items() if k != path)
     faq = "".join(f"<details><summary>{_e(q)}</summary><p>{_e(a)}</p></details>" for q, a in p["faq"])
     points = "".join(f"<li>{_e(x)}</li>" for x in p["points"])
+    import articles  # здесь, а не наверху: articles сам импортирует servicepages
+    links = "".join(f'<a href="{_e(k)}">{_e(h)}</a>' for k, h in articles.for_service(path))
+    reading = f'<h2>Полезно почитать</h2><p class="also">{links}</p>' if links else ""
     service = {"@context": "https://schema.org", "@type": "Service", "name": p["service"], "serviceType": p["service"],
                "provider": {"@type": "LocalBusiness", "name": brand.NAME, "url": f"{base}/"},
                "areaServed": [{"@type": "AdministrativeArea", "name": "Московская область"}, {"@type": "City", "name": "Москва"}],
@@ -120,7 +123,7 @@ def render(path: str, base: str) -> str:
 <div class="ways"><a class="way tg" href="https://t.me/{_e(config.bot_username)}">Оставить заявку в Telegram</a>
 <a class="way site" href="/request">Оставить заявку на сайте</a></div>
 <h2>Частые вопросы</h2><div class="faq">{faq}</div>
-<h2>Другие услуги</h2><p class="also">{others}</p>
+{reading}<h2>Другие услуги</h2><p class="also">{others}</p>
 <p class="hint">Работаем в {AREA}. <a href="/contact">Связаться с администратором</a></p>
 </main>{brand.public_footer()}</body></html>"""
 

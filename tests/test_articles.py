@@ -79,6 +79,28 @@ class Articles(unittest.IsolatedAsyncioTestCase):
             for bad in ("круглосуточно", "гарантируем", "лицензи", "дешевле всех", "вылечит", "лечение"):
                 self.assertNotIn(bad, body, a["title"])
 
+    async def test_audit_blocks_faq_dates_help_and_crosslinks(self):
+        for path in SLUGS:
+            t = await (await self.client.get(path)).text()
+            self.assertIn('"@type": "FAQPage"', t, path)
+            self.assertIn("Частые вопросы", t, path)
+            self.assertIn("Как мы можем помочь", t, path)
+            self.assertIn("Обновлено", t, path)
+            self.assertIn(f'"dateModified": "{articles.UPDATED}"', t, path)
+            for other in SLUGS:
+                if other != path:
+                    self.assertIn(f'href="{other}"', t, path)
+
+    async def test_service_pages_link_back_to_their_articles(self):
+        for path, a in articles.ARTICLES.items():
+            t = await (await self.client.get(a["service"])).text()
+            self.assertIn("Полезно почитать", t)
+            self.assertIn(f'href="{path}"', t)
+
+    async def test_titles_are_unique(self):
+        titles = [a["title"] for a in articles.ARTICLES.values()]
+        self.assertEqual(len(titles), len(set(titles)))
+
 
 if __name__ == "__main__":
     unittest.main()
