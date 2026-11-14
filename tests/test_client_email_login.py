@@ -36,7 +36,7 @@ class ClientEmailLoginTest(unittest.IsolatedAsyncioTestCase):
         async def fake_send(to, subject, body):
             self.sent.append((to, subject, body))
             return True
-        self.patches = [mock.patch.object(mailer, "configured", return_value=True),
+        self.patches = [mock.patch.object(mailer, "client_mail_on", return_value=True),
                         mock.patch.object(mailer, "send", side_effect=fake_send)]
         for p in self.patches:
             p.start()
@@ -110,7 +110,7 @@ class ClientEmailLoginTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.sent, [])
 
     async def test_without_mail_server_it_says_so(self):
-        with mock.patch.object(mailer, "configured", return_value=False):
+        with mock.patch.object(mailer, "client_mail_on", return_value=False):
             t = await (await self.ask(MAIL)).text()
         self.assertIn("не настроена", t)
         self.assertEqual(self.sent, [])

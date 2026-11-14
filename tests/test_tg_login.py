@@ -103,8 +103,8 @@ class AdminExplained(unittest.TestCase):
     def test_constant_and_page_script(self):
         self.assertIn("администратора", webchat.ADMIN_AS_CLIENT_TEXT)
         import inspect
-        self.assertIn("j.admin", inspect.getsource(webchat.page_login_tg))
-        self.assertIn("ADMIN_AS_CLIENT_TEXT", inspect.getsource(webchat.page_login_tg))
+        self.assertIn("j.admin", inspect.getsource(webchat._tg_page))
+        self.assertIn("ADMIN_AS_CLIENT_TEXT", inspect.getsource(webchat._tg_page))
 
 
 if __name__ == "__main__":
