@@ -142,7 +142,7 @@ async def _process_web_request_notification(bot: Bot, notification: dict) -> boo
         if not delivered:
             raise RuntimeError("Telegram delivery was not confirmed")
     except Exception as exc:
-        error = f"{type(exc).__name__}: {exc}"[:500]
+        error = type(exc).__name__[:80] or "UnknownError"
         if notification["attempts"] >= WEB_REQUEST_NOTIFICATION_MAX_ATTEMPTS:
             await _finish_web_request_notification(notification_id, "failed", error)
             log.error("Website lead notification %s permanently failed after %s attempts: %s",

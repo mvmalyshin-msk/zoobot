@@ -170,23 +170,24 @@ async def post_form(request: web.Request) -> web.Response:
         notification = await conn.execute(
             "INSERT INTO web_request_notifications (web_request_id) VALUES (?)", (rid,))
         notification_id = notification.lastrowid
-    lead = await db.fetch_one(
-        """SELECT r.*, s.name AS service, s.base_price
-           FROM web_requests r JOIN services s ON s.id=r.service_id WHERE r.id=?""",
-        (rid,))
-    text = web_request_notification_text(lead)
     try:
+        lead = await db.fetch_one(
+            """SELECT r.*, s.name AS service, s.base_price
+               FROM web_requests r JOIN services s ON s.id=r.service_id WHERE r.id=?""",
+            (rid,))
+        text = web_request_notification_text(lead)
         await talk.save(web_uid, "client", "in", text)
-    except Exception:
-        log.exception("Не удалось сохранить сообщение заявки №%s в чате", rid)
+    except Exception as exc:
+        log.error("Не удалось сохранить сообщение заявки №%s в чате (%s)", rid, type(exc).__name__[:80])
     try:
         await orders.notify(request.app["bot"], web_uid, f"✅ Заявка №{rid} принята. Администратор свяжется с вами и ответит здесь, в чате.")
-    except Exception:
-        log.exception("Не удалось подтвердить клиенту заявку с сайта №%s", rid)
+    except Exception as exc:
+        log.error("Не удалось подтвердить клиенту заявку с сайта №%s (%s)", rid, type(exc).__name__[:80])
     try:
         await process_web_request_notification(request.app["bot"], notification_id)
-    except Exception:
-        log.exception("Не удалось выполнить начальную доставку уведомления о заявке №%s", rid)
+    except Exception as exc:
+        log.error("Не удалось выполнить начальную доставку уведомления о заявке №%s (%s)",
+                  rid, type(exc).__name__[:80])
     resp = web.Response(text=render_done(rid), content_type="text/html", headers={"Cache-Control": "no-cache"})
     if new_token:
         webchat._set_cookie(request, resp, new_token)

@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("BOT_TOKEN", "1:x")
@@ -120,6 +121,31 @@ class HttpTest(unittest.TestCase):
             self.assertEqual(response.status, 500)
             self.assertEqual(await db.fetch_one("SELECT id FROM web_requests"), None)
             self.assertEqual(await db.fetch_one("SELECT id FROM web_request_notifications"), None)
+            self.assertEqual(sent, [])
+        self.run_app(case)
+
+    def test_post_commit_lead_read_failure_still_returns_accepted(self):
+        async def case(c, sent):
+            original_fetch = db.fetch_one
+
+            async def fail_lead_read(sql, params=()):
+                if "FROM web_requests r" in sql and "JOIN services" in sql:
+                    raise RuntimeError("sensitive-token-must-not-be-logged")
+                return await original_fetch(sql, params)
+
+            with mock.patch.object(db, "fetch_one", side_effect=fail_lead_read), \
+                    self.assertLogs("webform", level="ERROR") as captured:
+                response = await c.post("/request", data=GOOD)
+            self.assertEqual(response.status, 200)
+            self.assertIn("Заявка принята", await response.text())
+            request = await db.fetch_one("SELECT id FROM web_requests")
+            notification = await db.fetch_one(
+                "SELECT status, attempts, last_error FROM web_request_notifications")
+            self.assertIsNotNone(request)
+            self.assertEqual(notification["status"], "pending")
+            self.assertEqual(notification["attempts"], 1)
+            self.assertEqual(notification["last_error"], "RuntimeError")
+            self.assertNotIn("sensitive-token", "\n".join(captured.output))
             self.assertEqual(sent, [])
         self.run_app(case)
 

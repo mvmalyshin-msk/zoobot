@@ -71,7 +71,7 @@ class LeadNotificationTest(unittest.TestCase):
     def test_failures_back_off_and_end_in_visible_terminal_state(self):
         async def case():
             _, notification_id = await self.create_notification()
-            send = mock.AsyncMock(return_value=False)
+            send = mock.AsyncMock(side_effect=RuntimeError("https://example.test/?token=private"))
             with mock.patch.object(orders, "notify_admins", send), \
                     self.assertLogs("scheduler", level="ERROR") as captured:
                 for attempt in range(1, scheduler.WEB_REQUEST_NOTIFICATION_MAX_ATTEMPTS + 1):
@@ -97,12 +97,13 @@ class LeadNotificationTest(unittest.TestCase):
                             places=5)
                     else:
                         self.assertEqual(row["status"], "failed")
-                        self.assertIn("Telegram delivery was not confirmed", row["last_error"])
+                        self.assertEqual(row["last_error"], "RuntimeError")
 
             self.assertEqual(send.await_count, scheduler.WEB_REQUEST_NOTIFICATION_MAX_ATTEMPTS)
             self.assertFalse(send.await_args_list[0].kwargs["telegram_only"])
             self.assertTrue(all(call.kwargs["telegram_only"] for call in send.await_args_list[1:]))
             self.assertTrue(any("permanently failed" in message for message in captured.output))
+            self.assertNotIn("private", "\n".join(captured.output))
         self.run_case(case)
 
 
