@@ -94,7 +94,7 @@ ARTICLES = {
                       "Крупной собаке нужно больше места, корма и сил исполнителя, поэтому за неё почти всегда доплачивают. "
                       "Активным породам нужны долгие прогулки, а это тоже время.\n\n"
                       "### Формат передержки\n\n"
-                      "Комната в квартире исполнителя обычно дешевле зоогостиницы. В гостинице цена растёт вместе с размером "
+                      "На рынке комната в квартире исполнителя обычно дешевле зоогостиницы. В гостинице цена растёт вместе с размером "
                       "номера, наличием вольера и видеонаблюдения.\n\n"
                       "### Уход и прогулки\n\n"
                       "Сколько раз в день гулять, кормить по расписанию, вычёсывать — всё это влияет на сутки. "
@@ -345,6 +345,9 @@ text-decoration:none;font-weight:700}.list p{margin:2px 0 0;font-weight:400;colo
 .tbl caption{text-align:left;font-size:14px;color:#5b5047;padding:0 0 6px}.tbl th,.tbl td{border-bottom:1.5px solid #e8d6c4;padding:9px 8px;text-align:left;vertical-align:top;line-height:1.4}
 .tbl th{background:#fff1e6}figure{margin:16px 0}figure img{width:100%;height:auto;border-radius:16px;display:block}
 figcaption{font-size:14px;color:#5b5047;margin-top:6px}.midcta{background:#fff1e6;border-radius:16px;padding:6px 16px;margin:20px 0}
+@media(max-width:600px){.tbl table{min-width:0}.tbl thead{display:none}.tbl tr{display:block;border:1.5px solid #e8d6c4;border-radius:14px;
+padding:6px 12px;margin:0 0 10px;background:#fff}.tbl td{display:block;border:0;padding:4px 0}.tbl td:first-child{font-weight:700}
+.tbl td:not(:first-child)::before{content:attr(data-label) ": ";color:#8a7d72}}
 .about{font-size:15px;color:#5b5047}.about ul{padding-left:20px}.about li{margin:6px 0}
 """
 
@@ -387,7 +390,8 @@ def _section(s: dict) -> str:
     if s.get("table"):
         t = s["table"]
         head = "".join(f"<th>{_e(c)}</th>" for c in t["head"])
-        rows = "".join("<tr>" + "".join(f"<td>{_e(c)}</td>" for c in r) + "</tr>" for r in t["rows"])
+        rows = "".join("<tr>" + "".join(f'<td data-label="{_e(h)}">{_e(c)}</td>' for h, c in zip(t["head"], r)) + "</tr>"
+                       for r in t["rows"])
         cap = f"<caption>{_e(t['caption'])}</caption>" if t.get("caption") else ""
         out += f'<div class="tbl"><table>{cap}<thead><tr>{head}</tr></thead><tbody>{rows}</tbody></table></div>'
     if s.get("after"):
