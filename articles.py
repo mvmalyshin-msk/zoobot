@@ -96,7 +96,7 @@ def _e(v) -> str:
 
 
 CSS = servicepages.CSS + """
-.art p{line-height:1.6;margin:0 0 12px}.art h2{margin:24px 0 8px}.list a{display:block;padding:12px 0;border-top:1px solid #eadfd6;
+.art p{line-height:1.6;margin:0 0 12px}.art h2{margin:24px 0 8px}.list a{display:block;padding:12px 0;border-top:1.5px solid #c9b49a;
 text-decoration:none;font-weight:700}.list p{margin:2px 0 0;font-weight:400;color:#5b5047}
 """
 

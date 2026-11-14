@@ -5,7 +5,7 @@
 @font-face{font-family:"PT Sans";font-weight:700;font-style:normal;font-display:swap;src:url(/fonts/ptsans-bold.woff2) format("woff2")}
 :root{
   color-scheme:light;
-  --cream:#fdf6ec; --peach:#f9d9c0; --ink:#2b2b2b; --mute:#6f675e; --card:#ffffff; --line:#eadfce;
+  --cream:#fdf6ec; --peach:#f9d9c0; --ink:#2b2b2b; --mute:#6f675e; --card:#ffffff; --line:#c9b49a;
   --coral:#fc6751; --walk:#ff6c58; --nanny:#2eb2a5; --boarding:#3970d7; --taxi:#e6b13d; --err:#c62f1d;
   --radius:18px; --pill:999px;
   --font:"PT Sans",-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
