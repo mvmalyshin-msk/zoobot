@@ -50,7 +50,36 @@ async def _policy(request: web.Request) -> web.Response:
 
 
 async def _brand_css(request: web.Request) -> web.Response:
-    return web.FileResponse(WEBAPP_DIR / "brand.css", headers={"Cache-Control": "no-cache", "Content-Type": "text/css"})
+    # Браузер берёт стили из кэша сразу, а свежие подтягивает в фоне: на мобильной сети это экономит
+    # круг до сервера (~0,2–0,6 с) на каждой странице. Изменения стиля доходят не позже чем через 10 минут.
+    return web.Response(text=(WEBAPP_DIR / "brand.css").read_text(encoding="utf-8"), content_type="text/css",
+                        headers={"Cache-Control": "public, max-age=600, stale-while-revalidate=604800"})
+
+
+# Что сжимать: текст. Шрифты woff2, картинки png/webp/jpg уже сжаты — второй раз только тратит время.
+_COMPRESSIBLE = ("text/", "application/javascript", "application/json", "application/manifest+json", "image/svg+xml")
+_LONG_CACHE = ("/fonts/", "/images/", "/icons/", "/apple-touch-icon.png")
+LONG_CACHE = "public, max-age=2592000"   # 30 дней: шрифты и картинки меняются редко
+
+
+@web.middleware
+async def speed_middleware(request: web.Request, handler):
+    """Сжатие gzip, долгий кэш для шрифтов и картинок, Server-Timing (время сервера видно в браузере)."""
+    import time
+    t0 = time.perf_counter()
+    resp = await handler(request)
+    dur = (time.perf_counter() - t0) * 1000
+    try:
+        resp.headers["Server-Timing"] = f"app;dur={dur:.1f}"
+        if request.path.startswith(_LONG_CACHE) and "Cache-Control" not in resp.headers:
+            resp.headers["Cache-Control"] = LONG_CACHE
+        if (type(resp) is web.Response and resp.body is not None and len(resp.body) > 1024
+                and "gzip" in request.headers.get("Accept-Encoding", "")
+                and (resp.content_type or "").startswith(_COMPRESSIBLE) and "Content-Encoding" not in resp.headers):
+            resp.enable_compression(web.ContentCoding.gzip)
+    except (AttributeError, RuntimeError, TypeError):
+        pass                                   # уже отправленные/потоковые ответы оставляем как есть
+    return resp
 
 
 async def _sw(request: web.Request) -> web.Response:
@@ -75,7 +104,7 @@ async def _touch_icon(request: web.Request) -> web.Response:
 
 
 def make_app() -> web.Application:
-    app = web.Application()
+    app = web.Application(middlewares=[speed_middleware])
     app.router.add_get("/", _index)
     app.router.add_get("/map", _map)
     app.router.add_get("/healthz", _health)
