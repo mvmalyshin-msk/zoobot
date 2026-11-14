@@ -183,7 +183,9 @@ async def cmd_start_site_login(m: Message) -> None:
     import webchat
     if await webchat.confirm_tg_login(command_args(m), m.from_user.id):
         await repo.get_or_create_user(m.from_user)
-        await m.answer("✅ Готово! Вернитесь на сайт — кабинет откроется автоматически.")
+        await m.answer("✅ Готово! Вернитесь на сайт — кабинет откроется автоматически.\n"
+                       "Если страница закрылась или не открылась, нажмите кнопку ниже.",
+                       reply_markup=await webchat.tg_login_done_markup(m.from_user.id))
     elif m.from_user.id in config.admin_ids:
         import webchat
         await m.answer(webchat.ADMIN_AS_CLIENT_TEXT)

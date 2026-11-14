@@ -397,8 +397,9 @@ async def page_admin_chat(request: web.Request) -> web.Response:
     return _html_page(_chat_html(admin=True))
 
 
-_login_codes: dict[str, dict] = {}   # телефон -> {h, uid, to, exp, tries, sent}; живёт в памяти, код действует 10 минут
+# Коды и ожидающие входы хранятся в базе (loginstore.py): переживают перезапуск и пересборку хостинга.
 CODE_TTL, CODE_COOLDOWN, CODE_TRIES = 600, 60, 5
+LOGIN_COOKIE = "zcl"  # токен ожидающего входа через Telegram: Safari перезагрузил вкладку — продолжаем тот же вход
 
 
 def _login_shell(inner: str) -> web.Response:
@@ -415,28 +416,52 @@ def _yandex_on() -> bool:
     return phoneverify.enabled()
 
 
+def _mail_on() -> bool:
+    import mailer
+    return mailer.configured()
+
+
+_CODE_INPUT = ("<input name=\"code\" inputmode=numeric pattern=\"[0-9]*\" autocomplete=one-time-code maxlength=6 "
+               "placeholder='••••••' aria-label='Код из 6 цифр' required autofocus style='width:100%;font-size:1.3em;letter-spacing:.3em;text-align:center'>")
+
+
+def _resend(action: str, field: str, value: str) -> str:
+    """Кнопка «Отправить код ещё раз»: первые 60 секунд неактивна (сервер всё равно не шлёт код чаще)."""
+    import html as _h
+    return (f"<form method=post action=\"{action}\" style='margin-top:14px'>"
+            f"<input type=hidden name={field} value='{_h.escape(value, quote=True)}'>"
+            f"<button id=rs class='btn ghost' style='width:100%' disabled>Отправить код ещё раз</button></form>"
+            "<script>(function(){var b=document.getElementById('rs'),n=" + str(CODE_COOLDOWN) + ",t=b.textContent;"
+            "function s(){if(n<=0){b.disabled=false;b.textContent=t;return}b.textContent=t+' через '+n+' с';n--;setTimeout(s,1000)}s()})();</script>")
+
+
 def _phone_form(msg: str = "") -> web.Response:
+    """Вход и регистрация. Показываем только способы, которые сейчас работают: почта — когда настроена,
+    Яндекс ID — когда подключён. Telegram — первым: один тап, без ввода кодов."""
     note = f"<p style='color:#b3261e'>{msg}</p>" if msg else ""
     gap = "<p class=muted style='text-align:center;margin:22px 0 10px'>{}</p>"
     return _login_shell(
         "<h2 style='text-align:center'>Вход и регистрация</h2>"
-        "<p class=muted style='text-align:center'>Выберите, как удобнее. Новым клиентам отдельная регистрация не нужна: "
-        "при первом входе кабинет создаётся сам.</p>"
+        "<p class=muted style='text-align:center'>Регистрация отдельно не нужна: при первом входе кабинет создаётся сам.</p>"
         f"{note}"
         "<p><a class=\"btn\" style='display:block;text-align:center' href=\"/chat/login/tg\">✈️ Войти через Telegram</a></p>"
+        "<p class=muted style='text-align:center;font-size:.9em;margin-top:-4px'>Подтвердите в Telegram и вернитесь сюда — кабинет откроется сам.</p>"
         + ("<p><a class=\"btn ghost\" style='display:block;text-align:center' href=\"/chat/login/yandex\">"
            "Войти через Яндекс ID</a></p>" if _yandex_on() else "")
-        + gap.format("или по почте — без Telegram и VPN") +
-        "<form method=post action=\"/chat/login/email\"><label>Почта</label>"
-        "<input name=\"email\" type=email inputmode=email autocomplete=email placeholder='name@example.com' required style='width:100%'>"
-        "<button class='btn ghost' style='width:100%;margin-top:10px'>Получить код на почту</button></form>"
-        + gap.format("или по номеру телефона") +
-        "<form method=post action=\"/chat/login/phone\"><label>Телефон</label>"
+        + (gap.format("или по почте — без Telegram и VPN") +
+           "<form method=post action=\"/chat/login/email\"><label>Почта</label>"
+           "<input name=\"email\" type=email inputmode=email autocomplete=email placeholder='name@example.com' required style='width:100%'>"
+           "<button class='btn ghost' style='width:100%;margin-top:10px'>Получить код на почту</button></form>"
+           if _mail_on() else "")
+        + "<details style='margin-top:22px'><summary class=muted style='cursor:pointer;text-align:center'>"
+        "Уже заказывали в боте? Войти по номеру телефона</summary>"
+        "<form method=post action=\"/chat/login/phone\" style='margin-top:10px'><label>Телефон</label>"
         "<input name=\"phone\" type=tel inputmode=tel autocomplete=tel placeholder='+7 900 000-00-00' required style='width:100%'>"
         "<button class='btn ghost' style='width:100%;margin-top:10px'>Получить код в Telegram</button></form>"
         "<p class=muted style='font-size:.9em;margin-top:8px'>Код придёт в Telegram только если номер уже есть у нас и вы раньше открывали бота. СМС мы не отправляем.</p>"
-        "<p class=muted style='margin-top:22px;text-align:center'>Не хотите входить? "
-        "<a href=\"/request\">Оставьте заявку</a> — администратор свяжется с вами.</p>")
+        "</details>"
+        "<p class=muted style='margin-top:22px;text-align:center'>Нет Telegram? "
+        "<a href=\"/request\">Оставьте заявку</a> — администратор свяжется с вами по телефону.</p>")
 
 
 def _email_code_form(email: str, msg: str = "") -> web.Response:
@@ -446,8 +471,8 @@ def _email_code_form(email: str, msg: str = "") -> web.Response:
         "<h2 style='text-align:center'>Введите код из письма</h2>"
         f"<p>Мы отправили код на {_h.escape(email)}. Он действует 10 минут. Проверьте и папку «Спам».</p>"
         f"{note}<form method=post action=\"/chat/login/emailcode\"><input type=hidden name=email value='{_h.escape(email, quote=True)}'>"
-        "<input name=\"code\" inputmode=numeric autocomplete=one-time-code maxlength=6 placeholder='6 цифр' required style='width:100%'>"
-        "<button class='btn' style='width:100%;margin-top:12px'>Войти</button></form>"
+        f"{_CODE_INPUT}<button class='btn' style='width:100%;margin-top:12px'>Войти</button></form>"
+        + _resend("/chat/login/email", "email", email) +
         "<p class=muted style='margin-top:18px'><a href=\"/chat/login\">Другой способ входа</a></p>")
 
 
@@ -458,16 +483,15 @@ def _code_form(phone: str, msg: str = "") -> web.Response:
         "<h2 style='text-align:center'>Введите код</h2>"
         "<p>Если этот номер есть у нас и привязан к Telegram, код уже там (в чате с ботом). Он действует 10 минут.</p>"
         f"{note}<form method=post action=\"/chat/login/code\"><input type=hidden name=phone value='{_h.escape(phone, quote=True)}'>"
-        "<input name=\"code\" inputmode=numeric autocomplete=one-time-code maxlength=6 placeholder='6 цифр' required style='width:100%'>"
-        "<button class='btn' style='width:100%;margin-top:12px'>Войти</button></form>"
+        f"{_CODE_INPUT}<button class='btn' style='width:100%;margin-top:12px'>Войти</button></form>"
+        + _resend("/chat/login/phone", "phone", phone) +
         "<p class=muted style='margin-top:18px'>Код не пришёл? Номера может не быть в нашей базе — "
         "<a href=\"/chat/login/tg\">войдите через Telegram</a>"
         + (", <a href=\"/chat/login/yandex\">через Яндекс ID</a>" if _yandex_on() else "")
         + ". Или <a href=\"/chat/login\">введите другой номер</a>.</p>")
 
 
-_tg_logins: dict[str, dict] = {}   # токен ожидающего входа -> {tg, exp}; живёт в памяти, 10 минут
-TG_LOGIN_TTL = 600
+TG_LOGIN_TTL = 600   # ожидающий вход через Telegram (loginstore, вид 'tg', ключ — хеш токена) живёт 10 минут
 
 
 ADMIN_AS_CLIENT_TEXT = ("Этот Telegram — администратора, поэтому кабинет клиента с него не открывается. Администратор входит в портал. "
@@ -476,14 +500,28 @@ ADMIN_AS_CLIENT_TEXT = ("Этот Telegram — администратора, п�
 
 async def confirm_tg_login(token: str, tg_id: int) -> bool:
     """Бот зовёт это, когда клиент нажал «Start» по ссылке входа. Админ так не входит: у него портал."""
-    entry = _tg_logins.get(token)
-    if entry and entry["exp"] >= time.time() and entry["tg"] is None and tg_id in config.admin_ids:
-        entry["admin"] = True
+    import loginstore
+    if not token:
         return False
-    if not entry or entry["exp"] < time.time() or entry["tg"] is not None:
+    entry = await loginstore.get("tg", _hash(token))
+    if not entry or entry.get("tg") is not None:
+        return False
+    if tg_id in config.admin_ids:
+        entry["admin"] = True
+        await loginstore.update("tg", _hash(token), entry)
         return False
     entry["tg"] = tg_id
+    await loginstore.update("tg", _hash(token), entry)
     return True
+
+
+async def tg_login_done_markup(tg_id: int):
+    """Кнопка в ответе бота после входа: если вкладка с сайтом закрылась или не дождалась — кабинет откроется по ней."""
+    from aiogram.types import InlineKeyboardButton
+    if not config.webapp_url:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+        text="🔓 Открыть кабинет на сайте", url=await make_login_link(tg_id))]])
 
 
 async def _logged_in(request: web.Request) -> bool:
@@ -498,36 +536,59 @@ async def _logged_in(request: web.Request) -> bool:
 
 
 async def page_login_tg(request: web.Request) -> web.Response:
+    import loginstore
     if await _logged_in(request):        # уже вошёл — кабинет, а не повторный вход
         return web.Response(status=302, headers={"Location": "/chat"})
-    now = time.time()
-    for k in [k for k, v in _tg_logins.items() if v["exp"] < now]:
-        _tg_logins.pop(k, None)
-    token = secrets.token_urlsafe(18)
-    _tg_logins[token] = {"tg": None, "exp": now + TG_LOGIN_TTL}
+    # Safari на iPhone, вернувшись из Telegram, может перезагрузить вкладку: продолжаем тот же вход, а не заводим новый
+    token = "" if request.query.get("new") else request.cookies.get(LOGIN_COOKIE, "")
+    entry = await loginstore.get("tg", _hash(token)) if token else None
+    if not entry or entry.get("admin"):
+        token = secrets.token_urlsafe(18)
+        await loginstore.put("tg", _hash(token), {"tg": None}, TG_LOGIN_TTL)
     link = f"https://t.me/{config.bot_username}?start=lg_{token}"
-    return _login_shell(
+    resp = _login_shell(
         "<h2 style='text-align:center'>Вход через Telegram</h2>"
-        "<p>Нажмите кнопку, в Telegram нажмите «Запустить» (Start) — кабинет откроется на этой странице автоматически.</p>"
+        "<ol style='padding-left:20px;line-height:1.5'><li>Нажмите «Открыть Telegram».</li>"
+        "<li>В чате с ботом нажмите «Запустить» (Start) внизу экрана.</li>"
+        "<li>Вернитесь сюда — кабинет откроется сам. Если нет, нажмите в Telegram кнопку «Открыть кабинет на сайте».</li></ol>"
         f"<p><a class=\"btn\" style='display:block;text-align:center' href=\"{link}\">Открыть Telegram</a></p>"
-        "<p id=st class=muted>Ждём подтверждения…</p>"
-        "<script>(function(){var t=" + json.dumps(token) + ";function p(){fetch('/chat/login/tg/poll?t='+encodeURIComponent(t),{credentials:'same-origin'})"
-        ".then(function(r){return r.json()}).then(function(j){if(j.ok){location.href='/chat'}else if(j.admin){document.getElementById('st').textContent=" + json.dumps(ADMIN_AS_CLIENT_TEXT) + "}else{setTimeout(p,2000)}})"
-        ".catch(function(){setTimeout(p,4000)})}setTimeout(p,2000)})();</script>"
-        "<p class=muted style='margin-top:18px'><a href=\"/chat/login\">Войти по номеру телефона</a></p>")
+        "<p id=st class=muted style='text-align:center'>Ждём подтверждения из Telegram…</p>"
+        "<script>(function(){var t=" + json.dumps(token) + ",tm,busy=0,done=0,st=document.getElementById('st');"
+        "function later(ms){clearTimeout(tm);tm=setTimeout(p,ms)}"
+        "function p(){if(busy||done)return;busy=1;fetch('/chat/login/tg/poll?t='+encodeURIComponent(t),{credentials:'same-origin',cache:'no-store'})"
+        ".then(function(r){return r.json()}).then(function(j){busy=0;"
+        "if(j.ok){done=1;st.textContent='Готово, открываем кабинет…';location.replace('/chat')}"
+        "else if(j.admin){done=1;st.textContent=" + json.dumps(ADMIN_AS_CLIENT_TEXT) + "}"
+        "else if(j.gone){done=1;st.innerHTML='Время ожидания вышло. <a href=\"/chat/login/tg?new=1\">Начать вход заново</a>'}"
+        "else{later(2000)}}).catch(function(){busy=0;later(4000)})}"
+        # вернулся из Telegram — проверяем сразу, не дожидаясь таймера (iOS замораживает таймеры фоновой вкладки)
+        "document.addEventListener('visibilitychange',function(){if(!document.hidden)p()});"
+        "window.addEventListener('pageshow',function(){p()});window.addEventListener('focus',function(){p()});"
+        "later(1500)})();</script>"
+        "<p class=muted style='margin-top:18px;text-align:center'><a href=\"/chat/login\">Другой способ входа</a></p>")
+    resp.set_cookie(LOGIN_COOKIE, token, max_age=TG_LOGIN_TTL, httponly=True, samesite="Lax", path="/chat/login",
+                    secure=request.headers.get("X-Forwarded-Proto", request.scheme) == "https")
+    return resp
 
 
 async def poll_login_tg(request: web.Request) -> web.Response:
+    import loginstore
     token = request.query.get("t", "")
-    entry = _tg_logins.get(token)
-    if entry and entry.get("admin") and entry["exp"] >= time.time():
+    key = _hash(token)
+    entry = await loginstore.get("tg", key) if token else None
+    if entry is None:
+        return web.json_response({"ok": False, "gone": True})   # устарел или неизвестен: странице есть что сказать
+    if entry.get("admin"):
         return web.json_response({"ok": False, "admin": True})
-    if not entry or entry["tg"] is None or entry["exp"] < time.time():
+    if entry.get("tg") is None:
         return web.json_response({"ok": False})
-    _tg_logins.pop(token, None)                       # одноразово
+    entry = await loginstore.take("tg", key)                     # одноразово, даже если два опроса пришли разом
+    if not entry or entry.get("tg") is None:
+        return web.json_response({"ok": False, "gone": True})
     session = await new_session(entry["tg"], device=device_label(request.headers.get("User-Agent")), ip=client_ip(request))
     resp = web.json_response({"ok": True})
     _set_cookie(request, resp, session)
+    resp.del_cookie(LOGIN_COOKIE, path="/chat/login")
     return resp
 
 
@@ -539,48 +600,51 @@ async def post_login_phone(request: web.Request) -> web.Response:
     phone = normalize_phone(str((await request.post()).get("phone", "")))
     if phone is None:
         return _phone_form("Проверьте номер: нужен российский, например +7 900 000-00-00.")
+    import loginstore
     now = time.time()
-    old = _login_codes.get(phone)
-    if old and now - old["sent"] < CODE_COOLDOWN:
-        return _code_form(phone)                      # слишком часто: новый код не шлём, старый ещё действует
+    old = await loginstore.get("ph", phone)
+    if old and now - old["sent"] < CODE_COOLDOWN:      # слишком часто: новый код не шлём, прежний ещё действует
+        return _code_form(phone, "Код уже отправлен. Новый можно запросить через минуту.")
     user = await db.fetch_one(
         "SELECT * FROM users WHERE phone=? AND erased_at IS NULL ORDER BY (tg_id>0) DESC, id LIMIT 1", (phone,))
     to = None
     if user and user["tg_id"] not in config.admin_ids:
         to = user["tg_id"] if user["tg_id"] > 0 else user["verified_tg_id"]
-    entry = {"h": "", "uid": None, "to": None, "exp": now + CODE_TTL, "tries": 0, "sent": now}
+    entry = {"h": "", "uid": None, "to": None, "tries": 0, "sent": now}
     if user and to and to not in config.admin_ids:
         import orders
         code = f"{secrets.randbelow(10**6):06d}"
         if await orders.notify(request.app["bot"], to, f"Код для входа на сайт Зооконсьерж: {code}\n"
                                "Никому его не сообщайте. Если это были не вы — просто проигнорируйте."):
             entry.update(h=_hash(f"{phone}:{code}"), uid=user["tg_id"], to=to)
-    _login_codes[phone] = entry                       # для неизвестных номеров запись пустая: ответ тот же, угадать нечего
+    await loginstore.put("ph", phone, entry, CODE_TTL)  # для неизвестных номеров запись пустая: ответ тот же, угадать нечего
     return _code_form(phone)
 
 
 async def post_login_code(request: web.Request) -> web.Response:
+    import loginstore
     import portal
     from utils import normalize_phone
     if not portal._same_origin(request):
         return web.Response(status=403, text="Нет доступа")
     form = await request.post()
     phone = normalize_phone(str(form.get("phone", ""))) or ""
-    entry = _login_codes.get(phone)
+    entry = await loginstore.get("ph", phone) if phone else None
     code = re.sub(r"\D", "", str(form.get("code", "")))
-    if not entry or not entry["h"] or entry["exp"] < time.time() or entry["tries"] >= CODE_TRIES:
+    if not entry or not entry["h"] or entry["tries"] >= CODE_TRIES:
         return _code_form(phone, "Код не подошёл или устарел. Запросите новый.")
     entry["tries"] += 1
+    await loginstore.update("ph", phone, entry)
     if not secrets.compare_digest(entry["h"], _hash(f"{phone}:{code}")):
         return _code_form(phone, "Неверный код.")
-    _login_codes.pop(phone, None)                     # код одноразовый
-    token = await new_session(entry["uid"], device=device_label(request.headers.get("User-Agent")))
+    if not await loginstore.take("ph", phone):        # код одноразовый
+        return _code_form(phone, "Код не подошёл или устарел. Запросите новый.")
+    token = await new_session(entry["uid"], device=device_label(request.headers.get("User-Agent")), ip=client_ip(request))
     resp = web.Response(status=302, headers={"Location": "/chat"})
     _set_cookie(request, resp, token)
     return resp
 
 
-_email_codes: dict[str, dict] = {}   # почта -> {h, exp, tries, sent}; в памяти, код действует 10 минут
 _EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]{2,}$")
 
 
@@ -601,10 +665,11 @@ async def post_login_email(request: web.Request) -> web.Response:
         return _phone_form("Проверьте адрес почты: он должен выглядеть как name@example.com.")
     if not mailer.configured():
         return _phone_form("Почта для входа ещё не настроена. Войдите через Telegram или оставьте заявку.")
+    import loginstore
     now = time.time()
-    old = _email_codes.get(email)
-    if old and now - old["sent"] < CODE_COOLDOWN:
-        return _email_code_form(email)                 # слишком часто: новое письмо не шлём, прежний код действует
+    old = await loginstore.get("em", email)
+    if old and now - old["sent"] < CODE_COOLDOWN:      # слишком часто: новое письмо не шлём, прежний код действует
+        return _email_code_form(email, "Письмо уже отправлено. Новый код можно запросить через минуту.")
     if portal._limit(portal._hits, "mail:" + client_ip(request), 8, 600):
         return _phone_form("Слишком много запросов. Подождите 10 минут.")
     if not await _is_admin_email(email):               # админ входит в портал, на его адрес клиентский код не шлём
@@ -612,24 +677,27 @@ async def post_login_email(request: web.Request) -> web.Response:
         if await mailer.send(email, "Зооконсьерж: код для входа",
                              f"Код для входа на сайт Зооконсьерж: {code}\nДействует 10 минут. "
                              "Никому его не сообщайте. Если это были не вы — просто удалите письмо."):
-            _email_codes[email] = {"h": _hash(f"{email}:{code}"), "exp": now + CODE_TTL, "tries": 0, "sent": now}
+            await loginstore.put("em", email, {"h": _hash(f"{email}:{code}"), "tries": 0, "sent": now}, CODE_TTL)
     return _email_code_form(email)                     # ответ одинаков для любого адреса
 
 
 async def post_login_emailcode(request: web.Request) -> web.Response:
+    import loginstore
     import portal
     if not portal._same_origin(request):
         return web.Response(status=403, text="Нет доступа")
     form = await request.post()
     email = str(form.get("email", "")).strip().lower()[:200]
     code = re.sub(r"\D", "", str(form.get("code", "")))
-    entry = _email_codes.get(email)
-    if not entry or entry["exp"] < time.time() or entry["tries"] >= CODE_TRIES:
+    entry = await loginstore.get("em", email) if email else None
+    if not entry or entry["tries"] >= CODE_TRIES:
         return _email_code_form(email, "Код не подошёл или устарел. Запросите новый.")
     entry["tries"] += 1
+    await loginstore.update("em", email, entry)
     if not secrets.compare_digest(entry["h"], _hash(f"{email}:{code}")):
         return _email_code_form(email, "Неверный код.")
-    _email_codes.pop(email, None)                      # код одноразовый
+    if not await loginstore.take("em", email):         # код одноразовый
+        return _email_code_form(email, "Код не подошёл или устарел. Запросите новый.")
     device, ip = device_label(request.headers.get("User-Agent")), client_ip(request)
     user = await db.fetch_one("SELECT * FROM users WHERE email=? AND erased_at IS NULL ORDER BY (tg_id>0) DESC, id LIMIT 1", (email,))
     if user and user["tg_id"] in config.admin_ids:
@@ -638,7 +706,7 @@ async def post_login_emailcode(request: web.Request) -> web.Response:
         token = await new_session(user["tg_id"], device=device, ip=ip)
     else:                                              # новый клиент: заводим кабинет с подтверждённой почтой
         token = await new_session(None, device=device, ip=ip)
-        uid = (await db.fetch_one("SELECT uid FROM web_sessions ORDER BY id DESC LIMIT 1"))["uid"]
+        uid = (await db.fetch_one("SELECT uid FROM web_sessions WHERE token_hash=?", (_hash(token),)))["uid"]  # своя сессия, не чужая последняя
         await db.execute("INSERT OR IGNORE INTO users (tg_id) VALUES (?)", (uid,))
         await db.execute("UPDATE users SET email=?, updated_at=datetime('now') WHERE tg_id=?", (email, uid))
     resp = web.Response(status=302, headers={"Location": "/chat"})

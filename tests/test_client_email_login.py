@@ -30,7 +30,7 @@ class ClientEmailLoginTest(unittest.IsolatedAsyncioTestCase):
         from aiohttp.test_utils import TestClient, TestServer
         await db.init_db()
         await db.execute("DELETE FROM users WHERE email IS NOT NULL")
-        webchat._email_codes.clear()
+        await db.execute("DELETE FROM pending_logins")
         self.sent = []
 
         async def fake_send(to, subject, body):
@@ -82,7 +82,7 @@ class ClientEmailLoginTest(unittest.IsolatedAsyncioTestCase):
         await self.ask(MAIL)
         await self.verify(MAIL, self.code())
         first = (await db.fetch_one("SELECT tg_id FROM users WHERE email=?", (MAIL,)))["tg_id"]
-        webchat._email_codes.clear()
+        await db.execute("DELETE FROM pending_logins")
         await self.ask(MAIL.upper())                     # регистр не важен
         await self.verify(MAIL, self.code())
         n = (await db.fetch_one("SELECT COUNT(*) AS n FROM users WHERE email=?", (MAIL,)))["n"]

@@ -234,6 +234,15 @@ CREATE TABLE IF NOT EXISTS analytics_ignore_vid (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """,
+    # 26: ожидающие входы на сайт и одноразовые коды — в базе, чтобы переживать перезапуск (loginstore.py)
+    26: """
+CREATE TABLE IF NOT EXISTS pending_logins (
+    k    TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    exp  REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pending_logins_exp ON pending_logins(exp);
+""",
     # 23: почта клиента — вход и регистрация по коду из письма (webchat.post_login_email)
     23: """
 ALTER TABLE users ADD COLUMN email TEXT;
