@@ -79,6 +79,20 @@ class HomePrices(unittest.IsolatedAsyncioTestCase):
         t = await (await self.client.get("/request?service=nonsense")).text()
         self.assertNotIn(" selected>", t)
 
+    async def test_cards_are_compact_colour_tiles(self):
+        """Вариант 5, выбран владельцем 14.11: цветные плитки без белого фона, маленькая иконка, стрелка, на iPhone 2×2."""
+        t = await self.home()
+        card = re.search(r"\.service-card\{([^}]*)\}", t).group(1)
+        self.assertIn("background:var(--t)", card)                    # фон — цвет услуги, а не белый
+        self.assertNotIn("min-height", card)                           # без пустого места
+        pad = [int(x) for x in re.search(r"padding:([\d px]+)", card).group(1).replace("px", "").split()]
+        self.assertTrue(max(pad) <= 14, pad)
+        icon = re.search(r"\.service-icon\{([^}]*)\}", t).group(1)
+        self.assertTrue(int(re.search(r"width:(\d+)px", icon).group(1)) <= 30)
+        self.assertEqual(t.count('class="chev"'), 4)                    # стрелка «перейти» на каждой плитке
+        mobile = t[t.index("@media(max-width:640px)"):]
+        self.assertIn(".services{grid-template-columns:repeat(2,minmax(0,1fr))", mobile.replace(" ", ""))
+
 
 if __name__ == "__main__":
     unittest.main()
