@@ -40,13 +40,15 @@ class PhoneLoginTest(unittest.IsolatedAsyncioTestCase):
         self.bot = FakeBot()
         app = webserver.make_app()
         app["bot"] = self.bot
-        webchat._login_codes.clear()
+        await db.execute("DELETE FROM pending_logins")
         self.client = TestClient(TestServer(app))
         await self.client.start_server()
         self.origin = f"http://{self.client.host}:{self.client.port}"
 
     async def asyncTearDown(self):
         await self.client.close()
+        # в общем прогоне база одна на все файлы: гость -77 с номером не должен достаться чужому тесту
+        await db.execute("DELETE FROM users WHERE tg_id IN (555, -77, 111)")
 
     def code(self):
         return re.search(r"\b(\d{6})\b", self.bot.sent[-1][1]).group(1)

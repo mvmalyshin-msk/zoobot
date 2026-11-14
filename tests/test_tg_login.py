@@ -24,7 +24,7 @@ class TgLoginTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         from aiohttp.test_utils import TestClient, TestServer
         await db.init_db()
-        webchat._tg_logins.clear()
+        await db.execute("DELETE FROM pending_logins")
         self.client = TestClient(TestServer(webserver.make_app()))
         await self.client.start_server()
         self.origin = f"http://{self.client.host}:{self.client.port}"
@@ -94,7 +94,7 @@ class TgLoginTest(unittest.IsolatedAsyncioTestCase):
         j = await (await self.poll(token)).json()
         self.assertEqual((j["ok"], j.get("admin")), (False, True))                  # страница узнаёт причину и объясняет её
         _, _, token2 = await self.start()
-        webchat._tg_logins[token2]["exp"] = 0
+        await db.execute("UPDATE pending_logins SET exp=0 WHERE k=?", ("tg:" + webchat._hash(token2),))
         self.assertFalse(await webchat.confirm_tg_login(token2, 555))
         self.assertEqual((await (await self.poll("garbage")).json())["ok"], False)
 
