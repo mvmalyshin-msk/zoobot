@@ -63,11 +63,15 @@ def sitemap_xml(base: str) -> str:
     return f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{rows}</urlset>'
 
 
+# Публичные коды подтверждения прав (не секреты): используются, если переменная окружения не задана.
+DEFAULT_VERIFICATION = {"YANDEX_VERIFICATION": "915082d5fc8d5cda"}
+
+
 def verification_tags() -> str:
     out = ""
     for env, name in (("YANDEX_VERIFICATION", "yandex-verification"), ("GOOGLE_VERIFICATION", "google-site-verification"),
                       ("BING_VERIFICATION", "msvalidate.01")):
-        v = (os.environ.get(env) or "").strip()
+        v = (os.environ.get(env) or DEFAULT_VERIFICATION.get(env, "")).strip()
         if v:
             out += f'<meta name="{name}" content="{html.escape(v, quote=True)}">'
     return out

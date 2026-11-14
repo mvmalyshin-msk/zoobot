@@ -82,7 +82,8 @@ class SeoTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('<meta name="google-site-verification" content="goo456">', t)
         self.assertIn('<meta name="msvalidate.01" content="bing789">', t)
         t = await (await self.client.get("/")).text()
-        self.assertNotIn("yandex-verification", t)
+        self.assertIn(f'content="{seo.DEFAULT_VERIFICATION["YANDEX_VERIFICATION"]}"', t)
+        self.assertNotIn("google-site-verification", t)
 
     async def test_verification_value_is_escaped(self):
         with mock.patch.dict(os.environ, {"YANDEX_VERIFICATION": '"><script>x</script>'}):
