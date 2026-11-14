@@ -4,6 +4,7 @@
 Каждая статья ведёт на страницу услуги и на заявку. Попадают в карту сайта (seo.PUBLIC_PAGES)."""
 import html as _html
 import json
+import re
 
 from aiohttp import web
 
@@ -11,12 +12,143 @@ import brand
 import seo
 import servicepages
 from config import config
+from utils import rub
 
 PUBLISHED = "2026-11-09"
 UPDATED = "2026-11-14"  # дата последнего обновления: меняйте при каждой правке текста статьи
 BASE = "/stati"
 
 ARTICLES = {
+    "/stati/skolko-stoit-perederzhka-sobaki-i-koshki": {
+        "published": "2026-11-15",
+        "title": "Сколько стоит передержка собаки и кошки в Москве, 2026",
+        "description": ("Цены на передержку собак и кошек в Москве и области в 2026 году: за сутки, на праздники, что входит "
+                        "и от чего зависит. Подберём 3 варианта под ваш бюджет."),
+        "h1": "Сколько стоит передержка собаки и кошки в Москве и области в 2026 году",
+        "lead": ("Сутки передержки в Москве в 2026 году стоят в среднем 1 290–1 890 ₽. Частные исполнители берут от 500 ₽ "
+                 "в сутки, а номер в сетевой зоогостинице стоит 1 600–2 600 ₽. Цена зависит от размера питомца, формата "
+                 "передержки, ухода и дат: на Новый год и майские праздники она обычно выше. Кошку, как правило, оставить "
+                 "дешевле, чем крупную собаку: ей не нужны прогулки. В «Зооконсьерже» передержка в частном доме стоит "
+                 "от {{boarding_home}} в сутки, в зоогостинице — от {{boarding_hotel}}. Ниже разбираем, из чего складывается "
+                 "цена, что входит в сутки и как не переплатить."),
+        "service": "/peredergka",
+        "service_name": "Подобрать передержку",
+        "cta_after": 3,
+        "cta_text": "Пришлём три варианта передержки с ценами — эконом, комфорт и комфорт с деталями",
+        "images": ["/images/stati/perederzhka-ceny-moskva-2026.svg", "/images/stati/iz-chego-skladyvaetsya-cena.svg"],
+        "help": ("Мы подбираем передержку в Москве и Московской области: у частного исполнителя или в зоогостинице. "
+                 "На каждую заявку присылаем три варианта по цене и уровню сервиса и учитываем породу, возраст, характер "
+                 "и страхи питомца. Поиск и проверка исполнителя уже входят в итоговую стоимость, скрытых доплат нет."),
+        "about": ("Статью подготовила команда «Зооконсьержа» — сервиса, который подбирает передержку, зооняню, выгул и "
+                  "зоотакси в Москве и Московской области. Рыночные цены взяты из открытых источников ниже и проверены "
+                  "15 ноября 2026 года; перед бронированием их стоит уточнять у исполнителя. Наши цены «от» подставляются "
+                  "на страницу из действующего прайса автоматически."),
+        "sources": [
+            ("Лайфхакер: спрос и цены на зоонянь и зоогостиницы в Москве, сентябрь 2026", "https://lifehacker.ru/zoonyani-i-zoogostinicy-v-moskve/"),
+            ("Т—Ж: Новогодние праздники с собакой — передержка или поездка, октябрь 2026", "https://t-j.ru/new-years-holidays-with-dog/"),
+            ("Т—Ж: С кем оставить питомца на время отпуска — сервисы домашней передержки", "https://t-j.ru/list/pet-sitters/"),
+        ],
+        "faq": [
+            ("Сколько стоит передержка собаки в Москве в сутки?",
+             "В среднем 1 290–1 890 ₽ в сутки. Частные исполнители начинают от 500 ₽, сетевые зоогостиницы берут 1 600–2 600 ₽ "
+             "за номер, премиальные — дороже. За крупную собаку обычно доплачивают."),
+            ("Сколько стоит передержка кошки?",
+             "Обычно дешевле, чем собаки: кошке не нужны прогулки. Но многим кошкам спокойнее дома, поэтому сравните "
+             "передержку с приходящей зооняней — при поездке на несколько дней это бывает выгоднее."),
+            ("Дорожает ли передержка на Новый год и праздники?",
+             "Да, многие зоогостиницы и исполнители поднимают цену на новогодние и майские праздники, а свободных мест "
+             "становится меньше. Бронируйте за месяц и заранее уточняйте праздничный тариф."),
+            ("Корм входит в стоимость передержки?",
+             "По-разному: где-то корм включён, где-то вы приносите свой. Для питомца лучше привычный корм — резкая смена "
+             "может вызвать проблемы с пищеварением. Спросите об этом до бронирования."),
+            ("Почему через сервис дороже, чем у частника с объявлением?",
+             "В цену сервиса входят поиск, проверка исполнителя и замена, если что-то пошло не так. Мы всегда показываем "
+             "и экономный вариант, чтобы вы сами выбрали, за что платить."),
+            ("Что будет, если питомцу станет плохо на передержке?",
+             "До заезда мы договариваемся, к какому ветеринару обращаться и кто принимает решения, если вы недоступны. "
+             "Исполнитель сразу сообщает вам и нам, а расходы на ветеринара оплачиваются отдельно."),
+            ("За сколько дней нужно оставить заявку?",
+             "Передержку записываем не позднее чем за сутки до начала. На праздники и лето лучше оставлять заявку за 3–4 недели, "
+             "чтобы было из чего выбрать."),
+        ],
+        "sections": [
+            {"h": "Сколько стоит передержка в Москве в 2026 году?",
+             "body": ("Короткий ответ: от 500 ₽ до 2 600 ₽ в сутки, в среднем 1 290–1 890 ₽. Разброс большой, потому что "
+                      "под словом «передержка» продают очень разные услуги — от комнаты в чужой квартире до отдельного номера "
+                      "с камерой и выгулом три раза в день."),
+             "table": {"caption": "Цены за сутки в Москве и области, ноябрь 2026",
+                       "head": ["Формат", "Цена за сутки", "Что обычно входит"],
+                       "rows": [["Частная передержка у исполнителя дома", "от 500 ₽", "проживание, кормление, прогулки для собак"],
+                                ["Средняя цена суток передержки или зооняни", "1 290–1 890 ₽", "зависит от условий и объёма ухода"],
+                                ["Сетевая зоогостиница", "1 600–2 600 ₽ за номер", "отдельный номер, уборка, распорядок"],
+                                ["«Зооконсьерж»: передержка в частном доме", "от {{boarding_home}}", "подбор и проверка исполнителя, фотоотчёты"],
+                                ["«Зооконсьерж»: передержка в зоогостинице", "от {{boarding_hotel}}", "подбор гостиницы под питомца"]]},
+             "after": ("Рыночные цены — по данным Лайфхакера и Т—Ж (ссылки в конце статьи). Это ориентир: точную сумму "
+                       "исполнитель называет после того, как узнаёт о питомце и датах."),
+             "img": {"src": "/images/stati/perederzhka-ceny-moskva-2026.svg",
+                     "alt": "Диаграмма: частная передержка от 500 ₽, средняя цена 1 290–1 890 ₽, зоогостиница 1 600–2 600 ₽ в сутки",
+                     "w": 720, "h": 360}},
+            {"h": "От чего зависит цена передержки?",
+             "body": ("Цену складывают шесть факторов. Зная их, проще сравнивать предложения и понять, за что вы платите.\n\n"
+                      "### Размер и порода\n\n"
+                      "Крупной собаке нужно больше места, корма и сил исполнителя, поэтому за неё почти всегда доплачивают. "
+                      "Активным породам нужны долгие прогулки, а это тоже время.\n\n"
+                      "### Формат передержки\n\n"
+                      "Комната в квартире исполнителя обычно дешевле зоогостиницы. В гостинице цена растёт вместе с размером "
+                      "номера, наличием вольера и видеонаблюдения.\n\n"
+                      "### Уход и прогулки\n\n"
+                      "Сколько раз в день гулять, кормить по расписанию, вычёсывать — всё это влияет на сутки. "
+                      "Одна прогулка в день и три — разные тарифы.\n\n"
+                      "### Особые нужды\n\n"
+                      "Лекарства по часам, пожилой возраст, щенок, сложный характер или страх других животных требуют "
+                      "опытного исполнителя и больше внимания.\n\n"
+                      "### Даты и срок\n\n"
+                      "Праздники и выходные дороже будней. Некоторые гостиницы считают день заезда и день выезда как полные "
+                      "сутки — уточняйте это заранее.\n\n"
+                      "### Район и трансфер\n\n"
+                      "Передержка за городом бывает дешевле, но питомца нужно туда довезти. Трансфер оплачивается отдельно, "
+                      "и у некоторых загородных гостиниц он стоит несколько тысяч рублей."),
+             "img": {"src": "/images/stati/iz-chego-skladyvaetsya-cena.svg",
+                     "alt": "Шесть факторов цены передержки: размер и порода, формат, уход и прогулки, особые нужды, даты и срок, район и трансфер",
+                     "w": 720, "h": 400}},
+            {"h": "Сколько стоит передержка кошки и чем она отличается от собачьей?",
+             "body": ("Передержка кошки обычно дешевле, чем крупной собаки: прогулки не нужны, а места требуется меньше. "
+                      "В зоогостиницах для кошек цену определяет номер — его размер, полки, окно, отдельный вход.\n\n"
+                      "Но для кошки важнее не цена, а стресс от переезда. Многие кошки спокойнее переносят ваш отъезд дома, "
+                      "если раз в день приходит зооняня: кормит, меняет наполнитель и играет. При поездке на несколько дней "
+                      "это часто и дешевле, и спокойнее.\n\n"
+                      "Передержку для кошки стоит выбирать, если вас не будет долго, ей нужны лекарства по часам или дома "
+                      "будет ремонт.")},
+            {"h": "Сколько выйдет передержка на новогодние праздники и в отпуск?",
+             "body": ("Новогодние каникулы 2026–2027 годов длятся 11 дней. По расчёту Т—Ж, 11 суток в сетевой московской "
+                      "зоогостинице обойдутся в 17 600–28 600 ₽, без праздничной надбавки, корма и трансфера.\n\n"
+                      "Если брать нашу цену «от» за передержку в частном доме, 11 суток — от {{boarding_home_x11}}. "
+                      "Итоговая сумма зависит от питомца и выбранного варианта.\n\n"
+                      "Чтобы бюджет не вырос в последний момент, спросите заранее о праздничном тарифе, о том, как считают "
+                      "день заезда и выезда, и о цене трансфера. И бронируйте рано: в декабре свободных мест заметно меньше.")},
+            {"h": "Что входит в стоимость передержки, а за что берут доплату?",
+             "body": ("Обычно в сутки входит проживание, кормление по вашему графику, свежая вода, уборка, для собак — "
+                      "прогулки, и новости о питомце: фото или короткое сообщение.\n\n"
+                      "Часто оплачиваются отдельно: корм, если вы его не привозите; дополнительные прогулки; приём "
+                      "лекарств; трансфер; видеонаблюдение; ветеринар, если он понадобится.\n\n"
+                      "Попросите исполнителя написать список «что входит» до заезда. Так вы сравните предложения честно, а не "
+                      "по одной цифре в объявлении.")},
+            {"h": "Как не переплатить и не сэкономить на безопасности?",
+             "body": ("Сравнивайте цену за одинаковый набор услуг. 900 ₽ без прогулок и 1 500 ₽ с тремя прогулками — "
+                      "это разные предложения.\n\n"
+                      "Насторожитесь, если исполнитель не отвечает на вопросы об условиях, не готов показать, где будет жить "
+                      "питомец, и не обещает присылать новости. Низкая цена в таком случае может обойтись дороже.\n\n"
+                      "Договоритесь о пробном дне или короткой встрече до отъезда. Так питомец познакомится с человеком, а вы "
+                      "увидите условия своими глазами.\n\n"
+                      "Обсудите заранее, к какому ветеринару обращаться и кто принимает решения, если вы недоступны.")},
+            {"h": "Как заказать передержку в «Зооконсьерже»?",
+             "body": ("Оставьте заявку в Telegram-боте или на сайте: укажите питомца, даты и пожелания. Это занимает около минуты.\n\n"
+                      "Мы уточним детали — характер, привычки, страхи, нужны ли лекарства — и назовём ориентировочную стоимость.\n\n"
+                      "Подберём три варианта: эконом, комфорт и комфорт с деталями. Вы сравните условия и цену и выберете сами.\n\n"
+                      "Во время передержки исполнитель присылает новости о питомце. Заявки принимаем ежедневно с 6:00 до 22:00 "
+                      "в Москве и Московской области.")},
+        ],
+    },
     "/stati/s-kem-ostavit-pitomca-na-novogodnie-prazdniki": {
         "published": "2026-11-15",
         "title": "С кем оставить кошку или собаку на новогодние праздники — Зооконсьерж",
@@ -209,6 +341,11 @@ CSS = servicepages.CSS + """
 text-decoration:none;font-weight:700}.list p{margin:2px 0 0;font-weight:400;color:#5b5047}
 .dates{font-size:14px;color:#5b5047;margin:0 0 10px}.help{border:1.5px solid #c9b49a;border-radius:16px;padding:4px 16px 8px;margin:24px 0}
 .help h2{margin-top:12px}.svc{font-weight:700}
+.art h3{margin:16px 0 6px;font-size:1.08rem}.tbl{overflow-x:auto;margin:6px 0 14px}.tbl table{border-collapse:collapse;width:100%;min-width:480px}
+.tbl caption{text-align:left;font-size:14px;color:#5b5047;padding:0 0 6px}.tbl th,.tbl td{border-bottom:1.5px solid #e8d6c4;padding:9px 8px;text-align:left;vertical-align:top;line-height:1.4}
+.tbl th{background:#fff1e6}figure{margin:16px 0}figure img{width:100%;height:auto;border-radius:16px;display:block}
+figcaption{font-size:14px;color:#5b5047;margin-top:6px}.midcta{background:#fff1e6;border-radius:16px;padding:6px 16px;margin:20px 0}
+.about{font-size:15px;color:#5b5047}.about ul{padding-left:20px}.about li{margin:6px 0}
 """
 
 _MONTHS = ("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")
@@ -233,35 +370,105 @@ def _head(title: str, desc: str, url: str, ld: str) -> str:
 {seo.verification_tags()}{ld}{brand.HEAD}<style>{CSS}</style></head>"""
 
 
-def render_article(path: str, base: str) -> str:
+def _ways(extra: str = "") -> str:
+    return (f'<div class="ways{extra}"><a class="way tg" href="https://t.me/{_e(config.bot_username)}">Оставить заявку в Telegram</a>'
+            '<a class="way site" href="/request">Оставить заявку на сайте</a></div>')
+
+
+def _para(p: str) -> str:
+    """Абзац; строка с «### » в начале — подзаголовок H3."""
+    if p.startswith("### "):
+        return f"<h3>{_e(p[4:])}</h3>"
+    return f"<p>{_e(p)}</p>"
+
+
+def _section(s: dict) -> str:
+    out = f"<h2>{_e(s['h'])}</h2>" + "".join(_para(p) for p in s["body"].split("\n\n"))
+    if s.get("table"):
+        t = s["table"]
+        head = "".join(f"<th>{_e(c)}</th>" for c in t["head"])
+        rows = "".join("<tr>" + "".join(f"<td>{_e(c)}</td>" for c in r) + "</tr>" for r in t["rows"])
+        cap = f"<caption>{_e(t['caption'])}</caption>" if t.get("caption") else ""
+        out += f'<div class="tbl"><table>{cap}<thead><tr>{head}</tr></thead><tbody>{rows}</tbody></table></div>'
+    if s.get("after"):
+        out += "".join(_para(p) for p in s["after"].split("\n\n"))
+    if s.get("img"):
+        i = s["img"]
+        out += (f'<figure><img src="{_e(i["src"])}" alt="{_e(i["alt"])}" width="{i.get("w", 720)}" height="{i.get("h", 360)}" '
+                f'loading="lazy" decoding="async"><figcaption>{_e(i["alt"])}</figcaption></figure>')
+    return out
+
+
+def fill_prices(text: str, prices: dict | None) -> str:
+    """Подставляет актуальные цены «от» из тарифов: {{boarding_home}}, {{boarding_home_x11}} (за 11 суток) и т. п.
+    Нет цены — «по запросу», чтобы на странице не осталось фигурных скобок."""
+    prices = prices or {}
+
+    def sub(m: re.Match) -> str:
+        code, _, mult = m.group(1).partition("_x")
+        if code not in prices:
+            return "по запросу"
+        return rub(prices[code] * (int(mult) if mult else 1)).replace(" ", "\u00a0")
+    return re.sub(r"\{\{([a-z0-9_]+)\}\}", sub, text)
+
+
+def render_article(path: str, base: str, prices: dict | None = None) -> str:
     a = ARTICLES[path]
     url = f"{base}{path}"
-    data = {"@context": "https://schema.org", "@type": "Article", "headline": a["h1"], "description": a["lead"],
-            "inLanguage": "ru", "datePublished": a.get("published", PUBLISHED), "dateModified": max(UPDATED, a.get("published", PUBLISHED)), "mainEntityOfPage": url,
-            "author": {"@type": "Organization", "name": brand.NAME},
+    published = a.get("published", PUBLISHED)
+    modified = max(UPDATED, published, a.get("updated", published))
+    desc = a.get("description", a["lead"])
+    data = {"@context": "https://schema.org", "@type": "Article", "headline": a["h1"], "description": desc,
+            "inLanguage": "ru", "datePublished": published, "dateModified": modified, "mainEntityOfPage": url,
+            "author": {"@type": "Organization", "name": brand.NAME, "url": f"{base}/"},
             "publisher": {"@type": "Organization", "name": brand.NAME, "url": f"{base}/"}}
+    if a.get("images"):
+        data["image"] = [f"{base}{src}" for src in a["images"]]
     faq_ld = {"@context": "https://schema.org", "@type": "FAQPage",
               "mainEntity": [{"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": t}} for q, t in a["faq"]]}
     ld = "".join('<script type="application/ld+json">' + json.dumps(d, ensure_ascii=False).replace("</", "<\\/") + "</script>"
                  for d in (data, faq_ld))
     faq = "".join(f"<details><summary>{_e(q)}</summary><p>{_e(t)}</p></details>" for q, t in a["faq"])
     also = "".join(f'<a href="{_e(k)}">{_e(v["h1"])}</a>' for k, v in ARTICLES.items() if k != path)
-    body = "".join(f"<h2>{_e(s['h'])}</h2>" + "".join(f"<p>{_e(p)}</p>" for p in s["body"].split("\n\n")) for s in a["sections"])
-    return _head(a["title"], a["lead"], url, ld) + f"""<body>{brand.public_header()}<main class="public-main art">
+    cta_after = a.get("cta_after")
+    body = ""
+    for n, sec in enumerate(a["sections"], 1):
+        body += _section(sec)
+        if n == cta_after:
+            body += (f'<div class="midcta"><p><b>{_e(a.get("cta_text", "Подберём вариант под вашего питомца"))}</b></p>'
+                     f'{_ways()}</div>')
+    about = ""
+    if a.get("about") or a.get("sources"):
+        src = "".join(f'<li><a href="{_e(u)}" rel="nofollow noopener" target="_blank">{_e(t)}</a></li>' for t, u in a.get("sources", []))
+        about = (f'<div class="about"><h2>Кто подготовил статью</h2><p>{_e(a.get("about", ""))}</p>'
+                 + (f"<p><b>Источники</b></p><ul>{src}</ul>" if src else "") + "</div>")
+    html_out = _head(a["title"], desc, url, ld) + f"""<body>{brand.public_header()}<main class="public-main art">
 <p class="eyebrow">СТАТЬИ О ПИТОМЦАХ</p>
 <h1>{_e(a["h1"])}</h1>
-<p class="dates">Опубликовано {_ru_date(a.get("published", PUBLISHED))} · Обновлено {_ru_date(max(UPDATED, a.get("published", PUBLISHED)))}</p>
+<p class="dates">Опубликовано {_ru_date(published)} · Обновлено {_ru_date(modified)}</p>
 <p class="lead">{_e(a["lead"])}</p>
 {body}
 <h2>Частые вопросы</h2><div class="faq">{faq}</div>
 <div class="help"><h2>Как мы можем помочь</h2><p>{_e(a["help"])}</p>
 <p><a class="svc" href="{_e(a["service"])}">{_e(a["service_name"])} →</a></p></div>
-<div class="ways"><a class="way tg" href="https://t.me/{_e(config.bot_username)}">Оставить заявку в Telegram</a>
-<a class="way site" href="/request">Оставить заявку на сайте</a></div>
+{_ways()}
 <p class="hint"><a href="{_e(a["service"])}">{_e(a["service_name"])}</a> · <a href="{BASE}">Все статьи</a> ·
 <a href="/contact">Связаться с администратором</a></p>
+{about}
 <h2>Читайте также</h2><p class="also">{also}</p>
 </main>{brand.public_footer()}</body></html>"""
+    return fill_prices(html_out, prices)
+
+
+async def current_prices() -> dict:
+    """Цены «от» для клиента по кодам услуг из тарифов (то же, что на главной)."""
+    import db
+    import pricing
+    try:
+        items = await pricing.with_client_price(await db.fetch_all("SELECT * FROM services WHERE active=1"))
+    except Exception:  # база недоступна — статья всё равно открывается, цены будут «по запросу»
+        return {}
+    return {s["code"]: s["from_price"] for s in items}
 
 
 def render_index(base: str) -> str:
@@ -285,7 +492,7 @@ def render_index(base: str) -> str:
 
 def _article_handler(path: str):
     async def handler(request: web.Request) -> web.Response:
-        return web.Response(text=render_article(path, seo.base_url(request)), content_type="text/html",
+        return web.Response(text=render_article(path, seo.base_url(request), await current_prices()), content_type="text/html",
                             headers={"Cache-Control": "no-cache"})
     return handler
 

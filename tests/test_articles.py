@@ -14,7 +14,7 @@ import articles  # noqa: E402
 import seo  # noqa: E402
 import webserver  # noqa: E402
 
-SLUGS = ("/stati/s-kem-ostavit-pitomca-na-novogodnie-prazdniki", "/stati/kak-vybrat-peredergku", "/stati/skolko-gulyat-s-sobakoi", "/stati/kak-podgotovit-koshku-k-otezdu")
+SLUGS = ("/stati/skolko-stoit-perederzhka-sobaki-i-koshki", "/stati/s-kem-ostavit-pitomca-na-novogodnie-prazdniki", "/stati/kak-vybrat-peredergku", "/stati/skolko-gulyat-s-sobakoi", "/stati/kak-podgotovit-koshku-k-otezdu")
 
 
 class Articles(unittest.IsolatedAsyncioTestCase):
@@ -100,6 +100,35 @@ class Articles(unittest.IsolatedAsyncioTestCase):
     async def test_titles_are_unique(self):
         titles = [a["title"] for a in articles.ARTICLES.values()]
         self.assertEqual(len(titles), len(set(titles)))
+
+    async def test_price_article_fills_live_prices_and_has_rich_blocks(self):
+        import db
+        await db.init_db()
+        path = "/stati/skolko-stoit-perederzhka-sobaki-i-koshki"
+        r = await self.client.get(path)
+        t = await r.text()
+        self.assertEqual(r.status, 200)
+        self.assertNotIn("{{", t)
+        prices = await articles.current_prices()
+        self.assertIn(articles.rub(prices["boarding_home"]).replace(" ", "\u00a0"), t)
+        self.assertIn(articles.rub(prices["boarding_home"] * 11).replace(" ", "\u00a0"), t)
+        self.assertIn("<table>", t)
+        self.assertGreaterEqual(t.count("<h3>"), 6)
+        self.assertGreaterEqual(t.count('<img src="/images/stati/'), 2)
+        self.assertNotIn('alt=""', t)
+        self.assertGreaterEqual(t.count('href="/request"'), 2)  # заявка в середине и в конце
+        self.assertIn("Источники", t)
+        self.assertGreaterEqual(t.count("<summary>"), 5)
+        title = articles.ARTICLES[path]["title"]
+        self.assertLessEqual(len(title), 60)
+        self.assertLessEqual(len(articles.ARTICLES[path]["description"]), 155)
+        for src in articles.ARTICLES[path]["images"]:
+            img = await self.client.get(src)
+            self.assertEqual(img.status, 200, src)
+
+    def test_fill_prices_without_data_leaves_no_braces(self):
+        self.assertEqual(articles.fill_prices("от {{boarding_home}}", {}), "от по запросу")
+        self.assertEqual(articles.fill_prices("{{x_x2}}", {"x": 1000}), "2\u00a0000\u00a0₽")
 
 
 if __name__ == "__main__":
