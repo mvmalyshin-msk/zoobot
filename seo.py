@@ -64,7 +64,8 @@ def sitemap_xml(base: str) -> str:
 
 
 # Публичные коды подтверждения прав (не секреты): используются, если переменная окружения не задана.
-DEFAULT_VERIFICATION = {"YANDEX_VERIFICATION": "915082d5fc8d5cda"}
+DEFAULT_VERIFICATION = {"YANDEX_VERIFICATION": "915082d5fc8d5cda",
+                        "GOOGLE_VERIFICATION": "uNzCoSEDesilILlnCSBVgA2uMTANMpcuuLsjSm1LVtg"}
 
 
 def verification_tags() -> str:
