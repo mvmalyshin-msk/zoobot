@@ -39,6 +39,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--coral)}
 .site-nav{display:flex;align-items:center;gap:24px}
 .site-nav a{color:var(--ink);font-size:.94rem;text-decoration:none}
 .site-nav a:hover,.site-footer a:hover{color:var(--coral)}
+.site-nav .site-nav-access{font-weight:700}
 .site-nav .site-nav-cta{padding:10px 18px;border-radius:var(--pill);background:var(--coral);color:#fff;font-weight:700}
 .site-nav .site-nav-cta:hover{background:#e95743;color:#fff}
 .site-footer{margin-top:72px;background:#282c2b;color:#fdf6ec}
@@ -67,6 +68,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--coral)}
 .public-form button{min-height:50px;border-radius:10px}
 .public-form .form-note{font-size:.88rem;color:var(--mute);line-height:1.5}
 .eyebrow{margin:0 0 12px;color:#8f5749;font-size:.77rem;font-weight:700;letter-spacing:.11em;text-transform:uppercase}
+@media(max-width:1024px){
+  .site-nav{gap:14px}
+  .site-nav>a[href="/#services"],.site-nav>a[href="/#how-it-works"]{display:none}
+}
+@media(max-width:900px){
+  .site-nav>a[href="/stati"]{display:none}
+}
 @media(max-width:760px){
   .site-header-inner{min-height:66px;padding:10px 18px;gap:12px}
   .site-header .brand{font-size:1rem}
@@ -79,6 +87,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--coral)}
   .site-footer .site-footer-area{grid-column:1/-1}
   .public-main{padding:24px 18px}
   .public-form{padding:24px 18px 8px}
+  .public-form h1{font-size:clamp(1.7rem,7vw,2.2rem);line-height:1.15;letter-spacing:normal}
+  .eyebrow{font-size:.72rem;letter-spacing:.06em;line-height:1.35}
 }
 @media(max-width:520px){
   .public-form form{padding:18px 16px;border-radius:18px}

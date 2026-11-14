@@ -55,6 +55,19 @@ class HomeTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("__HEADER__", t)
         self.assertNotIn("__FOOTER__", t)
 
+    async def test_client_and_admin_login_links_are_visible_on_home(self):
+        t = await self.home()
+        self.assertIn('<a href="/chat/login">Войти как клиент</a>', t)
+        self.assertIn('<a href="/portal">Войти как администратор</a>', t)
+        self.assertIn('src="/images/hero-mascot.png"', t)
+        self.assertIn('alt="Персонаж Зооконсьержа с собакой"', t)
+
+    async def test_original_mascot_image_is_served_locally(self):
+        response = await self.client.get("/images/hero-mascot.png")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.content_type, "image/png")
+        self.assertTrue((await response.read()).startswith(b"\x89PNG\r\n\x1a\n"))
+
     async def test_home_presents_services_and_process(self):
         t = await self.home()
         self.assertIn("Забота о питомце — без суеты", t)

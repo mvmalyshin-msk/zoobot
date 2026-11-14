@@ -99,6 +99,7 @@ def make_app() -> web.Application:
     phoneverify.setup(app)
     app.router.add_static("/vendor/", WEBAPP_DIR / "vendor", follow_symlinks=False)
     app.router.add_static("/fonts/", WEBAPP_DIR / "fonts", follow_symlinks=False)
+    app.router.add_static("/images/", WEBAPP_DIR / "images", follow_symlinks=False)
     app.router.add_static("/icons/", WEBAPP_DIR / "icons", follow_symlinks=False)
     app.router.add_get("/brand.css", _brand_css)
     app.router.add_get("/manifest.webmanifest", _manifest)
