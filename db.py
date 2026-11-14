@@ -239,6 +239,12 @@ CREATE TABLE IF NOT EXISTS analytics_ignore_vid (
 ALTER TABLE users ADD COLUMN email TEXT;
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 """,
+    # 26: bounded retries for reminder delivery; terminal_reason distinguishes failed/skipped from sent.
+    26: """
+ALTER TABLE reminders ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE reminders ADD COLUMN terminal_reason TEXT;
+CREATE INDEX IF NOT EXISTS idx_reminders_due_retry ON reminders(sent, terminal_reason, send_at);
+""",
     # 14: шаги диалога (FSM) — в базе, чтобы переживать перезапуск бота (см. fsm_store.py)
     14: """
     CREATE TABLE IF NOT EXISTS fsm (
