@@ -12,7 +12,7 @@ import os
 from aiohttp import web
 
 import db
-import orders
+from scheduler import process_web_request_notification
 from utils import normalize_phone
 
 log = logging.getLogger(__name__)
@@ -76,10 +76,12 @@ async def post_lead(request: web.Request) -> web.Response:
                VALUES (NULL,?,?,?,?,?,?,?)""",
             (lead["name"], lead["phone"], "call", SITE_PREFIX + lead["site"], None, lead["pet"], lead["comment"]))
         rid = cur.lastrowid
-    text = f"🌐 Заявка с сайта «{lead['site']}» №{rid}\n{lead['comment'].split(chr(10), 1)[1]}\n" \
-           "Свяжитесь с клиентом по телефону."
+        notification = await conn.execute(
+            "INSERT INTO web_request_notifications (web_request_id) VALUES (?)", (rid,))
+        notification_id = notification.lastrowid
     try:
-        await orders.notify_admins(request.app["bot"], text[:3900], copy_helper=False)  # владельцу заявку сайта конструктора уже прислал сам workbot
-    except Exception:  # noqa: BLE001 — заявка уже записана, админ увидит её в портале
-        log.exception("Не удалось уведомить админа о заявке с сайта №%s", rid)
+        await process_web_request_notification(request.app["bot"], notification_id)
+    except Exception as exc:  # noqa: BLE001 — заявка уже записана; планировщик повторит доставку
+        log.error("Не удалось выполнить начальную доставку уведомления о заявке №%s (%s)",
+                  rid, type(exc).__name__[:80])
     return web.json_response({"id": rid})

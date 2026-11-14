@@ -234,6 +234,24 @@ CREATE TABLE IF NOT EXISTS analytics_ignore_vid (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """,
+    # 27: надёжная доставка первого уведомления админу о заявке /request
+    27: """
+CREATE TABLE IF NOT EXISTS web_request_notifications (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    web_request_id INTEGER NOT NULL UNIQUE REFERENCES web_requests(id) ON DELETE CASCADE,
+    status         TEXT NOT NULL DEFAULT 'pending'
+                   CHECK (status IN ('pending', 'sending', 'sent', 'failed')),
+    attempts       INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT NOT NULL DEFAULT (datetime('now')),
+    lease_until    TEXT,
+    last_error     TEXT,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    sent_at        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_web_request_notifications_due
+    ON web_request_notifications(status, next_attempt_at);
+""",
     # 23: почта клиента — вход и регистрация по коду из письма (webchat.post_login_email)
     23: """
 ALTER TABLE users ADD COLUMN email TEXT;
@@ -352,12 +370,12 @@ async def execute(sql: str, params: tuple = ()) -> int:
 
 
 @asynccontextmanager
-async def transaction():
+async def transaction(immediate: bool = False):
     """Несколько запросов как одно целое: либо все применились, либо ни один.
     Использование:  async with db.transaction() as conn:  await conn.execute(...)"""
     conn = await get_conn()
     try:
-        await conn.execute("BEGIN")
+        await conn.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
         yield conn
         await conn.commit()
     except BaseException:
