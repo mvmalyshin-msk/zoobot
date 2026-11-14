@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" width="720" height="360" role="img" aria-labelledby="t d">
+<title id="t">Цены на передержку собак и кошек в Москве в 2026 году</title>
+<desc id="d">Частная передержка — от 500 рублей в сутки; средняя цена суток передержки или зооняни — 1290–1890 рублей; сетевая зоогостиница — 1600–2600 рублей за номер в сутки.</desc>
+<rect width="720" height="360" rx="24" fill="#FFF6EE"/>
+<text x="36" y="56" font-family="PT Sans, Arial, sans-serif" font-size="26" font-weight="700" fill="#2b2420">Сколько стоят сутки передержки в Москве, 2026</text>
+<g font-family="PT Sans, Arial, sans-serif" font-size="18" fill="#5b5047">
+<text x="36" y="112">Частная передержка</text>
+<text x="36" y="192">Средняя цена суток (передержка, зооняня)</text>
+<text x="36" y="272">Сетевая зоогостиница, номер</text>
+</g>
+<g>
+<rect x="36" y="124" width="648" height="22" rx="11" fill="#F1E3D3"/>
+<rect x="36" y="124" width="125" height="22" rx="11" fill="#FC6751"/>
+<rect x="36" y="204" width="648" height="22" rx="11" fill="#F1E3D3"/>
+<rect x="358" y="204" width="114" height="22" rx="11" fill="#FC6751"/>
+<rect x="36" y="284" width="648" height="22" rx="11" fill="#F1E3D3"/>
+<rect x="436" y="284" width="248" height="22" rx="11" fill="#FC6751"/>
+</g>
+<g font-family="PT Sans, Arial, sans-serif" font-size="18" font-weight="700" fill="#2b2420">
+<text x="172" y="141">от 500 ₽</text>
+<text x="482" y="221">1 290–1 890 ₽</text>
+<text x="684" y="270" text-anchor="end">1 600–2 600 ₽</text>
+</g>
+<text x="36" y="338" font-family="PT Sans, Arial, sans-serif" font-size="14" fill="#8a7d72">Источники: Лайфхакер (сентябрь 2026), Т—Ж (октябрь 2026). Шкала: 0–2 600 ₽ в сутки.</text>
+</svg>

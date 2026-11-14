@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 INDEXNOW_KEY = "7c3f1e9a5b2d4086a1f7e3c9b5d20a64"
 INDEXNOW_ENDPOINTS = ("https://yandex.com/indexnow", "https://www.bing.com/indexnow")
 PUBLIC_PAGES = ("/", "/request", "/contact", "/policy", "/vygul-sobak", "/zoonyanya", "/peredergka", "/zootaksi",
-                "/stati", "/stati/s-kem-ostavit-pitomca-na-novogodnie-prazdniki", "/stati/kak-vybrat-peredergku", "/stati/skolko-gulyat-s-sobakoi", "/stati/kak-podgotovit-koshku-k-otezdu") + CITY_PATHS
+                "/stati", "/stati/skolko-stoit-perederzhka-sobaki-i-koshki", "/stati/s-kem-ostavit-pitomca-na-novogodnie-prazdniki", "/stati/kak-vybrat-peredergku", "/stati/skolko-gulyat-s-sobakoi", "/stati/kak-podgotovit-koshku-k-otezdu") + CITY_PATHS
 CLOSED_PREFIXES = ("/portal", "/chat", "/map", "/cabinet", "/api/", "/export/", "/verify/", "/contact/call")
 DISALLOW = ("/portal", "/cabinet", "/api/", "/export/", "/verify/", "/chat/", "/contact/call")
 
