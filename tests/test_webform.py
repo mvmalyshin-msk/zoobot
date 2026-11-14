@@ -1,18 +1,14 @@
 import asyncio
 import os
 import sys
+import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("BOT_TOKEN", "1:x")
 os.environ.setdefault("ADMIN_IDS", "111")
-os.environ["DB_PATH"] = "/tmp/zoobot_webform_test.db"
-for s in ("", "-wal", "-shm"):
-    try:
-        os.remove(os.environ["DB_PATH"] + s)
-    except FileNotFoundError:
-        pass
 
 from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
 
@@ -62,20 +58,34 @@ class ValidateTest(unittest.TestCase):
 class HttpTest(unittest.TestCase):
     def run_app(self, coro):
         async def go():
-            await db.init_db()
-            sent = []
+            original_config = db.config
+            with tempfile.TemporaryDirectory() as directory:
+                db.config = replace(original_config, db_path=str(Path(directory) / "webform.db"))
+                try:
+                    await db.init_db()
+                    sent = []
 
-            async def fake(bot, text, reply_markup=None):
-                sent.append(text)
-            orig = orders.notify_admins
-            orders.notify_admins = fake
-            try:
-                app = webserver.make_app()
-                app["bot"] = object()
-                async with TestClient(TestServer(app)) as c:
-                    return await coro(c, sent)
-            finally:
-                orders.notify_admins = orig
+                    async def fake(bot, text, reply_markup=None, telegram_only=False):
+                        sent.append(text)
+                        return True
+
+                    async def fake_client_notify(*args, **kwargs):
+                        return True
+
+                    orig = orders.notify_admins
+                    orig_client_notify = orders.notify
+                    orders.notify_admins = fake
+                    orders.notify = fake_client_notify
+                    try:
+                        app = webserver.make_app()
+                        app["bot"] = object()
+                        async with TestClient(TestServer(app)) as c:
+                            return await coro(c, sent)
+                    finally:
+                        orders.notify_admins = orig
+                        orders.notify = orig_client_notify
+                finally:
+                    db.config = original_config
         return asyncio.run(go())
 
     def test_form_page_and_submit(self):
@@ -95,6 +105,22 @@ class HttpTest(unittest.TestCase):
             row = await db.fetch_one("SELECT * FROM web_requests")
             self.assertEqual(row["phone"], "+79007778899")
             self.assertEqual(row["status"], "new")
+            notification = await db.fetch_one(
+                "SELECT web_request_id, status FROM web_request_notifications")
+            self.assertEqual((notification["web_request_id"], notification["status"]), (row["id"], "sent"))
+        self.run_app(case)
+
+    def test_outbox_insert_failure_rolls_back_accepted_lead(self):
+        async def case(c, sent):
+            await db.execute(
+                """CREATE TRIGGER reject_lead_notification
+                   BEFORE INSERT ON web_request_notifications
+                   BEGIN SELECT RAISE(ABORT, 'test failure'); END""")
+            response = await c.post("/request", data=GOOD)
+            self.assertEqual(response.status, 500)
+            self.assertEqual(await db.fetch_one("SELECT id FROM web_requests"), None)
+            self.assertEqual(await db.fetch_one("SELECT id FROM web_request_notifications"), None)
+            self.assertEqual(sent, [])
         self.run_app(case)
 
     def test_invalid_shows_errors_and_keeps_values(self):

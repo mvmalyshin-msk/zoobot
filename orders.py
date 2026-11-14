@@ -171,16 +171,22 @@ async def pending_payment_orders() -> list[dict]:
            WHERE o.status='confirmed' AND p.status IN ('pending','link_sent') ORDER BY o.id""")
 
 
-async def notify_admins(bot: Bot, text: str, reply_markup=None, copy_helper: bool = True) -> None:
+async def notify_admins(bot: Bot, text: str, reply_markup=None, copy_helper: bool = True,
+                        telegram_only: bool = False) -> bool:
+    """Отправляет уведомление и сообщает, доставлено ли оно в Telegram всем админам."""
+    delivered = bool(config.admin_ids)
     if not config.admin_ids:
         log.error("ADMIN_IDS не задан: некому отправить уведомление")
-    if copy_helper:
+    if copy_helper and not telegram_only:
         _bg(_helper_copy(text))  # копия в бот «Мой помощник»: в фоне, один раз на уведомление
     for admin_id in config.admin_ids:
-        await _push_admin(admin_id, text)  # пуш на телефон — первым и независимо от Telegram
-        _bg(_mail_admin(admin_id, text))    # копия письмом: в фоне, чтобы не задерживать ответ клиенту
+        if not telegram_only:
+            await _push_admin(admin_id, text)  # пуш на телефон — первым и независимо от Telegram
+            _bg(_mail_admin(admin_id, text))    # копия письмом: в фоне, чтобы не задерживать ответ клиенту
         if not await notify(bot, admin_id, text, reply_markup):
             log.error("Не удалось отправить уведомление админу %s (он нажал /start у бота?)", admin_id)
+            delivered = False
+    return delivered
 
 
 _tasks: set = set()
