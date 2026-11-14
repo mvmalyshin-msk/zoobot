@@ -10,6 +10,7 @@ from pathlib import Path
 from aiohttp import web
 
 import cabinet
+import brand
 from config import config
 import policy
 import portal
@@ -29,10 +30,11 @@ async def _map(request: web.Request) -> web.Response:
 
 
 async def _index(request: web.Request) -> web.Response:
-    """Главная: описание сервиса и три входа для заявки. Лёгкая страница без внешних скриптов."""
+    """Главная страница публичного сайта."""
     page = ((WEBAPP_DIR / "home.html").read_text(encoding="utf-8").replace("__BOT__", config.bot_username)
             .replace("__DESC__", seo.DESCRIPTION).replace("__SEO__", seo.head_tags(seo.base_url(request)))
-            .replace("__FAQ__", seo.faq_html()))
+            .replace("__FAQ__", seo.faq_html()).replace("__HEADER__", brand.public_header())
+            .replace("__FOOTER__", brand.public_footer()))
     return web.Response(text=page, content_type="text/html", headers={"Cache-Control": "no-cache"})
 
 

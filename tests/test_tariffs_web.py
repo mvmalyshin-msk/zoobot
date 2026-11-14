@@ -96,9 +96,9 @@ class TariffsWebTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_markup_applies_to_every_price(self):
         sid = (await db.fetch_one("SELECT id FROM services WHERE code='walk30'"))["id"]
-        base, _ = await pricing.calculate_price(sid, {"quantity": 1})
+        base = (await db.fetch_one("SELECT base_price FROM services WHERE id=?", (sid,)))["base_price"]
         mk = await db.fetch_one("SELECT id, value FROM price_rules WHERE condition_type='always'")
-        self.assertEqual(mk["value"], 0)  # по умолчанию наценки нет: цены клиентов не меняются
+        self.assertEqual(mk["value"], 30)  # начальная наценка по методике цен из миграции 21
         await self.post({"step": "rule", "id": str(mk["id"]), "value": "10", "active": "1"})
         total, parts = await pricing.calculate_price(sid, {"quantity": 1})
         self.assertEqual(total, base + round(base * 0.10))

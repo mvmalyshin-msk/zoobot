@@ -6,6 +6,7 @@ import sys
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("BOT_TOKEN", "1:x")
@@ -80,6 +81,15 @@ class UserAgent(unittest.TestCase):
 
 
 class Ingest(unittest.TestCase):
+    def test_batch_uses_one_database_transaction(self):
+        async def t(c):
+            with mock.patch.object(db, "transaction", wraps=db.transaction) as transaction:
+                r = await post(c, [{"t": "pv", "p": "/"}, {"t": "click", "p": "/", "g": "Заказать"}])
+            self.assertEqual(r.status, 204)
+            self.assertEqual(transaction.call_count, 1)
+            self.assertEqual(len(await rows()), 2)
+        run(t)
+
     def test_page_view_and_click_are_stored(self):
         async def t(c):
             r = await post(c, [{"t": "pv", "p": "/", "r": "yandex.ru", "ti": "Главная"},

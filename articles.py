@@ -8,7 +8,6 @@ import json
 from aiohttp import web
 
 import brand
-import ribbons
 import seo
 import servicepages
 from config import config
@@ -120,9 +119,8 @@ def render_article(path: str, base: str) -> str:
             "publisher": {"@type": "Organization", "name": brand.NAME, "url": f"{base}/"}}
     ld = '<script type="application/ld+json">' + json.dumps(data, ensure_ascii=False).replace("</", "<\\/") + "</script>"
     body = "".join(f"<h2>{_e(s['h'])}</h2>" + "".join(f"<p>{_e(p)}</p>" for p in s["body"].split("\n\n")) for s in a["sections"])
-    return _head(a["title"], a["lead"], url, ld) + f"""<body>{ribbons.html(ribbons.CLIENT)}<main class="art">
-{brand.backrow(BASE)}
-<div class="top">{brand.LOGO}</div>
+    return _head(a["title"], a["lead"], url, ld) + f"""<body>{brand.public_header()}<main class="public-main art">
+<p class="eyebrow">СТАТЬИ О ПИТОМЦАХ</p>
 <h1>{_e(a["h1"])}</h1>
 <p class="lead">{_e(a["lead"])}</p>
 {body}
@@ -130,22 +128,26 @@ def render_article(path: str, base: str) -> str:
 <a class="way site" href="/request">Оставить заявку на сайте</a></div>
 <p class="hint"><a href="{_e(a["service"])}">{_e(a["service_name"])}</a> · <a href="{BASE}">Все статьи</a> ·
 <a href="/contact">Связаться с администратором</a></p>
-</main></body></html>"""
+</main>{brand.public_footer()}</body></html>"""
 
 
 def render_index(base: str) -> str:
     title = "Статьи о питомцах: передержка, выгул, отъезд — Зооконсьерж"
     desc = ("Полезные статьи для владельцев кошек и собак: как выбрать передержку, сколько гулять с собакой, "
             "как подготовить питомца к отъезду. Москва и Московская область.")
-    items = "".join(f'<a href="{_e(k)}">{_e(v["h1"])}<p>{_e(v["lead"].split(". ")[0])}.</p></a>' for k, v in ARTICLES.items())
-    return _head(title, desc, f"{base}{BASE}", "") + f"""<body>{ribbons.html(ribbons.CLIENT)}<main>
-{brand.backrow("/")}
-<div class="top">{brand.LOGO}</div>
+    items = ""
+    for path, article in ARTICLES.items():
+        teaser = article["lead"].split(". ", 1)[0].strip()
+        if not teaser.endswith("."):
+            teaser += "."
+        items += f'<a href="{_e(path)}">{_e(article["h1"])}<p>{_e(teaser)}</p></a>'
+    return _head(title, desc, f"{base}{BASE}", "") + f"""<body>{brand.public_header()}<main class="public-main">
+<p class="eyebrow">ЗООКОНСЬЕРЖ · ПОЛЕЗНОЕ</p>
 <h1>Статьи о питомцах</h1>
 <p class="lead">Короткие и понятные тексты для владельцев кошек и собак. Работаем в Москве и Московской области.</p>
 <div class="list">{items}</div>
 <div class="ways"><a class="way site" href="/request">Оставить заявку на сайте</a></div>
-</main></body></html>"""
+</main>{brand.public_footer()}</body></html>"""
 
 
 def _article_handler(path: str):

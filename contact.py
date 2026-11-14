@@ -13,7 +13,6 @@ from aiohttp import web
 import brand
 import db
 import orders
-import ribbons
 import webchat
 import webform
 from config import config
@@ -48,31 +47,31 @@ def render_form(values: dict, errors: dict) -> str:
             '<small>обычный звонок по сотовой сети</small></span></a>') if _tel() else ""   # номера на странице нет: он отдаётся только при нажатии
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — связаться с администратором</title><meta name="description" content="Свяжитесь с администратором Зооконсьержа: поможем с выгулом, зооняней, передержкой и зоотакси в Москве и Московской области.">
-{brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.CLIENT)}<main>
-{brand.backrow("/")}
-<div class="top">{brand.LOGO}</div>{brand.STRAP}
-<h1>Написать администратору</h1>
-<p class="hint">Выберите, как вам удобнее. Отвечаем в рабочее время.</p>
+{brand.HEAD}<style>{CSS}</style></head><body>{brand.public_header()}<main class="public-main public-form">
+<p class="eyebrow">СВЯЗАТЬСЯ</p><h1>Напишите нам</h1>
+<p class="hint form-intro">Выберите удобный способ. Поможем сориентироваться по услуге и заявке.</p>
 <div class="ways">
 <a class="way tg" href="https://t.me/{_e(config.bot_username)}"><span>✈️</span><span>Написать в Telegram<small>ответ придёт туда же</small></span></a>
 {call}
 </div>
 <p class="or">или оставьте номер — перезвоним</p>
 <form method="post" action="/contact">
-<label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name">{err("name")}
-<label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 900 123-45-67">{err("phone")}
-<label for="message">Сообщение (необязательно)</label><textarea id="message" name="message" maxlength="{MAX_MESSAGE}">{v("message")}</textarea>
+<div class="form-grid">
+<div class="field"><label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name">{err("name")}</div>
+<div class="field"><label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 900 123-45-67">{err("phone")}</div>
+<div class="field field-wide"><label for="message">Сообщение (необязательно)</label><textarea id="message" name="message" maxlength="{MAX_MESSAGE}">{v("message")}</textarea></div>
+</div>
 <div class="hp"><label>Не заполняйте <input name="site" tabindex="-1" autocomplete="off"></label></div>
 <label class="check"><input type="checkbox" name="consent"{checked}><span>Согласен(на) на обработку персональных данных, <a href="/policy">политика</a></span></label>{err("consent")}
-<button class="btn" type="submit">Перезвоните мне</button></form></main></body></html>"""
+<button class="btn" type="submit">Перезвоните мне</button><p class="form-note">Используем данные только, чтобы ответить на ваше обращение.</p></form></main>{brand.public_footer()}</body></html>"""
 
 
 def render_done() -> str:
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — принято</title>
-{brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.CLIENT)}<main>{brand.backrow("/")}<div class="top">{brand.LOGO}</div>{brand.STRAP}
-<h1>✅ Сообщение принято</h1><p>Администратор получил его сразу и свяжется с вами по указанному телефону.</p>
-<p><a class="btn" href="/">На главную</a></p></main></body></html>"""
+{brand.HEAD}<style>{CSS}</style></head><body>{brand.public_header()}<main class="public-main public-form">
+<h1>Сообщение принято</h1><p>Администратор получил его и свяжется с вами по указанному телефону.</p>
+<p><a class="btn" href="/">На главную</a></p></main>{brand.public_footer()}</body></html>"""
 
 
 async def get_page(request: web.Request) -> web.Response:

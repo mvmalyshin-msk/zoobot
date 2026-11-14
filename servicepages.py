@@ -9,7 +9,6 @@ import json
 from aiohttp import web
 
 import brand
-import ribbons
 import seo
 import webform
 from config import config
@@ -113,9 +112,8 @@ def render(path: str, base: str) -> str:
 <meta name="description" content="{_e(desc)}"><link rel="canonical" href="{_e(url)}">
 <meta property="og:type" content="website"><meta property="og:locale" content="ru_RU"><meta property="og:site_name" content="{brand.NAME}">
 <meta property="og:title" content="{_e(p["title"])}"><meta property="og:description" content="{_e(desc)}"><meta property="og:url" content="{_e(url)}">
-{seo.verification_tags()}{ld}{brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.CLIENT)}<main>
-{brand.backrow("/")}
-<div class="top">{brand.LOGO}</div>
+{seo.verification_tags()}{ld}{brand.HEAD}<style>{CSS}</style></head><body>{brand.public_header()}<main class="public-main service-page">
+<p class="eyebrow">УСЛУГИ · МОСКВА И МОСКОВСКАЯ ОБЛАСТЬ</p>
 <h1>{_e(p["h1"])}</h1>
 <p class="lead">{_e(p["lead"])}</p>
 <ul class="pts">{points}</ul>
@@ -124,7 +122,7 @@ def render(path: str, base: str) -> str:
 <h2>Частые вопросы</h2><div class="faq">{faq}</div>
 <h2>Другие услуги</h2><p class="also">{others}</p>
 <p class="hint">Работаем в {AREA}. <a href="/contact">Связаться с администратором</a></p>
-</main></body></html>"""
+</main>{brand.public_footer()}</body></html>"""
 
 
 def _handler(path: str):

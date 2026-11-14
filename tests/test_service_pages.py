@@ -39,6 +39,9 @@ class ServicePages(unittest.IsolatedAsyncioTestCase):
             self.assertIn('href="/request"', t, path)
             self.assertIn("https://t.me/", t, path)
             self.assertIn("application/ld+json", t, path)
+            self.assertIn('class="site-header"', t, path)
+            self.assertIn('class="site-footer"', t, path)
+            self.assertNotIn("КЛИЕНТСКОЕ МЕНЮ", t, path)
 
     async def test_pages_name_the_service_and_the_region_not_only_khimki(self):
         keys = {"/vygul-sobak": "выгул", "/zoonyanya": "зооняня", "/peredergka": "передержк", "/zootaksi": "зоотакси"}

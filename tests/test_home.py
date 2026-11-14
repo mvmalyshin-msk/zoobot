@@ -1,6 +1,5 @@
-"""Главная страница сервиса (/): три входа, кнопки входа, карта переехала на /map, старые ссылки живы."""
+"""Главная страница сервиса: понятный основной CTA, услуги и общая публичная навигация."""
 import os
-import re
 import sys
 import unittest
 from pathlib import Path
@@ -35,28 +34,34 @@ class HomeTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_home_text_and_services(self):
         t = await self.home()
-        for must in ("Зооконсьерж", "подбирает проверенных специалистов", "Выгул", "Зооняня", "Передержка", "Зоотакси",
-                     "несколько вариантов по цене и уровню исполнения"):
+        for must in ("Зооконсьерж", "Подберём специалиста для прогулки", "Выгул", "Зооняня", "Передержка", "Зоотакси",
+                     "варианты по цене"):
             self.assertIn(must, t)
 
-    async def test_three_equal_entries_lead_to_working_points(self):
+    async def test_home_has_one_primary_action_and_clear_secondary_path(self):
         t = await self.home()
-        cards = re.findall(r'<a class="entry[^"]*"[^>]*href="([^"]+)"', t)
-        self.assertEqual(len(cards), 3)
-        self.assertIn("https://t.me/zooconcierge_bot", cards)
-        self.assertIn("/chat", cards)
-        self.assertIn("/request", cards)
-        for text in ("Открыть Telegram-бот", "Оставить заявку на сайте", "Заполнить форму"):
-            self.assertIn(text, t)
+        self.assertIn('<a class="btn" href="/request">Подобрать специалиста</a>', t)
+        self.assertIn('href="https://t.me/zooconcierge_bot"', t)
+        self.assertIn('href="/contact"', t)
+        self.assertEqual(t.count('class="hero-actions"'), 1)
 
-    async def test_login_buttons_are_different_and_not_the_main_thing(self):
+    async def test_public_header_and_footer_replace_internal_ribbon(self):
         t = await self.home()
-        self.assertIn("Войти как клиент", t)
-        self.assertIn("Войти как администратор", t)
-        client = re.search(r'<a class="login client"[^>]*href="([^"]+)"', t).group(1)
-        admin = re.search(r'<a class="login admin"[^>]*href="([^"]+)"', t).group(1)
-        self.assertEqual((client, admin), ("/chat/login", "/portal"))
-        self.assertLess(t.index("Выгул"), t.index("Войти как клиент"))     # вход — внизу, после услуг и заявок
+        self.assertIn('class="site-header"', t)
+        self.assertIn('class="site-footer"', t)
+        self.assertIn('href="/#services"', t)
+        self.assertIn('href="/#how-it-works"', t)
+        self.assertNotIn("КЛИЕНТСКОЕ МЕНЮ", t)
+        self.assertNotIn("__HEADER__", t)
+        self.assertNotIn("__FOOTER__", t)
+
+    async def test_home_presents_services_and_process(self):
+        t = await self.home()
+        self.assertIn("Забота о питомце — без суеты", t)
+        self.assertIn('id="services"', t)
+        self.assertIn('id="how-it-works"', t)
+        for path in ("/vygul-sobak", "/zoonyanya", "/peredergka", "/zootaksi"):
+            self.assertIn(f'href="{path}"', t)
 
     async def test_home_is_light_and_does_not_load_telegram_or_map(self):
         t = await self.home()

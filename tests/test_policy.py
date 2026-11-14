@@ -65,6 +65,8 @@ class Html(unittest.TestCase):
         self.assertTrue(h.startswith("<!doctype html>"))
         self.assertIn("viewport", h)
         self.assertIn("Политика обработки персональных данных", h)
+        self.assertIn('class="site-header"', h)
+        self.assertIn('class="site-footer"', h)
 
 
 class Link(unittest.TestCase):

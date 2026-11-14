@@ -52,12 +52,17 @@ class BackButtonTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("javascript:", h)
 
     async def test_client_pages_have_back(self):
-        for path in ("/map", "/request", "/policy", "/chat/login?t=abc", "/cabinet", "/chat/login?t=abc&n=portal"):
+        for path in ("/map", "/chat/login?t=abc", "/cabinet", "/chat/login?t=abc&n=portal"):
             href, _ = await self.back_of(path)
             self.assertEqual(href, "/", path)
 
-    async def test_done_page_has_back(self):
-        self.assertIn('class="back"', webform.render_done(5))
+    async def test_public_pages_link_home_from_the_brand(self):
+        for path in ("/request", "/policy"):
+            _, page = await self.back_of(path)
+            self.assertRegex(page, r'<a class="brand"[^>]*href="/"', path)
+
+    async def test_done_page_links_home_from_the_brand(self):
+        self.assertRegex(webform.render_done(5), r'<a class="brand"[^>]*href="/"')
 
     async def test_chat_has_back(self):
         href, _ = await self.back_of("/chat", self.admin)

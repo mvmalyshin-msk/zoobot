@@ -47,16 +47,22 @@ class CopyTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_home_says_the_canon(self):
         t = await (await self.client.get("/")).text()
-        self.assertIn(brand.PITCH, t)
         self.assertIn('name="description" content="Подберём проверенного специалиста', t)   # мета-описание: та же суть
         for w in ORDER:
-            self.assertIn(f"<b>{w}</b>", t)
+            self.assertIn(w, t)
+        self.assertIn("Подберём специалиста для прогулки", t)
+        self.assertIn("выбирать будете вы", t)
 
     async def test_every_client_page_has_the_strap(self):
         for p in ("/request", "/contact", "/chat/login", "/chat/login/tg"):
             t = await (await self.client.get(p)).text()
-            self.assertIn(brand.STRAP, t, p)
-            self.assertEqual([t.index(f">{w}<") for w in ORDER], sorted(t.index(f">{w}<") for w in ORDER), p)
+            if p in ("/request", "/contact"):
+                self.assertIn('class="site-header"', t, p)
+                self.assertIn('class="site-footer"', t, p)
+                self.assertNotIn("КЛИЕНТСКОЕ МЕНЮ", t, p)
+            else:
+                self.assertIn(brand.STRAP, t, p)
+                self.assertEqual([t.index(f">{w}<") for w in ORDER], sorted(t.index(f">{w}<") for w in ORDER), p)
 
 
 if __name__ == "__main__":

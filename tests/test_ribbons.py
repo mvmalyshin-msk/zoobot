@@ -22,6 +22,7 @@ from aiogram.types import User  # noqa: E402
 import db  # noqa: E402
 import ribbons  # noqa: E402
 import webchat  # noqa: E402
+import webform  # noqa: E402
 import webserver  # noqa: E402
 
 LOOP = asyncio.new_event_loop()
@@ -62,9 +63,11 @@ class PortalRibbonTest(unittest.TestCase):
 
 
 class FormRibbonTest(unittest.TestCase):
-    def test_client_request_form_is_blue(self):
-        src = (Path(__file__).resolve().parent.parent / "webform.py").read_text(encoding="utf-8")
-        self.assertIn("ribbons.html(ribbons.CLIENT)", src)
+    def test_client_request_form_uses_public_navigation(self):
+        page = webform.render_form([], {}, {})
+        self.assertIn('class="site-header"', page)
+        self.assertIn('class="site-footer"', page)
+        self.assertNotIn(BLUE, page)
 
 
 class ChatRibbonTest(unittest.TestCase):

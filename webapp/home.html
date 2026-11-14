@@ -14,120 +14,189 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="stylesheet" href="/brand.css">
 <script>
-// Старые кнопки «Найти на карте» в уже отправленных сообщениях бота открывают «/»: Telegram добавляет к адресу tgWebAppData.
 if (location.hash.indexOf("tgWebAppData") > -1) location.replace("/map" + location.hash);
 </script>
 <style>
-:root{--walk-t:#ffe4de;--nanny-t:#d8f2ef;--boarding-t:#dde7fb;--taxi-t:#fbf0d2}
 body{-webkit-text-size-adjust:100%}
-.wrap{max-width:960px;margin:0 auto;padding:0 18px}
 a:focus-visible,.btn:focus-visible{outline:3px solid var(--boarding);outline-offset:3px}
-
-/* Шапка страницы */
-.hero{background:linear-gradient(180deg,var(--peach) 0%,var(--cream) 100%);padding:max(22px,env(safe-area-inset-top)) 0 34px;border-radius:0 0 40px 40px}
-.hero .brand{font-size:1.45rem}
-.hero h1{font-size:clamp(2rem,8.4vw,3.1rem);line-height:1.06;letter-spacing:-.015em;margin:34px 0 14px;max-width:13em}
-.hero .lead{font-size:1.1rem;line-height:1.5;max-width:34em;margin:0 0 22px;color:#3d3832}
-.cta{display:flex;flex-wrap:wrap;gap:12px}
-.chatbtn{background:#fff;color:var(--coral);border:2px solid var(--coral);box-shadow:none}
-.cta .btn{text-align:center;justify-content:center}
-@media (max-width:560px){.cta{flex-direction:column;align-items:stretch}.cta .btn{width:100%;box-sizing:border-box}}
-.go{font-size:1.1rem;padding:.85em 1.7em;box-shadow:0 6px 16px rgba(252,103,81,.32)}
-.dots{display:flex;gap:10px;margin-top:30px}
-.dots i{width:14px;height:14px;border-radius:50%;display:block;animation:pop .5s cubic-bezier(.3,1.6,.5,1) both}
-.dots i:nth-child(1){background:var(--walk)}.dots i:nth-child(2){background:var(--nanny);animation-delay:.12s}
-.dots i:nth-child(3){background:var(--boarding);animation-delay:.24s}.dots i:nth-child(4){background:var(--taxi);animation-delay:.36s}
-@keyframes pop{from{transform:scale(0);opacity:0}to{transform:scale(1);opacity:1}}
-@media (prefers-reduced-motion:reduce){.dots i{animation:none}}
-
-h2{font-size:1.5rem;letter-spacing:-.01em;margin:46px 0 16px}
-
-/* Услуги */
-.svc{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.s{border-radius:22px;padding:16px 16px 18px}
-.s svg{width:46px;height:46px;padding:11px;border-radius:50%;display:block;margin-bottom:12px;color:#fff}
-.s b{display:block;font-size:1.2rem;margin-bottom:4px}
-.s span{display:block;line-height:1.38;color:#443e37;font-size:.98rem}
-.s.walk{background:var(--walk-t)}.s.walk svg{background:var(--walk)}
-.s.nanny{background:var(--nanny-t)}.s.nanny svg{background:var(--nanny)}
-.s.boarding{background:var(--boarding-t)}.s.boarding svg{background:var(--boarding)}
-.s.taxi{background:var(--taxi-t)}.s.taxi svg{background:var(--taxi);color:var(--ink)}
-.faq details{background:#fff;border-radius:16px;padding:14px 18px;margin:0 0 10px}.faq summary{font-weight:700;cursor:pointer}.faq p{margin:10px 0 0;line-height:1.5}
-.choice{margin:16px 2px 0;font-size:1.05rem;line-height:1.45}
-@media (min-width:760px){.svc{grid-template-columns:repeat(4,1fr)}}
-
-/* Как это работает: настоящая последовательность */
-.steps{list-style:none;margin:0;padding:0;display:grid;gap:14px;counter-reset:s}
-.steps li{display:flex;gap:14px;align-items:flex-start;line-height:1.42}
-.steps li:before{counter-increment:s;content:counter(s);flex:none;width:34px;height:34px;border-radius:50%;background:var(--coral);color:#fff;font-weight:700;display:grid;place-items:center}
-.steps b{display:block}
-@media (min-width:760px){.steps{grid-template-columns:repeat(3,1fr);gap:22px}}
-
-/* Три способа оставить заявку */
-.entries{display:grid;gap:12px}
-.entry{display:grid;grid-template-columns:52px 1fr;gap:4px 14px;align-items:start;text-decoration:none;color:var(--ink);padding:16px;border:1.5px solid var(--line);box-shadow:none}
-.entry:hover{border-color:var(--coral)}
-.entry .ic{grid-row:1/4;width:52px;height:52px;border-radius:16px;background:var(--peach);display:grid;place-items:center;color:var(--coral)}
-.entry .ic svg{width:26px;height:26px}
-.entry b{font-size:1.12rem}.entry span{color:var(--mute);line-height:1.38}
-.entry em{font-style:normal;justify-self:start;margin-top:8px;background:var(--coral);color:#fff;font-weight:700;border-radius:var(--pill);padding:.55em 1.2em}
-.entry:active{opacity:.85}
-@media (min-width:820px){.entries{grid-template-columns:repeat(3,1fr)}.entry{grid-template-columns:1fr}.entry .ic{grid-row:auto;margin-bottom:6px}}
-
-/* Вход */
-.enter{margin:44px 0 0;padding:20px 0 6px;border-top:1.5px solid var(--line);display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;justify-content:space-between}
-.enter p{margin:0;color:var(--mute)}
-.login{display:inline-block;padding:.6em 1.2em;border-radius:var(--pill);color:#fff;font-weight:700;font-size:.95rem;text-decoration:none}
-.login.client{background:#1d6fd6}.login.admin{background:#d62b2b}
-.logins{display:flex;gap:10px;flex-wrap:wrap}
-.foot{margin:14px 0 0;padding-bottom:max(30px,env(safe-area-inset-bottom));font-size:.9rem}.foot a{color:var(--mute)}
+.home-shell{max-width:1200px;margin:auto;padding:0 28px}
+.hero{overflow:hidden;background:radial-gradient(ellipse at 82% 18%,#f8e4d1 0,transparent 34%),var(--cream)}
+.hero-grid{min-height:570px;padding-top:68px;padding-bottom:72px;display:grid;grid-template-columns:1.08fr .92fr;align-items:center;gap:40px}
+.hero-copy{position:relative;z-index:1}
+.hero h1{max-width:11ch;margin:0 0 22px;font-size:clamp(2.65rem,5.6vw,4.7rem);line-height:1.02;letter-spacing:-.045em}
+.hero .lead{max-width:610px;margin:0 0 28px;color:#514b43;font-size:1.18rem;line-height:1.58}
+.hero-actions{display:flex;align-items:center;flex-wrap:wrap;gap:14px}
+.hero-actions .btn{min-height:54px;padding:14px 24px;border-radius:12px}
+.hero-actions .secondary{color:var(--ink);font-weight:700;text-decoration:none;padding:12px 4px}
+.hero-meta{margin:22px 0 0;color:var(--mute);font-size:.92rem}
+.hero-art{position:relative;min-height:400px;display:grid;place-items:center}
+.hero-art:before{content:"";position:absolute;width:min(34vw,390px);aspect-ratio:1;border-radius:48% 52% 56% 44% / 49% 42% 58% 51%;background:#f3d9c9;transform:rotate(-8deg)}
+.hero-art:after{content:"";position:absolute;width:74px;height:74px;border-radius:50%;right:5%;top:6%;background:#dcece4}
+.pet-portrait{position:relative;z-index:1;width:min(100%,440px);height:auto;filter:drop-shadow(0 22px 24px rgba(89,65,48,.12))}
+.art-note{position:absolute;z-index:2;right:0;bottom:22px;max-width:240px;padding:15px 18px;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 30px rgba(56,43,32,.08)}
+.art-note b{display:block;font-size:.98rem}.art-note span{display:block;margin-top:3px;color:var(--mute);font-size:.84rem}
+.section{padding:66px 0}
+.section-head{max-width:650px;margin-bottom:28px}
+.section h2{margin:0 0 10px;font-size:clamp(1.8rem,3.4vw,2.7rem);line-height:1.12;letter-spacing:-.03em}
+.section-intro{margin:0;color:var(--mute);font-size:1.05rem;line-height:1.55}
+.services{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.service-card{min-height:230px;padding:22px;display:flex;flex-direction:column;align-items:flex-start;border:1px solid var(--line);border-radius:18px;background:#fff;color:var(--ink);text-decoration:none;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+.service-card:hover{transform:translateY(-3px);border-color:#e2b9a7;box-shadow:0 12px 26px rgba(56,43,32,.08)}
+.service-icon{width:44px;height:44px;margin-bottom:24px;display:grid;place-items:center;border-radius:14px;background:#fae8df;color:#bc5b48}
+.service-card:nth-child(2) .service-icon{background:#e2f1ec;color:#317c70}
+.service-card:nth-child(3) .service-icon{background:#e7ebf5;color:#51658d}
+.service-card:nth-child(4) .service-icon{background:#f7edd6;color:#95732b}
+.service-icon svg{width:23px;height:23px}
+.service-card h3{margin:0 0 8px;font-size:1.2rem}
+.service-card p{margin:0;color:var(--mute);font-size:.95rem;line-height:1.5}
+.service-card .more{margin-top:auto;padding-top:18px;color:#a94f3f;font-size:.9rem;font-weight:700}
+.process{background:#f1eee7}
+.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;counter-reset:step}
+.step{padding:24px 22px;background:#fff;border-radius:16px}
+.step:before{counter-increment:step;content:"0" counter(step);display:block;margin-bottom:22px;color:#a65343;font-size:.85rem;font-weight:700;letter-spacing:.08em}
+.step h3{margin:0 0 8px;font-size:1.12rem}
+.step p{margin:0;color:var(--mute);line-height:1.55}
+.choice-panel{padding:26px 28px;display:grid;grid-template-columns:1fr auto;align-items:center;gap:22px;border:1px solid var(--line);border-radius:18px;background:#fff}
+.choice-panel h2{font-size:1.5rem;margin:0 0 8px}
+.choice-panel p{max-width:650px;margin:0;color:var(--mute);line-height:1.55}
+.choice-panel .btn{white-space:nowrap;border-radius:10px;padding:13px 20px}
+.faq{max-width:820px}.faq details{padding:17px 0;border-bottom:1px solid var(--line)}
+.faq summary{font-weight:700;cursor:pointer;list-style:none}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary:after{content:"+";float:right;color:#a65343;font-size:1.2rem}
+.faq details[open] summary:after{content:"−"}
+.faq p{max-width:740px;margin:10px 24px 0 0;color:var(--mute);line-height:1.6}
+.contact-strip{margin-top:42px;padding:30px;border-radius:18px;background:#292d2b;color:#fff;display:flex;justify-content:space-between;align-items:center;gap:20px}
+.contact-strip h2{margin:0 0 6px;font-size:1.55rem}
+.contact-strip p{margin:0;color:#d9d7d1}
+.contact-strip a{flex:none;padding:13px 20px;border:1px solid #878983;border-radius:10px;color:#fff;font-weight:700;text-decoration:none}
+.contact-strip a:hover{background:#fff;color:#292d2b}
+.quiet-links{margin:20px 0 0;display:flex;flex-wrap:wrap;gap:10px 20px}
+.quiet-links a{color:var(--mute);font-size:.9rem;text-decoration:none}
+@media(max-width:900px){
+  .hero-grid{min-height:auto;grid-template-columns:1fr  .75fr;gap:14px;padding-top:54px;padding-bottom:52px}
+  .hero-art{min-height:320px}
+  .services{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:640px){
+  .home-shell{padding:0 20px}
+  .hero-grid{grid-template-columns:1fr;padding-top:48px;padding-bottom:30px;gap:4px}
+  .hero h1{max-width:12ch;font-size:clamp(2.55rem,11vw,3.6rem)}
+  .hero .lead{font-size:1.05rem}
+  .hero-actions{align-items:stretch;flex-direction:column;gap:4px}
+  .hero-actions .btn{width:100%}
+  .hero-actions .secondary{text-align:center}
+  .hero-meta{margin-top:14px}
+  .hero-art{min-height:255px;margin:0 4px}
+  .hero-art:before{width:min(68vw,300px)}
+  .pet-portrait{width:min(76%,340px)}
+  .art-note{right:0;bottom:4px;padding:11px 13px}
+  .section{padding:48px 0}
+  .services{gap:10px}
+  .service-card{min-height:210px;padding:16px}
+  .service-icon{margin-bottom:18px}
+  .steps{grid-template-columns:1fr;gap:10px}
+  .step{padding:18px}
+  .step:before{margin-bottom:12px}
+  .choice-panel{grid-template-columns:1fr;padding:22px}
+  .choice-panel .btn{width:100%}
+  .contact-strip{align-items:stretch;flex-direction:column;padding:24px}
+  .contact-strip a{text-align:center}
+}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
 </style>
 </head>
 <body>
-<header class="hero"><div class="wrap">
-  <a class="brand" href="/"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</a>
-  <h1>Найдём, кто позаботится о вашем питомце</h1>
-  <p class="lead">Зооконсьерж подбирает проверенных специалистов для вашего питомца: выгул, зооняню, передержку и зоотакси — несколько вариантов по цене и уровню сервиса, чтобы вам было легко выбрать.</p>
-  <div class="cta"><a class="btn go" href="#apply">Оставить заявку</a><a class="btn go chatbtn" href="/contact">💬 Написать администратору</a></div>
-  <div class="dots" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-</div></header>
+__HEADER__
+<main>
+<section class="hero">
+  <div class="home-shell hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow">ЗАБОТА О ПИТОМЦАХ · МОСКВА И МО</p>
+      <h1>Забота о питомце — без суеты</h1>
+      <p class="lead">Подберём специалиста для прогулки, ухода дома, передержки или поездки. Уточним детали, предложим варианты по цене — выбирать будете вы.</p>
+      <div class="hero-actions">
+        <a class="btn" href="/request">Подобрать специалиста</a>
+        <a class="secondary" href="https://t.me/__BOT__">Или написать в Telegram <span aria-hidden="true">→</span></a>
+      </div>
+      <p class="hero-meta">Выгул · зооняня · передержка · зоотакси</p>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+      <svg class="pet-portrait" viewBox="0 0 440 400" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="225" cy="359" rx="137" ry="17" fill="#d2bba9" opacity=".38"/>
+        <path d="M134 259c-34 25-43 61-28 91 14 29 44 31 79 31h96c50 0 75-28 67-71-7-40-39-69-91-77z" fill="#d98762"/>
+        <path d="M147 121c-31-31-62-28-70 2-7 27 9 75 37 91l37-21z" fill="#a95b48"/>
+        <path d="M282 121c31-31 62-28 70 2 7 27-9 75-37 91l-37-21z" fill="#a95b48"/>
+        <path d="M121 167c0-74 39-117 98-117s100 43 100 117c0 78-42 123-100 123s-98-45-98-123z" fill="#f3c8a9"/>
+        <path d="M165 160c8-11 20-11 28 0M245 160c8-11 20-11 28 0" fill="none" stroke="#573d33" stroke-width="8" stroke-linecap="round"/>
+        <ellipse cx="180" cy="178" rx="5" ry="7" fill="#302c2a"/><ellipse cx="258" cy="178" rx="5" ry="7" fill="#302c2a"/>
+        <path d="M189 212c8-11 33-11 42 0 0 14-9 23-21 23s-21-9-21-23z" fill="#573d33"/>
+        <path d="M210 233v12m0 0c-12 15-27 13-34 3m34-3c12 15 27 13 34 3" fill="none" stroke="#573d33" stroke-width="5" stroke-linecap="round"/>
+        <path d="M172 285c17 18 59 20 78 0v48h-78z" fill="#fff0df"/>
+        <path d="M148 330c39 23 89 29 130 0" fill="none" stroke="#2e8b7d" stroke-width="13" stroke-linecap="round"/>
+        <circle cx="217" cy="343" r="13" fill="#2e8b7d"/><path d="M212 343l4 4 7-9" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M89 276c-20-15-26-35-16-50 13-19 42-11 49 8" fill="none" stroke="#d98762" stroke-width="15" stroke-linecap="round"/>
+        <path d="M110 101c16-16 34-27 56-32M301 84c15 12 27 29 33 48" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" opacity=".8"/>
+      </svg>
+      <div class="art-note"><b>Подбор под ваш запрос</b><span>Питомец, время и привычный ритм</span></div>
+    </div>
+  </div>
+</section>
 
-<main class="wrap">
-<h2>Что мы делаем</h2>
-<div class="svc">
-<div class="s walk"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><ellipse cx="6" cy="10" rx="2" ry="2.6"/><ellipse cx="10" cy="6" rx="2" ry="2.6"/><ellipse cx="14.5" cy="6" rx="2" ry="2.6"/><ellipse cx="18.5" cy="10" rx="2" ry="2.6"/><path d="M12.2 11.5c-3 0-5.6 3-5.6 5.6 0 1.8 1.4 2.5 3 2.5 1 0 1.6-.5 2.6-.5s1.6.5 2.6.5c1.6 0 3-.7 3-2.5 0-2.6-2.6-5.6-5.6-5.6z"/></svg><b>Выгул</b><span>Организуем прогулку с вашим питомцем в удобное время.</span></div>
-<div class="s nanny"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 11 12 4l8.5 7M5.5 9.5V20h13V9.5M12 17.2c-2.6-1.7-3.6-2.8-3.6-4.1a2 2 0 0 1 3.6-1.2 2 2 0 0 1 3.6 1.2c0 1.3-1 2.4-3.6 4.1z"/></svg><b>Зооняня</b><span>Найдём специалиста, который придёт покормить питомца, поиграть с ним или остаться с ним на ночь.</span></div>
-<div class="s boarding"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18.5V6M3 15h18v3.5M21 15v-2.5a3 3 0 0 0-3-3h-6.5V15"/><circle cx="7.2" cy="11.8" r="1.6"/></svg><b>Передержка</b><span>Подберём зоотель или частного исполнителя для временного проживания питомца.</span></div>
-<div class="s taxi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17v-4.2l1.7-4.6A2 2 0 0 1 7.6 7h8.8a2 2 0 0 1 1.9 1.2L20 12.8V17M4 17h16M4 17v2.5M20 17v2.5M9.5 4h5"/><circle cx="7.6" cy="13.8" r=".9" fill="currentColor"/><circle cx="16.4" cy="13.8" r=".9" fill="currentColor"/></svg><b>Зоотакси</b><span>Поможем организовать безопасную перевозку питомца из точки А в точку Б.</span></div>
-</div>
-<p class="choice">Мы подберём несколько вариантов по цене и уровню исполнения, чтобы вы могли выбрать наиболее подходящий.</p>
+<section class="section home-shell" id="services">
+  <div class="section-head">
+    <p class="eyebrow">ЧЕМ МОЖЕМ ПОМОЧЬ</p>
+    <h2>Услуги для разных ситуаций</h2>
+    <p class="section-intro">Расскажите о питомце и задаче — поможем сравнить подходящие варианты.</p>
+  </div>
+  <div class="services">
+    <a class="service-card" href="/vygul-sobak">
+      <span class="service-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="6" cy="8" r="1.6"/><circle cx="10" cy="5" r="1.6"/><circle cx="14" cy="5" r="1.6"/><circle cx="18" cy="8" r="1.6"/><path d="M12 11c-3.1 0-5.5 2.4-5.5 5.2 0 2 1.4 3.2 3.3 2.5.8-.3 1.4-.7 2.2-.7s1.4.4 2.2.7c1.9.7 3.3-.5 3.3-2.5C17.5 13.4 15.1 11 12 11z"/></svg></span>
+      <h3>Выгул собак</h3><p>Разовая прогулка или помощь по расписанию.</p><span class="more">Подробнее <span aria-hidden="true">→</span></span>
+    </a>
+    <a class="service-card" href="/zoonyanya">
+      <span class="service-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3.5 11 12 4l8.5 7M5.5 9.5V20h13V9.5"/><path d="M12 17.2c-2.6-1.7-3.6-2.8-3.6-4.1a2 2 0 0 1 3.6-1.2 2 2 0 0 1 3.6 1.2c0 1.3-1 2.4-3.6 4.1z"/></svg></span>
+      <h3>Зооняня</h3><p>Визиты и уход за питомцем в привычной обстановке.</p><span class="more">Подробнее <span aria-hidden="true">→</span></span>
+    </a>
+    <a class="service-card" href="/peredergka">
+      <span class="service-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 18.5V6M3 15h18v3.5M21 15v-2.5a3 3 0 0 0-3-3h-6.5V15"/><circle cx="7.2" cy="11.8" r="1.6"/></svg></span>
+      <h3>Передержка</h3><p>Временное проживание у исполнителя или в зоотеле.</p><span class="more">Подробнее <span aria-hidden="true">→</span></span>
+    </a>
+    <a class="service-card" href="/zootaksi">
+      <span class="service-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 17v-4.2l1.7-4.6A2 2 0 0 1 7.6 7h8.8a2 2 0 0 1 1.9 1.2L20 12.8V17M4 17h16M4 17v2.5M20 17v2.5M9.5 4h5"/><circle cx="7.6" cy="13.8" r=".9" fill="currentColor"/><circle cx="16.4" cy="13.8" r=".9" fill="currentColor"/></svg></span>
+      <h3>Зоотакси</h3><p>Поездки к ветеринару, на передержку и по другим делам.</p><span class="more">Подробнее <span aria-hidden="true">→</span></span>
+    </a>
+  </div>
+</section>
 
-<h2>Как это работает</h2>
-<ol class="steps">
-<li><div><b>Расскажите, что нужно</b>Выберите услугу и коротко опишите питомца и время.</div></li>
-<li><div><b>Получите варианты</b>Мы предложим несколько исполнителей с разной ценой и уровнем сервиса.</div></li>
-<li><div><b>Выберите и подтвердите</b>Специалист приедет в назначенное время, а мы будем на связи.</div></li>
-</ol>
+<section class="process">
+  <div class="home-shell section" id="how-it-works">
+    <div class="section-head"><p class="eyebrow">ПОНЯТНЫЙ ПРОЦЕСС</p><h2>От запроса до подходящего варианта</h2></div>
+    <div class="steps">
+      <article class="step"><h3>Расскажите о задаче</h3><p>Укажите услугу, время, адрес и особенности питомца.</p></article>
+      <article class="step"><h3>Обсудим детали</h3><p>Уточним, что важно для вас и вашего питомца.</p></article>
+      <article class="step"><h3>Выберите вариант</h3><p>Предложим подходящие варианты и сообщим стоимость до подтверждения.</p></article>
+    </div>
+  </div>
+</section>
 
-<h2>Где работаем и что можно заказать</h2>
-<p class="choice">Зооконсьерж работает в Москве и Московской области. Поможем найти выгул собак рядом с домом, зооняню для визитов и ночёвок, передержку для кошек и собак на время отпуска или командировки и зоотакси для поездки к ветеринару, на выставку или в другой город.</p>
+<section class="section home-shell">
+  <div class="choice-panel">
+    <div><p class="eyebrow">МОСКВА И МОСКОВСКАЯ ОБЛАСТЬ</p><h2>Начнём с вашей задачи</h2><p>Оставьте заявку — обсудим время, адрес и то, что важно учесть при подборе специалиста.</p></div>
+    <a class="btn" href="/request">Оставить заявку</a>
+  </div>
+</section>
 
-<p class="choice"><a href="/vygul-sobak">Выгул собак</a> · <a href="/zoonyanya">Зооняня на дому</a> · <a href="/peredergka">Передержка</a> · <a href="/zootaksi">Зоотакси</a> · <a href="/stati">Статьи</a></p>
-
-<h2 id="apply">Как оставить заявку</h2>
-<div class="entries">
-<a class="entry card" href="https://t.me/__BOT__"><span class="ic"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.4 4.1 2.9 11.2c-.9.4-.9 1.2-.2 1.4l4.7 1.5 1.8 5.5c.2.6.4.8.9.8.4 0 .6-.2.9-.5l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3.1-14.7c.3-1.2-.4-1.8-1.4-1.6zM9 13.6l9.1-5.7c.4-.3.8-.1.5.2l-7.4 6.7-.3 3.1z"/></svg></span><b>Оставить заявку через Telegram</b><span>Быстро напишите нам в Telegram — бот поможет выбрать услугу и отправить заявку.</span><em>Открыть Telegram-бот</em></a>
-<a class="entry card" href="/chat"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5h16a1 1 0 0 1 1 1V16a1 1 0 0 1-1 1h-8l-5 3.5V17H4a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1z"/><path d="M8 10h8M8 13h5"/></svg></span><b>Оставить заявку на сайте</b><span>Выберите услугу, укажите детали и отправьте заявку прямо здесь.</span><em>Оставить заявку на сайте</em></a>
-<a class="entry card" href="/request"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5h9l4 4V20a.5.5 0 0 1-.5.5h-12A.5.5 0 0 1 6 20z"/><path d="M14.5 3.5V8H19M9 12.5h6M9 16h6"/></svg></span><b>Быстрая заявка</b><span>Заполните короткую форму — мы свяжемся с вами и подберём специалиста.</span><em>Заполнить форму</em></a>
-</div>
-
-__FAQ__
-
-<div class="enter">
-<p>Уже оставляли заявку?</p>
-<div class="logins"><a class="login client" href="/chat/login">Войти как клиент</a><a class="login admin" href="/portal">Войти как администратор</a></div>
-</div>
-<p class="foot"><a href="/policy">Политика конфиденциальности</a></p>
+<section class="section home-shell">
+  <div class="section-head"><p class="eyebrow">ОТВЕТЫ НА ВОПРОСЫ</p><h2>Перед тем как оставить заявку</h2></div>
+  __FAQ__
+  <div class="contact-strip">
+    <div><h2>Хотите сначала обсудить?</h2><p>Напишите администратору — поможем сориентироваться.</p></div>
+    <a href="/contact">Связаться с нами</a>
+  </div>
+  <p class="quiet-links"><a href="/chat">Открыть чат на сайте</a><a href="/chat/login">Мои заявки</a><a href="/stati">Статьи о питомцах</a></p>
+</section>
 </main>
+__FOOTER__
 </body>
 </html>

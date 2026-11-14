@@ -14,7 +14,6 @@ import orders
 import pricing
 import webchat
 import brand
-import ribbons
 import talk
 import texts
 from config import config
@@ -78,22 +77,22 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
     checked = " checked" if values.get("consent") else ""
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — заявка</title><meta name="description" content="Оставьте заявку на выгул, зоонаню, передержку или зоотакси в Москве и Московской области — подберём несколько вариантов.">
-{brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.CLIENT)}<main>
-{brand.backrow("/")}
-<div class="top">{brand.LOGO}</div>{brand.STRAP}
-<h1>Заявка на услугу</h1>
-<p class="hint">Работает без Telegram и без VPN. Мы позвоним или напишем СМС, уточним детали и сообщим точную цену.</p>
+{brand.HEAD}<style>{CSS}</style></head><body>{brand.public_header()}<main class="public-main public-form">
+<p class="eyebrow">ЗАЯВКА · МОСКВА И МОСКОВСКАЯ ОБЛАСТЬ</p><h1>Подберём услугу для питомца</h1>
+<p class="hint form-intro">Расскажите о задаче. Мы уточним детали и сообщим стоимость до подтверждения.</p>
 <form method="post" action="/request">
-<label for="service_id">Услуга</label><select id="service_id" name="service_id"><option value="">Выберите…</option>{"".join(groups)}</select>{err("service_id")}
-<label for="when">Когда нужно</label><input id="when" name="when" maxlength="100" value="{v("when")}" placeholder="например, завтра в 10:00">
-<label for="address">Адрес</label><input id="address" name="address" maxlength="200" value="{v("address")}" placeholder="город, улица, дом, квартира">{err("address")}
-<label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="кличка, вид, порода">
-<label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name">{err("name")}
-<label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 900 123-45-67">{err("phone")}
-<label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500">{v("comment")}</textarea>
+<div class="form-grid">
+<div class="field"><label for="service_id">Услуга</label><select id="service_id" name="service_id"><option value="">Выберите…</option>{"".join(groups)}</select>{err("service_id")}</div>
+<div class="field"><label for="when">Когда нужно</label><input id="when" name="when" maxlength="100" value="{v("when")}" placeholder="например, завтра в 10:00"></div>
+<div class="field field-wide"><label for="address">Адрес</label><input id="address" name="address" maxlength="200" value="{v("address")}" placeholder="город, улица, дом, квартира">{err("address")}</div>
+<div class="field"><label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="кличка, вид, порода"></div>
+<div class="field"><label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name">{err("name")}</div>
+<div class="field"><label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 900 123-45-67">{err("phone")}</div>
+<div class="field field-wide"><label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500">{v("comment")}</textarea></div>
+</div>
 <div class="hp"><label>Не заполняйте <input name="site" tabindex="-1" autocomplete="off"></label></div>
 <label class="check"><input type="checkbox" name="consent"{checked}><span>Согласен(на) на обработку персональных данных, <a href="/policy">политика</a></span></label>{err("consent")}
-<button class="btn" type="submit">Отправить заявку</button></form></main></body></html>"""
+<button class="btn" type="submit">Отправить заявку</button><p class="form-note">Нажимая кнопку, вы отправляете заявку на подбор услуги. Это не обязывает вас подтверждать заказ.</p></form></main>{brand.public_footer()}</body></html>"""
 
 
 def cancel_form(request_id: int) -> str:
@@ -107,12 +106,12 @@ def cancel_form(request_id: int) -> str:
 def render_done(request_id: int) -> str:
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — заявка принята</title>
-{brand.HEAD}<style>{CSS}</style></head><body>{ribbons.html(ribbons.CLIENT)}<main>{brand.backrow("/")}<div class="top">{brand.LOGO}</div>{brand.STRAP}<h1>✅ Заявка принята</h1>
+{brand.HEAD}<style>{CSS}</style></head><body>{brand.public_header()}<main class="public-main public-form"><h1>Заявка принята</h1>
 <p>Номер заявки: <b>№{request_id}</b>. Мы свяжемся с вами по указанному телефону, уточним детали и сообщим цену.</p>
 <p class="hint">Данные используются только для выполнения заявки. Удалить их можно, написав нам.</p>
 <p><a class="btn" href="/chat">💬 Открыть чат с администратором</a></p>
 <p class="hint">Администратор напишет вам в этот чат. Заходите с этого же телефона и браузера — мы вас узнаем.</p>
-<p><a href="/request">Отправить ещё одну заявку</a></p>{cancel_form(request_id)}</main></body></html>"""
+<p><a href="/request">Отправить ещё одну заявку</a></p>{cancel_form(request_id)}</main>{brand.public_footer()}</body></html>"""
 
 
 _client_ip = webchat.client_ip

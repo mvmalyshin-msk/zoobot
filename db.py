@@ -279,7 +279,6 @@ async def get_conn() -> aiosqlite.Connection:
     conn = await aiosqlite.connect(config.db_path)
     conn.row_factory = aiosqlite.Row
     await conn.execute("PRAGMA foreign_keys = ON")
-    await conn.execute("PRAGMA journal_mode = WAL")  # устойчивее к параллельным записям
     return conn
 
 
@@ -299,6 +298,7 @@ async def init_db() -> None:
     """Создать БД и применить недостающие миграции. Вызывается при старте бота."""
     conn = await get_conn()
     try:
+        await conn.execute("PRAGMA journal_mode = WAL")
         version = await current_version(conn)
 
         if version == 0:
