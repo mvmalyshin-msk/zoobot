@@ -18,6 +18,9 @@ ICONS = {
     "taxi": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 17v-4.2l1.7-4.6A2 2 0 0 1 7.6 7h8.8a2 2 0 0 1 1.9 1.2L20 12.8V17M4 17h16M4 17v2.5M20 17v2.5M9.5 4h5"/><circle cx="7.6" cy="13.8" r=".9" fill="currentColor"/><circle cx="16.4" cy="13.8" r=".9" fill="currentColor"/></svg>',
 }
 
+CHEV = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" '
+        'stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>')
+
 
 async def cheapest_by_category() -> dict[str, dict]:
     """Самый дешёвый вариант каждой услуги с ценой для клиента (база + наценка сервиса; зоотакси — минимальная поездка)."""
@@ -44,6 +47,6 @@ async def cards_html() -> str:
         label = f'{TITLES[c]}: {_price(s["from_price"]).replace(chr(160), " ")} {UNIT.get(s["unit"], "")}' if s else TITLES[c]
         cards.append(
             f'<a class="service-card {c}" href="/request?service={c}" aria-label="{html.escape(label)}. Оставить заявку">'
-            f'<span class="service-icon">{ICONS[c]}</span><h3>{TITLES[c]}</h3>{price}'
-            '<span class="go" aria-hidden="true">Заказать →</span></a>')
+            f'<span class="top"><span class="service-icon">{ICONS[c]}</span><span class="chev" aria-hidden="true">{CHEV}</span></span>'
+            f'<h3>{TITLES[c]}</h3>{price}</a>')
     return '<div class="services" id="services">' + "".join(cards) + "</div>"

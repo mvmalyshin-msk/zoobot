@@ -26,19 +26,21 @@ a:focus-visible,.btn:focus-visible{outline:3px solid var(--boarding);outline-off
 .hero .lead{max-width:560px;margin:0;color:#514b43;font-size:1.08rem;line-height:1.5}
 .hero-art{width:100%;max-width:180px;justify-self:end}
 .hero-art img{display:block;width:100%;height:auto;border-radius:50%}
-.services{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-.service-card{position:relative;min-height:150px;padding:16px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;border:1.5px solid var(--line);border-radius:18px;background:#fff;color:var(--ink);text-decoration:none;box-shadow:0 1px 2px rgba(80,50,20,.06);transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease;-webkit-tap-highlight-color:transparent}
-.service-card:hover{transform:translateY(-2px);border-color:#e2b9a7;box-shadow:0 10px 22px rgba(56,43,32,.08)}
+.services{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.service-card{--a:#c4563f;--t:#fbe9e2;display:flex;flex-direction:column;gap:1px;padding:12px 14px;border-radius:16px;background:var(--t);color:var(--ink);text-decoration:none;transition:transform .15s ease,box-shadow .15s ease;-webkit-tap-highlight-color:transparent}
+.service-card.sitter{--a:#2b7f72;--t:#e1f2ee}
+.service-card.boarding{--a:#4a62a8;--t:#e6ebf7}
+.service-card.taxi{--a:#9a7420;--t:#f8eed6}
+.service-card:hover{transform:translateY(-2px);box-shadow:0 8px 18px rgba(56,43,32,.08)}
 .service-card:active{transform:scale(.98)}
-.service-icon{width:38px;height:38px;margin-bottom:8px;display:grid;place-items:center;border-radius:12px;background:#fae8df;color:#bc5b48}
-.service-card.sitter .service-icon{background:#e2f1ec;color:#317c70}
-.service-card.boarding .service-icon{background:#e7ebf5;color:#51658d}
-.service-card.taxi .service-icon{background:#f7edd6;color:#95732b}
-.service-icon svg{width:22px;height:22px}
-.service-card h3{margin:0;font-size:1.05rem}
-.service-card .price{margin-top:6px;color:var(--coral);font-size:1.25rem;font-weight:700;line-height:1.1;white-space:nowrap}
-.service-card .unit{color:var(--mute);font-size:.85rem}
-.service-card .go{margin-top:auto;padding-top:10px;color:#a94f3f;font-size:.85rem;font-weight:700}
+.service-card .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.service-icon{width:30px;height:30px;display:grid;place-items:center;border-radius:50%;background:#fff;color:var(--a)}
+.service-icon svg{width:17px;height:17px;stroke-width:2}
+.service-card .chev{width:26px;height:26px;display:grid;place-items:center;border-radius:50%;background:#fff;color:var(--a)}
+.service-card .chev svg{width:15px;height:15px}
+.service-card h3{margin:0;font-size:15px}
+.service-card .price{color:var(--a);font-size:21px;font-weight:700;line-height:1.15;white-space:nowrap}
+.service-card .unit{color:var(--mute);font-size:12.5px}
 .hero-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px 18px;margin-top:20px}
 .hero-actions .btn{min-height:46px;padding:12px 22px;border-radius:999px;font-size:1rem}
 .hero-actions .secondary{color:var(--ink);font-weight:700;text-decoration:none}
@@ -65,10 +67,8 @@ a:focus-visible,.btn:focus-visible{outline:3px solid var(--boarding);outline-off
   .hero-top{grid-template-columns:minmax(0,1fr) 92px;gap:12px;margin-bottom:16px}
   .hero h1{font-size:clamp(1.65rem,7.4vw,2.2rem);letter-spacing:-.01em;margin-bottom:6px}
   .hero .lead{font-size:.98rem;line-height:1.4}
-  .services{gap:10px}
-  .service-card{min-height:138px;padding:13px}
-  .service-icon{width:34px;height:34px;margin-bottom:6px}
-  .service-card .price{font-size:1.15rem}
+  .services{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .service-card .price{font-size:19px}
   .hero-actions{flex-direction:column;align-items:stretch;gap:6px;margin-top:16px}
   .hero-actions .btn{width:100%}
   .hero-actions .secondary{text-align:center;padding:8px}
