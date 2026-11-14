@@ -294,6 +294,19 @@ async def current_version(conn: aiosqlite.Connection) -> int:
     return row["v"]
 
 
+async def _apply_schema_script(
+    conn: aiosqlite.Connection, script: str, version: int
+) -> None:
+    """Применить SQL и записать его версию в одной транзакции."""
+    try:
+        await conn.executescript(f"BEGIN;\n{script}")
+        await conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
+        await conn.commit()
+    except BaseException:
+        await conn.rollback()
+        raise
+
+
 async def init_db() -> None:
     """Создать БД и применить недостающие миграции. Вызывается при старте бота."""
     conn = await get_conn()
@@ -303,17 +316,15 @@ async def init_db() -> None:
 
         if version == 0:
             log.info("Создаю БД из schema.sql (версия 1)")
-            await conn.executescript(SCHEMA_FILE.read_text(encoding="utf-8"))
-            await conn.execute("INSERT INTO schema_version (version) VALUES (1)")
-            await conn.commit()
+            await _apply_schema_script(
+                conn, SCHEMA_FILE.read_text(encoding="utf-8"), 1
+            )
             version = 1
 
         for v in sorted(MIGRATIONS):
             if v > version:
                 log.info("Применяю миграцию %s", v)
-                await conn.executescript(MIGRATIONS[v])
-                await conn.execute("INSERT INTO schema_version (version) VALUES (?)", (v,))
-                await conn.commit()
+                await _apply_schema_script(conn, MIGRATIONS[v], v)
     finally:
         await conn.close()
 
