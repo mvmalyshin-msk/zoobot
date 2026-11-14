@@ -92,7 +92,7 @@ def head_tags(base: str) -> str:
         "@context": "https://schema.org", "@type": "LocalBusiness", "name": brand.NAME, "url": url, "image": img,
         "description": DESCRIPTION, "areaServed": [{"@type": "AdministrativeArea", "name": "Московская область"}, {"@type": "City", "name": "Москва"}],
         "knowsLanguage": "ru", "openingHours": "Mo-Su 06:00-22:00",
-        "sameAs": [f"https://t.me/{config.bot_username}"],
+        "sameAs": [f"https://t.me/{config.bot_username}", "https://vk.com/zooconcierge"],
         "makesOffer": [{"@type": "Offer", "itemOffered": {"@type": "Service", "name": n}}
                        for n in ("Выгул собак", "Зооняня", "Передержка животных", "Зоотакси")],
     }
