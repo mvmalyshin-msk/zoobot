@@ -54,6 +54,8 @@ def public_header() -> str:
     return (f'<header class="site-header"><div class="site-header-inner">{LOGO}'
             '<nav class="site-nav" aria-label="Основная навигация">'
             '<a href="/#services">Услуги</a><a href="/#how-it-works">Как работаем</a><a href="/stati">Статьи</a>'
+            '<a class="site-nav-access" href="/chat/login">Кабинет клиента</a>'
+            '<a class="site-nav-access" href="/portal">Вход администратора</a>'
             '<a class="site-nav-cta" href="/request">Оставить заявку</a></nav></div></header>')
 
 
@@ -63,5 +65,6 @@ def public_footer() -> str:
             '<nav aria-label="Ссылки в подвале"><a href="/vygul-sobak">Выгул</a><a href="/zoonyanya">Зооняня</a>'
             '<a href="/peredergka">Передержка</a><a href="/zootaksi">Зоотакси</a></nav>'
             '<nav aria-label="Информация"><a href="/contact">Связаться</a><a href="/stati">Статьи</a>'
-            '<a href="/chat/login">Мои заявки</a><a href="/policy">Политика обработки данных</a></nav>'
+            '<a href="/chat/login">Личный кабинет клиента</a><a href="/portal">Кабинет администратора</a>'
+            '<a href="/policy">Политика обработки данных</a></nav>'
             '<p class="site-footer-area">Работаем в Москве и Московской области</p></div></footer>')

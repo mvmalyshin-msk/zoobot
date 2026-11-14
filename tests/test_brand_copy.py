@@ -60,6 +60,8 @@ class CopyTest(unittest.IsolatedAsyncioTestCase):
                 self.assertIn('class="site-header"', t, p)
                 self.assertIn('class="site-footer"', t, p)
                 self.assertNotIn("КЛИЕНТСКОЕ МЕНЮ", t, p)
+                self.assertIn('href="/chat/login"', t, p)
+                self.assertIn('href="/portal"', t, p)
             else:
                 self.assertIn(brand.STRAP, t, p)
                 self.assertEqual([t.index(f">{w}<") for w in ORDER], sorted(t.index(f">{w}<") for w in ORDER), p)
