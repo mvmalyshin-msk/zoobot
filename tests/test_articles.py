@@ -150,6 +150,25 @@ class Articles(unittest.IsolatedAsyncioTestCase):
         for bad in ("гарантируем", "лицензи", "застрахован", "отзыв"):
             self.assertNotIn(bad, t.lower())
 
+    async def test_cat_and_dog_boarding_pages(self):
+        import db
+        await db.init_db()
+        prices = await articles.current_prices()
+        for path in ("/peredergka-sobak", "/peredergka-koshek"):
+            r = await self.client.get(path)
+            t = await r.text()
+            self.assertEqual(r.status, 200, path)
+            self.assertNotIn("{{", t, path)
+            self.assertIn(articles.rub(prices["boarding_hotel"]).replace(" ", "\u00a0"), t, path)
+            self.assertIn('"@type": "FAQPage"', t, path)
+            self.assertIn("/stati/skolko-stoit-perederzhka-sobaki-i-koshki", t, path)  # статья о ценах
+            self.assertNotIn(f'href="{path}/', t, path)  # нет ссылок на несуществующие городские подстраницы
+            self.assertIn(path, seo.PUBLIC_PAGES)
+            self.assertEqual(len(re.findall(r"<h1[ >]", t)), 1, path)
+        parent = await (await self.client.get("/peredergka")).text()
+        self.assertIn('href="/peredergka-sobak"', parent)
+        self.assertIn('href="/peredergka-koshek"', parent)
+
 
 if __name__ == "__main__":
     unittest.main()
