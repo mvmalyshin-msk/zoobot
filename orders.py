@@ -144,15 +144,18 @@ def format_my_orders(rows: list[dict]) -> str:
 
 # ---------- Уведомления ----------
 
-async def notify(bot: Bot, tg_id: int, text: str, reply_markup=None) -> bool:
+async def notify(bot: Bot, tg_id: int, text: str, reply_markup=None, *,
+                 raise_forbidden: bool = False) -> bool:
     """Отправка с защитой: если пользователь заблокировал бота — помечаем и идём дальше."""
     try:
         await bot.send_message(tg_id, text, reply_markup=reply_markup)
         return True
     except TelegramForbiddenError:
         await db.execute(f"UPDATE users SET is_blocked=1, {db.touch()} WHERE tg_id=?", (tg_id,))
-    except Exception:
-        log.exception("Не удалось отправить сообщение %s", tg_id)
+        if raise_forbidden:
+            raise
+    except Exception as exc:
+        log.warning("Не удалось отправить сообщение %s (%s)", tg_id, type(exc).__name__)
     return False
 
 
@@ -288,9 +291,15 @@ async def _transition(conn, order_id: int, old: str, new: str, actor: str,
         await conn.execute(
             "UPDATE payments SET status='paid', paid_at=datetime('now'), updated_at=datetime('now') "
             "WHERE order_id=? AND status IN ('pending','link_sent')", (order_id,))
-    elif new == "cancelled":
         await conn.execute(
-            "UPDATE reminders SET sent=1, updated_at=datetime('now') WHERE order_id=? AND sent=0", (order_id,))
+            """UPDATE reminders SET terminal_reason='payment_received', updated_at=datetime('now')
+               WHERE order_id=? AND kind='pay_3h' AND sent=0 AND terminal_reason IS NULL""",
+            (order_id,))
+    elif new in ("cancelled", "completed"):
+        await conn.execute(
+            """UPDATE reminders SET terminal_reason=?, updated_at=datetime('now')
+               WHERE order_id=? AND sent=0 AND terminal_reason IS NULL""",
+            (f"order_{new}", order_id))
 
 
 async def change_status(bot: Bot, order_id: int, new: str, actor: str,
@@ -449,6 +458,7 @@ async def schedule_reminder(order_id: int, kind: str, send_at: datetime) -> None
     await db.execute(
         """INSERT INTO reminders (order_id, kind, send_at) VALUES (?,?,?)
            ON CONFLICT(order_id, kind) DO UPDATE SET send_at=excluded.send_at, sent=0,
+                                                     attempts=0, terminal_reason=NULL,
                                                      updated_at=datetime('now')""",
         (order_id, kind, to_db(send_at)),
     )

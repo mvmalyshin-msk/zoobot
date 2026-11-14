@@ -513,9 +513,14 @@ async def main():
 
     bad = await db.fetch_all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT IN "
                              "('schema_version','holidays','kv','sqlite_sequence','passkeys') AND name NOT LIKE 'sqlite_%'")
+    append_only = {"analytics_ignore", "analytics_ignore_vid"}
     for t in bad:
         cols = [c["name"] for c in await db.fetch_all(f"PRAGMA table_info({t['name']})")]
-        ok("updated_at" in cols, f"updated_at есть в {t['name']}")
+        if t["name"] in append_only:
+            ok("created_at" in cols and "updated_at" not in cols,
+               f"{t['name']} соответствует схеме append-only")
+        else:
+            ok("updated_at" in cols, f"updated_at есть в {t['name']}")
     print("9. Устойчивость к «битым» кнопкам")
     for bad_data in ("svc:abc", "ex:x", "ex:a:b:c", "cancel:x", "qty:"):
         n = len(ANSWERS)
