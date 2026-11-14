@@ -133,10 +133,10 @@ class RequestChatTest(unittest.IsolatedAsyncioTestCase):
         s = await db.fetch_one("SELECT ip FROM web_sessions WHERE token_hash=?", (webchat._hash(tok),))
         self.assertEqual(s["ip"], "10.0.0.9")
 
-    async def test_home_has_prominent_chat_button(self):
+    async def test_home_promotes_request_and_keeps_contact_path(self):
         t = await (await self.client.get("/")).text()
-        hero = t.split("</header>")[0]
-        self.assertRegex(hero, r'<a[^>]*href="/contact"[^>]*>[^<]*Написать администратору')   # было «Чат» → /chat; теперь сразу на связь с админом
+        self.assertIn('<a class="btn" href="/request">Подобрать специалиста</a>', t)
+        self.assertIn('href="/contact"', t)
 
 
 if __name__ == "__main__":

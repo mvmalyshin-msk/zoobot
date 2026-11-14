@@ -144,9 +144,12 @@ def render_html(op: dict) -> str:
         "<!doctype html>\n<html lang=\"ru\"><head><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
         f"<title>{e(TITLE)}</title>{brand.HEAD}"
-        "<style>body{font:17px/1.55 var(--font);max-width:720px;margin:0 auto;padding:16px 16px 48px}"
-        "h1{font-size:1.4rem}h2{font-size:1.1rem;margin-top:1.6em}.meta{color:var(--mute)}</style></head><body>"
-        + f'{brand.backrow("/")}' + "".join(body) + "</body></html>"
+        "<style>body{font:17px/1.55 var(--font);margin:0}.policy-content{max-width:760px;padding:40px 24px 60px}"
+        ".policy-content h1{font-size:clamp(2rem,4vw,2.7rem);line-height:1.1}"
+        ".policy-content h2{font-size:1.1rem;margin-top:1.6em}.meta{color:var(--mute)}"
+        "@media(max-width:600px){.policy-content{padding:28px 18px 44px}}</style></head><body>"
+        + brand.public_header() + '<main class="public-main policy-content">' + "".join(body) + "</main>"
+        + brand.public_footer() + "</body></html>"
     )
 
 

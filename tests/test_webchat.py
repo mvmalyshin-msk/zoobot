@@ -59,8 +59,19 @@ def run(coro_fn):
         bot = Bot("1:x", session=webchat.WebRouterSession(Inner()))
         app = webserver.make_app()
         app["bot"], app["dp"] = bot, DP
-        async with TestClient(TestServer(app)) as c:
-            return await coro_fn(c, bot)
+        try:
+            async with TestClient(TestServer(app)) as c:
+                return await coro_fn(c, bot)
+        finally:
+            current = asyncio.current_task()
+            pending = [task for task in asyncio.all_tasks() if task is not current and not task.done()]
+            if pending:
+                done, pending = await asyncio.wait(pending, timeout=2)
+                await asyncio.gather(*done, return_exceptions=True)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
     return LOOP.run_until_complete(go())
 
 

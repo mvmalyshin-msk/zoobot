@@ -39,6 +39,8 @@ class Articles(unittest.IsolatedAsyncioTestCase):
             self.assertGreaterEqual(len(re.findall(r"<h2[ >]", t)), 3, path)
             self.assertIn('"@type": "Article"', t, path)
             self.assertIn('href="/request"', t, path)
+            self.assertIn('class="site-header"', t, path)
+            self.assertIn('class="site-footer"', t, path)
 
     async def test_articles_link_to_a_service_page_and_name_the_region(self):
         for path in SLUGS:
@@ -57,6 +59,15 @@ class Articles(unittest.IsolatedAsyncioTestCase):
         for path in ("/stati",) + SLUGS:
             self.assertIn(path, seo.PUBLIC_PAGES)
             self.assertIn(path + "</loc>", x)
+
+    async def test_index_teasers_have_single_sentence_punctuation(self):
+        t = await (await self.client.get("/stati")).text()
+        self.assertNotIn("..</p>", t)
+        for article in articles.ARTICLES.values():
+            teaser = article["lead"].split(". ", 1)[0].strip()
+            if not teaser.endswith("."):
+                teaser += "."
+            self.assertIn(f"<p>{articles._e(teaser)}</p>", t)
 
     async def test_home_links_to_articles(self):
         self.assertIn('href="/stati"', await (await self.client.get("/")).text())

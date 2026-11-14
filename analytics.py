@@ -235,6 +235,7 @@ async def post_event(request: web.Request) -> web.Response:
     if _limited((fwd.split(",")[0].strip() or request.remote or "?")[:64]):
         return web.Response(status=429)
     dev, br, os_ = classify_ua(ua)
+    rows = []
     for it in items[:50]:
         if not isinstance(it, dict) or it.get("t") not in WEB_TYPES:
             continue
@@ -245,9 +246,12 @@ async def post_event(request: web.Request) -> web.Response:
         value = _int(it.get("n")) if t in ("scroll", "ping", "leave") else None
         target = _clip(it.get("g"), 120) if t in ("click", "focus", "submit") else None
         ref = _clip(it.get("r"), 80) if t == "pv" else None
-        await db.execute(
-            "INSERT INTO analytics_events (source, vid, sid, type, path, target, value, device, browser, os, ref) "
-            "VALUES ('web',?,?,?,?,?,?,?,?,?,?)", (vid, sid, t, path, target, value, dev, br, os_, ref))
+        rows.append((vid, sid, t, path, target, value, dev, br, os_, ref))
+    if rows:
+        async with db.transaction() as conn:
+            await conn.executemany(
+                "INSERT INTO analytics_events (source, vid, sid, type, path, target, value, device, browser, os, ref) "
+                "VALUES ('web',?,?,?,?,?,?,?,?,?,?)", rows)
     return web.Response(status=204)
 
 

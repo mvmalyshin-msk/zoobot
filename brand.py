@@ -48,3 +48,20 @@ CHIPS = "".join(f'<span class="chip {k}">{t}</span>' for k, t in SERVICES)
 STRAP = f'<div class="strap"><p>Подбираем проверенных специалистов для питомцев</p><div class="chips">{CHIPS}</div></div>'
 
 LOGO = '<a class="brand" href="/" aria-label="На главную"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</a>'
+
+
+def public_header() -> str:
+    return (f'<header class="site-header"><div class="site-header-inner">{LOGO}'
+            '<nav class="site-nav" aria-label="Основная навигация">'
+            '<a href="/#services">Услуги</a><a href="/#how-it-works">Как работаем</a><a href="/stati">Статьи</a>'
+            '<a class="site-nav-cta" href="/request">Оставить заявку</a></nav></div></header>')
+
+
+def public_footer() -> str:
+    return (f'<footer class="site-footer"><div class="site-footer-inner"><div><a class="brand footer-brand" href="/">'
+            '<span class="zoo">ЗОО</span>КОНСЬЕРЖ</a><p>Помогаем подобрать заботу о питомце в Москве и Московской области.</p></div>'
+            '<nav aria-label="Ссылки в подвале"><a href="/vygul-sobak">Выгул</a><a href="/zoonyanya">Зооняня</a>'
+            '<a href="/peredergka">Передержка</a><a href="/zootaksi">Зоотакси</a></nav>'
+            '<nav aria-label="Информация"><a href="/contact">Связаться</a><a href="/stati">Статьи</a>'
+            '<a href="/chat/login">Мои заявки</a><a href="/policy">Политика обработки данных</a></nav>'
+            '<p class="site-footer-area">Работаем в Москве и Московской области</p></div></footer>')
