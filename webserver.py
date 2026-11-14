@@ -124,6 +124,8 @@ def make_app() -> web.Application:
     servicepages.setup(app)
     import articles
     articles.setup(app)
+    import about
+    about.setup(app)
     import citypages
     citypages.setup(app)
     import analytics
