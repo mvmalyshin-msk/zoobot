@@ -14,7 +14,7 @@ import articles  # noqa: E402
 import seo  # noqa: E402
 import webserver  # noqa: E402
 
-SLUGS = ("/stati/skolko-stoit-perederzhka-sobaki-i-koshki", "/stati/s-kem-ostavit-pitomca-na-novogodnie-prazdniki", "/stati/kak-vybrat-peredergku", "/stati/skolko-gulyat-s-sobakoi", "/stati/kak-podgotovit-koshku-k-otezdu")
+SLUGS = ("/stati/zootaksi-dlya-sobak-i-koshek", "/stati/skolko-stoit-perederzhka-sobaki-i-koshki", "/stati/s-kem-ostavit-pitomca-na-novogodnie-prazdniki", "/stati/kak-vybrat-peredergku", "/stati/skolko-gulyat-s-sobakoi", "/stati/kak-podgotovit-koshku-k-otezdu")
 
 
 class Articles(unittest.IsolatedAsyncioTestCase):
@@ -129,6 +129,26 @@ class Articles(unittest.IsolatedAsyncioTestCase):
     def test_fill_prices_without_data_leaves_no_braces(self):
         self.assertEqual(articles.fill_prices("от {{boarding_home}}", {}), "от по запросу")
         self.assertEqual(articles.fill_prices("{{x_x2}}", {"x": 1000}), "2\u00a0000\u00a0₽")
+
+    async def test_zootaksi_article_shows_live_taxi_price(self):
+        import db
+        await db.init_db()
+        t = await (await self.client.get("/stati/zootaksi-dlya-sobak-i-koshek")).text()
+        prices = await articles.current_prices()
+        self.assertIn(articles.rub(prices["taxi"]).replace(" ", "\u00a0"), t)
+        self.assertNotIn("{{", t)
+        self.assertIn('href="/zootaksi"', t)
+
+    async def test_about_page_is_public_linked_and_honest(self):
+        r = await self.client.get("/o-nas")
+        t = await r.text()
+        self.assertEqual(r.status, 200)
+        self.assertIn('"@type": "LocalBusiness"', t)
+        self.assertIn('href="/policy"', t)
+        self.assertIn("/o-nas", seo.PUBLIC_PAGES)
+        self.assertIn('href="/o-nas"', await (await self.client.get("/stati")).text())  # ссылка в подвале
+        for bad in ("гарантируем", "лицензи", "застрахован", "отзыв"):
+            self.assertNotIn(bad, t.lower())
 
 
 if __name__ == "__main__":

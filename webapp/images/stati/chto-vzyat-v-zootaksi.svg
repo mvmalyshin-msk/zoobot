@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 380" width="720" height="380" role="img" aria-labelledby="t d">
+<title id="t">Что взять в поездку с питомцем</title>
+<desc id="d">Чек-лист для поездки: переноска или шлейка с поводком, пелёнка или подстилка, привычная игрушка или вещь с вашим запахом, вода и миска для долгой дороги, ветпаспорт, если едете к ветеринару или в аэропорт, пакеты и салфетки.</desc>
+<rect width="720" height="380" rx="24" fill="#FFF6EE"/>
+<text x="36" y="56" font-family="PT Sans, Arial, sans-serif" font-size="26" font-weight="700" fill="#2b2420">Что взять в поездку с питомцем</text>
+<g font-family="PT Sans, Arial, sans-serif" font-size="19" fill="#2b2420">
+<g transform="translate(36 92)"><rect width="30" height="30" rx="8" fill="#FC6751"/><path d="M8 15l5 5 9-10" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/><text x="46" y="22">Переноска для кошки или маленькой собаки, шлейка и поводок</text></g>
+<g transform="translate(36 138)"><rect width="30" height="30" rx="8" fill="#FC6751"/><path d="M8 15l5 5 9-10" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/><text x="46" y="22">Пелёнка или подстилка на сиденье</text></g>
+<g transform="translate(36 184)"><rect width="30" height="30" rx="8" fill="#FC6751"/><path d="M8 15l5 5 9-10" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/><text x="46" y="22">Привычная игрушка или вещь с вашим запахом</text></g>
+<g transform="translate(36 230)"><rect width="30" height="30" rx="8" fill="#FC6751"/><path d="M8 15l5 5 9-10" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/><text x="46" y="22">Вода и миска, если дорога долгая</text></g>
+<g transform="translate(36 276)"><rect width="30" height="30" rx="8" fill="#FC6751"/><path d="M8 15l5 5 9-10" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/><text x="46" y="22">Ветпаспорт — к ветеринару, на передержку, в аэропорт</text></g>
+<g transform="translate(36 322)"><rect width="30" height="30" rx="8" fill="#FC6751"/><path d="M8 15l5 5 9-10" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/><text x="46" y="22">Пакеты и влажные салфетки</text></g>
+</g>
+</svg>

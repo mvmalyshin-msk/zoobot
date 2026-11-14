@@ -64,7 +64,7 @@ def public_footer() -> str:
             '<span class="zoo">ЗОО</span>КОНСЬЕРЖ</a><p>Помогаем подобрать заботу о питомце в Москве и Московской области.</p></div>'
             '<nav aria-label="Ссылки в подвале"><a href="/vygul-sobak">Выгул</a><a href="/zoonyanya">Зооняня</a>'
             '<a href="/peredergka">Передержка</a><a href="/zootaksi">Зоотакси</a></nav>'
-            '<nav aria-label="Информация"><a href="/contact">Связаться</a><a href="/stati">Статьи</a>'
+            '<nav aria-label="Информация"><a href="/o-nas">О сервисе</a><a href="/contact">Связаться</a><a href="/stati">Статьи</a>'
             '<a href="/chat/login">Личный кабинет клиента</a><a href="/portal">Кабинет администратора</a>'
             '<a href="/policy">Политика обработки данных</a>'
             '<a href="https://t.me/zooconcierge_bot">Telegram-бот @zooconcierge_bot</a></nav>'

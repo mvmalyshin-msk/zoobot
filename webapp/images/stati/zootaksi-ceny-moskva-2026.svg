@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" width="720" height="360" role="img" aria-labelledby="t d">
+<title id="t">Сколько стоит перевезти питомца по Москве, 2026</title>
+<desc id="d">Опция «перевозка домашнего животного» в обычном такси — не более 150 рублей сверху к поездке; специализированное зоотакси по Москве — от 2000 до 2700 рублей в одну сторону; зоотакси до аэропорта — от 3000 до 5000 рублей.</desc>
+<rect width="720" height="360" rx="24" fill="#FFF6EE"/>
+<text x="36" y="56" font-family="PT Sans, Arial, sans-serif" font-size="26" font-weight="700" fill="#2b2420">Сколько стоит перевезти питомца по Москве, 2026</text>
+<g font-family="PT Sans, Arial, sans-serif" font-size="18" fill="#5b5047">
+<text x="36" y="112">Обычное такси: доплата за животное</text>
+<text x="36" y="192">Зоотакси по Москве, в одну сторону</text>
+<text x="36" y="272">Зоотакси до аэропорта</text>
+</g>
+<rect x="36" y="124" width="648" height="22" rx="11" fill="#F1E3D3"/><rect x="36" y="124" width="22" height="22" rx="11" fill="#FC6751"/>
+<rect x="36" y="204" width="648" height="22" rx="11" fill="#F1E3D3"/><rect x="295" y="204" width="91" height="22" rx="11" fill="#FC6751"/>
+<rect x="36" y="284" width="648" height="22" rx="11" fill="#F1E3D3"/><rect x="425" y="284" width="259" height="22" rx="11" fill="#FC6751"/>
+<g font-family="PT Sans, Arial, sans-serif" font-size="18" font-weight="700" fill="#2b2420">
+<text x="68" y="141">до 150 ₽ к цене поездки</text>
+<text x="396" y="221">2 000–2 700 ₽</text>
+<text x="684" y="270" text-anchor="end">3 000–5 000 ₽</text>
+</g>
+<text x="36" y="338" font-family="PT Sans, Arial, sans-serif" font-size="14" fill="#8a7d72">Источники: тариф «Эконом» Яндекс Go (Москва), Т—Ж (ноябрь 2026). Шкала: 0–5 000 ₽.</text>
+</svg>
