@@ -32,6 +32,7 @@ class DatabaseJournalModeTest(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(await db.fetch_one("SELECT 1 AS value"), {"value": 1})
                     self.assertEqual(await db.fetch_all("SELECT 2 AS value"), [{"value": 2}])
             finally:
+                await db.close_shared()      # общее соединение открыто подменённым connect — закрыть, иначе держит процесс
                 object.__setattr__(db.config, "db_path", original_path)
 
         journal_mode_statements = [
