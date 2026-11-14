@@ -99,7 +99,7 @@ class SurvivesRestart(Base):
         async def fake_send(to, subject, body):
             self.mails.append(body)
             return True
-        with mock.patch.object(mailer, "configured", return_value=True), \
+        with mock.patch.object(mailer, "client_mail_on", return_value=True), \
                 mock.patch.object(mailer, "send", side_effect=fake_send):
             await self.post("/chat/login/email", {"email": MAIL})
             code = re.search(r"\b(\d{6})\b", self.mails[-1]).group(1)
@@ -139,13 +139,13 @@ class TelegramWaitingPage(Base):
 
 class LoginPageShowsOnlyWorkingWays(Base):
     async def test_no_email_form_when_mail_not_set_up(self):
-        with mock.patch.object(mailer, "configured", return_value=False):
+        with mock.patch.object(mailer, "client_mail_on", return_value=False):
             t = await (await self.client.get("/chat/login")).text()
         self.assertNotIn("/chat/login/email", t)
         self.assertIn("/chat/login/tg", t)
 
     async def test_email_form_when_mail_set_up(self):
-        with mock.patch.object(mailer, "configured", return_value=True):
+        with mock.patch.object(mailer, "client_mail_on", return_value=True):
             t = await (await self.client.get("/chat/login")).text()
         self.assertIn('action="/chat/login/email"', t)
         self.assertLess(t.index("/chat/login/tg"), t.index("/chat/login/email"))
@@ -160,7 +160,7 @@ class CodePages(Base):
         self.assertIn("autofocus", t)
 
     async def test_email_code_page_offers_resend(self):
-        with mock.patch.object(mailer, "configured", return_value=True), \
+        with mock.patch.object(mailer, "client_mail_on", return_value=True), \
                 mock.patch.object(mailer, "send", return_value=True):
             t = await (await self.post("/chat/login/email", {"email": MAIL})).text()
         self.assertIn("Отправить код ещё раз", t)

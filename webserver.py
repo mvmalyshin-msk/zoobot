@@ -97,6 +97,8 @@ def make_app() -> web.Application:
     analytics.setup(app)
     import phoneverify
     phoneverify.setup(app)
+    import clientkeys
+    clientkeys.setup(app)
     app.router.add_static("/vendor/", WEBAPP_DIR / "vendor", follow_symlinks=False)
     app.router.add_static("/fonts/", WEBAPP_DIR / "fonts", follow_symlinks=False)
     app.router.add_static("/images/", WEBAPP_DIR / "images", follow_symlinks=False)

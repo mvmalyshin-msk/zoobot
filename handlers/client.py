@@ -181,11 +181,10 @@ async def show_menu(msg: Message, tg_user, text: str | None = None) -> None:
 async def cmd_start_site_login(m: Message) -> None:
     """Клиент нажал «Войти через Telegram» на сайте: подтверждаем вход, страница откроется сама."""
     import webchat
-    if await webchat.confirm_tg_login(command_args(m), m.from_user.id):
+    code = await webchat.confirm_tg_login(command_args(m), m.from_user.id)
+    if code:
         await repo.get_or_create_user(m.from_user)
-        await m.answer("✅ Готово! Вернитесь на сайт — кабинет откроется автоматически.\n"
-                       "Если страница закрылась или не открылась, нажмите кнопку ниже.",
-                       reply_markup=await webchat.tg_login_done_markup(m.from_user.id))
+        await m.answer(webchat.tg_login_done_text(code), reply_markup=await webchat.tg_login_done_markup(m.from_user.id))
     elif m.from_user.id in config.admin_ids:
         import webchat
         await m.answer(webchat.ADMIN_AS_CLIENT_TEXT)

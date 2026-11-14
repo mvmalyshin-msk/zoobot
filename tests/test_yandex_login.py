@@ -27,7 +27,8 @@ from test_phoneverify import fake_config, run  # noqa: E402
 async def login(c, phone):
     with fake_config(), \
             mock.patch.object(phoneverify, "exchange_code", mock.AsyncMock(return_value="T")), \
-            mock.patch.object(phoneverify, "fetch_phone", mock.AsyncMock(return_value=phone)):
+            mock.patch.object(phoneverify, "fetch_phone", mock.AsyncMock(return_value=phone)), \
+            mock.patch.object(phoneverify, "fetch_email", mock.AsyncMock(return_value=None)):
         c.session.cookie_jar.clear()
         r = await c.get("/chat/login/yandex", allow_redirects=False)
         assert r.status == 302, r.status
