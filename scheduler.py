@@ -69,6 +69,11 @@ async def process_due_reminders(bot: Bot) -> int:
 
 
 def web_request_notification_text(request: dict) -> str:
+    comment = request.get("comment") or ""
+    if request["service_id"] is None and request["web_uid"] is None and comment.startswith("Сайт: "):
+        site, _, details = comment.partition("\n")
+        return (f"🌐 Заявка с сайта «{site.removeprefix('Сайт: ')}» №{request['id']}\n"
+                f"{details}\nСвяжитесь с клиентом по телефону.")
     return "\n".join(filter(None, [
         f"🌐 Заявка с сайта №{request['id']}",
         f"Услуга: {request['service']} (от {rub(request['base_price'])})",
@@ -132,13 +137,16 @@ async def _process_web_request_notification(bot: Bot, notification: dict) -> boo
         request = await db.fetch_one(
             """SELECT r.*, s.name AS service, s.base_price
                FROM web_requests r
-               JOIN services s ON s.id=r.service_id
+               LEFT JOIN services s ON s.id=r.service_id
                WHERE r.id=?""",
             (notification["web_request_id"],))
         if not request:
             raise LookupError("Lead or its service is missing")
         delivered = await orders.notify_admins(
-            bot, web_request_notification_text(request), telegram_only=notification["attempts"] > 1)
+            bot, web_request_notification_text(request),
+            copy_helper=not (request["service_id"] is None and request["web_uid"] is None
+                             and (request["comment"] or "").startswith("Сайт: ")),
+            telegram_only=notification["attempts"] > 1)
         if not delivered:
             raise RuntimeError("Telegram delivery was not confirmed")
     except Exception as exc:

@@ -2,19 +2,15 @@
 import asyncio
 import os
 import sys
+import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("BOT_TOKEN", "1:x")
 os.environ.setdefault("ADMIN_IDS", "111")
-os.environ["DB_PATH"] = "/tmp/zoobot_siteleads_test.db"
 os.environ["SITE_LEADS_KEY"] = "test-key-123456789012345678901234"
-for s in ("", "-wal", "-shm"):
-    try:
-        os.remove(os.environ["DB_PATH"] + s)
-    except FileNotFoundError:
-        pass
 
 from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
 
@@ -52,20 +48,27 @@ class ParseTest(unittest.TestCase):
 class HttpTest(unittest.TestCase):
     def run_app(self, coro):
         async def go():
-            await db.init_db()
-            sent = []
+            original_config = db.config
+            with tempfile.TemporaryDirectory() as directory:
+                db.config = replace(original_config, db_path=str(Path(directory) / "siteleads.db"))
+                try:
+                    await db.init_db()
+                    sent = []
 
-            async def fake(bot, text, reply_markup=None, **kw):
-                sent.append(text)
-            orig = orders.notify_admins
-            orders.notify_admins = fake
-            try:
-                app = webserver.make_app()
-                app["bot"] = object()
-                async with TestClient(TestServer(app)) as c:
-                    return await coro(c, sent)
-            finally:
-                orders.notify_admins = orig
+                    async def fake(bot, text, reply_markup=None, **kw):
+                        sent.append((text, kw))
+                        return True
+                    orig = orders.notify_admins
+                    orders.notify_admins = fake
+                    try:
+                        app = webserver.make_app()
+                        app["bot"] = object()
+                        async with TestClient(TestServer(app)) as c:
+                            return await coro(c, sent)
+                    finally:
+                        orders.notify_admins = orig
+                finally:
+                    db.config = original_config
         return asyncio.run(go())
 
     def test_requires_key(self):
@@ -93,10 +96,33 @@ class HttpTest(unittest.TestCase):
             self.assertEqual(row["name"], "Анна")
             self.assertEqual(row["phone"], "+79007778899")
             self.assertIn("zapis-vygula-sobak", row["comment"])
-            self.assertTrue(any("№%d" % rid in t and "Анна" in t for t in sent))
+            self.assertIsNone(row["service_id"])
+            self.assertIsNone(row["web_uid"])
+            notification = await db.fetch_one(
+                "SELECT web_request_id, status FROM web_request_notifications")
+            self.assertEqual((notification["web_request_id"], notification["status"]), (rid, "sent"))
+            expected_text = (
+                f"🌐 Заявка с сайта «{siteleads.parse(LEAD)['site']}» №{rid}\n"
+                f"{siteleads.parse(LEAD)['comment'].split(chr(10), 1)[1]}\n"
+                "Свяжитесь с клиентом по телефону.")
+            self.assertEqual(sent[0][0], expected_text)
+            self.assertFalse(sent[0][1]["copy_helper"])
             rows = await portal.all_requests("new", "all")
             self.assertTrue(any(x["kind"] == "form" and x["id"] == rid for x in rows))
             self.assertIn("Сайт", portal._row_html([x for x in rows if x["id"] == rid][0]))
+        self.run_app(case)
+
+    def test_outbox_insert_failure_rolls_back_site_lead(self):
+        async def case(c, sent):
+            await db.execute(
+                """CREATE TRIGGER reject_site_lead_notification
+                   BEFORE INSERT ON web_request_notifications
+                   BEGIN SELECT RAISE(ABORT, 'test failure'); END""")
+            response = await c.post("/api/site-lead", json=LEAD, headers=KEY)
+            self.assertEqual(response.status, 500)
+            self.assertIsNone(await db.fetch_one("SELECT id FROM web_requests"))
+            self.assertIsNone(await db.fetch_one("SELECT id FROM web_request_notifications"))
+            self.assertEqual(sent, [])
         self.run_app(case)
 
     def test_bad_body(self):

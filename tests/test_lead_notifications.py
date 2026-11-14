@@ -37,6 +37,47 @@ class LeadNotificationTest(unittest.TestCase):
             "INSERT INTO web_request_notifications (web_request_id) VALUES (?)", (request_id,))
         return request_id, notification_id
 
+    def test_migrations_26_and_27_apply_in_order_on_temporary_db(self):
+        async def go():
+            original_config = db.config
+            with tempfile.TemporaryDirectory() as directory:
+                db.config = replace(original_config, db_path=str(Path(directory) / "migration.db"))
+                try:
+                    conn = await db.get_conn()
+                    try:
+                        await conn.executescript(
+                            """CREATE TABLE schema_version (
+                                   version INTEGER PRIMARY KEY,
+                                   applied_at TEXT NOT NULL DEFAULT (datetime('now')));
+                               CREATE TABLE reminders (
+                                   id INTEGER PRIMARY KEY, sent INTEGER NOT NULL, send_at TEXT NOT NULL);
+                               CREATE TABLE web_requests (id INTEGER PRIMARY KEY);
+                               INSERT INTO schema_version (version) VALUES (25);""")
+                        await conn.commit()
+                    finally:
+                        await conn.close()
+
+                    migration_26 = """
+                        ALTER TABLE reminders ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0;
+                        ALTER TABLE reminders ADD COLUMN terminal_reason TEXT;
+                        CREATE INDEX IF NOT EXISTS idx_reminders_due_retry
+                            ON reminders(sent, terminal_reason, send_at);
+                    """
+                    with mock.patch.object(
+                            db, "MIGRATIONS", {26: migration_26, 27: db.MIGRATIONS[27]}):
+                        await db.init_db()
+
+                    versions = await db.fetch_all("SELECT version FROM schema_version ORDER BY version")
+                    reminder_columns = await db.fetch_all("PRAGMA table_info(reminders)")
+                    outbox = await db.fetch_one(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='web_request_notifications'")
+                    self.assertEqual([row["version"] for row in versions], [25, 26, 27])
+                    self.assertIn("attempts", [row["name"] for row in reminder_columns])
+                    self.assertIsNotNone(outbox)
+                finally:
+                    db.config = original_config
+        asyncio.run(go())
+
     def test_admin_notification_reports_telegram_result(self):
         async def case():
             send = mock.AsyncMock(return_value=True)
