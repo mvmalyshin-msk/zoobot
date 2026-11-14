@@ -50,7 +50,7 @@ class CopyTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('name="description" content="Подберём проверенного специалиста', t)   # мета-описание: та же суть
         for w in ORDER:
             self.assertIn(w, t)
-        self.assertIn("Подберём специалиста для прогулки", t)
+        self.assertIn("Подберём проверенного специалиста", t)   # услуги и так на карточках (14.11)
         self.assertIn("выбирать будете вы", t)
 
     async def test_every_client_page_has_the_strap(self):

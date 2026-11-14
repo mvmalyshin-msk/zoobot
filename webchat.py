@@ -381,7 +381,11 @@ def _html_page(html: str) -> web.Response:
 async def page_chat(request: web.Request) -> web.Response:
     """Чат на сайте — только клиентский. Админ пишет боту из портала: /portal/bot."""
     uid = await session_uid(request)
-    resp = _html_page(_chat_html(admin=False))
+    html = _chat_html(admin=False)
+    if uid is not None and await _logged_in(request):   # вошедшему клиенту — предложение входить по Face ID
+        import clientkeys
+        html = html.replace('<div id="log"', clientkeys.OFFER_HTML + '<div id="log"', 1)
+    resp = _html_page(html)
     if uid is None:  # нет клиентской сессии (или в ней старый админ) — новый гость
         _set_cookie(request, resp, await new_session(device=device_label(request.headers.get("User-Agent")), ip=client_ip(request)))
     else:  # запоминаем, с какого IP человек пришёл в этот раз
@@ -402,12 +406,58 @@ CODE_TTL, CODE_COOLDOWN, CODE_TRIES = 600, 60, 5
 LOGIN_COOKIE = "zcl"  # токен ожидающего входа через Telegram: Safari перезагрузил вкладку — продолжаем тот же вход
 
 
+# Кнопки входа: единый аккуратный вид, высота 46 px (удобно пальцу, но не крупно), значки вместо эмодзи.
+AUTH_CSS = ("<style>"
+            ".auth{display:flex;flex-direction:column;gap:10px;max-width:340px;margin:0 auto}"
+            ".auth h2{font-size:22px;text-align:center;margin:4px 0 2px}"
+            ".auth p{margin:0}"
+            ".auth-note{font-size:14px;color:var(--mute);text-align:center;line-height:1.4}"
+            ".auth-btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;height:46px;padding:0 16px;"
+            "border-radius:999px;border:1.5px solid var(--line);background:#fff;color:var(--ink);font:700 15px/1 var(--font);"
+            "text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent;"
+            "box-shadow:0 1px 2px rgba(80,50,20,.06);transition:transform .08s ease,opacity .15s}"
+            ".auth-btn:active{transform:scale(.98)}.auth-btn[disabled]{opacity:.55;cursor:default;transform:none}"
+            ".auth-btn svg{width:20px;height:20px;flex:none}"
+            ".auth-btn.tg{background:var(--boarding);border-color:var(--boarding);color:#fff}"
+            ".auth-btn.ya{background:#fff;border-color:var(--line);color:var(--ink)}"
+            ".auth-btn.main{background:var(--coral);border-color:var(--coral);color:#fff}"
+            ".auth-btn.soft{background:var(--peach);border-color:var(--peach);font-weight:600}"
+            ".auth-btn[hidden]{display:none}"
+            ".auth input{width:100%;height:46px;padding:0 14px;border-radius:12px;font-size:16px}"
+            ".auth input.code{height:50px;font-size:22px;letter-spacing:.35em;text-align:center}"
+            ".auth form{display:flex;flex-direction:column;gap:8px;margin:0}"
+            ".auth label{font-size:14px;color:var(--mute)}"
+            ".auth-sep{display:flex;align-items:center;gap:10px;color:var(--mute);font-size:13px;margin:6px 0 0}"
+            ".auth-sep:before,.auth-sep:after{content:'';flex:1;height:1px;background:var(--line)}"
+            ".auth details{border-top:1px solid var(--line);padding-top:12px;margin-top:4px}"
+            ".auth summary{cursor:pointer;text-align:center;color:var(--mute);font-size:14px;list-style:none}"
+            ".auth summary::-webkit-details-marker{display:none}"
+            ".auth details[open] summary{margin-bottom:10px}"
+            ".auth .err{color:var(--err);text-align:center;font-size:15px}"
+            ".auth ol{margin:0;padding-left:20px;line-height:1.5;font-size:15px}"
+            "</style>")
+
+ICON_TG = ("<svg viewBox='0 0 24 24' aria-hidden='true'><path fill='currentColor' d='M21.4 4.2 2.9 11.3c-1.3.5-1.2 1.2-.2 1.5"
+           "l4.7 1.5 1.8 5.6c.2.6.4.8.9.8.4 0 .6-.2.9-.4l2.3-2.2 4.7 3.5c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.5-1.9-1.4-1.5z"
+           "M9.5 14.6l8.6-7.8c.4-.3-.1-.5-.6-.2L7.3 13.2'/></svg>")
+ICON_YA = ("<svg viewBox='0 0 24 24' aria-hidden='true'><circle cx='12' cy='12' r='12' fill='#FC3F1D'/>"
+           "<path fill='#fff' d='M13.3 6.5h-1.1c-2 0-3.1 1-3.1 2.6 0 1.8.8 2.6 2.4 3.6l1.3.9-3.7 5.6H6.5l3.4-5"
+           "c-1.9-1.4-3-2.6-3-4.9 0-2.8 2-4.8 5.3-4.8h3.3V18h-2.2V6.5z'/></svg>")
+ICON_MAIL = ("<svg viewBox='0 0 24 24' aria-hidden='true' fill='none' stroke='currentColor' stroke-width='1.8' "
+             "stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='5' width='18' height='14' rx='2.5'/>"
+             "<path d='m4 7 8 6 8-6'/></svg>")
+ICON_FID = ("<svg viewBox='0 0 24 24' aria-hidden='true' fill='none' stroke='currentColor' stroke-width='1.8' "
+            "stroke-linecap='round'><path d='M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6"
+            "a2 2 0 0 1-2-2v-2M9 9v1.5M15 9v1.5M12 9v4h-1M9.5 16c1.5 1 3.5 1 5 0'/></svg>")
+
+
 def _login_shell(inner: str) -> web.Response:
     import brand
     page = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-            f"<title>{brand.NAME} — вход</title>{brand.HEAD}<body>{ribbons.html(ribbons.CLIENT)}"
-            "<div style='max-width:420px;margin:6vh auto;padding:16px'>"
-            f"{brand.backrow('/')}<div style='text-align:center;font-size:26px'>{brand.LOGO}</div>{brand.STRAP}{inner}</div></body>")
+            f"<title>{brand.NAME} — вход</title>{brand.HEAD}{AUTH_CSS}<body>{ribbons.html(ribbons.CLIENT)}"
+            "<div style='max-width:420px;margin:4vh auto;padding:16px'>"
+            f"{brand.backrow('/')}<div style='text-align:center;font-size:26px'>{brand.LOGO}</div>{brand.STRAP}"
+            f"<div class=auth>{inner}</div></div></body>")
     return web.Response(text=page, content_type="text/html", headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
 
@@ -418,74 +468,76 @@ def _yandex_on() -> bool:
 
 def _mail_on() -> bool:
     import mailer
-    return mailer.configured()
+    return mailer.client_mail_on()
 
 
-_CODE_INPUT = ("<input name=\"code\" inputmode=numeric pattern=\"[0-9]*\" autocomplete=one-time-code maxlength=6 "
-               "placeholder='••••••' aria-label='Код из 6 цифр' required autofocus style='width:100%;font-size:1.3em;letter-spacing:.3em;text-align:center'>")
+def _err(msg: str) -> str:
+    return f"<p class=err role=alert>{msg}</p>" if msg else ""
+
+
+_CODE_INPUT = ("<input class=code name=\"code\" inputmode=numeric pattern=\"[0-9]*\" autocomplete=one-time-code maxlength=6 "
+               "placeholder='••••••' aria-label='Код из 6 цифр' required autofocus>")
 
 
 def _resend(action: str, field: str, value: str) -> str:
     """Кнопка «Отправить код ещё раз»: первые 60 секунд неактивна (сервер всё равно не шлёт код чаще)."""
     import html as _h
-    return (f"<form method=post action=\"{action}\" style='margin-top:14px'>"
+    return (f"<form method=post action=\"{action}\">"
             f"<input type=hidden name={field} value='{_h.escape(value, quote=True)}'>"
-            f"<button id=rs class='btn ghost' style='width:100%' disabled>Отправить код ещё раз</button></form>"
+            "<button id=rs class='auth-btn soft' disabled>Отправить код ещё раз</button></form>"
             "<script>(function(){var b=document.getElementById('rs'),n=" + str(CODE_COOLDOWN) + ",t=b.textContent;"
             "function s(){if(n<=0){b.disabled=false;b.textContent=t;return}b.textContent=t+' через '+n+' с';n--;setTimeout(s,1000)}s()})();</script>")
 
 
 def _phone_form(msg: str = "") -> web.Response:
     """Вход и регистрация. Показываем только способы, которые сейчас работают: почта — когда настроена,
-    Яндекс ID — когда подключён. Telegram — первым: один тап, без ввода кодов."""
-    note = f"<p style='color:#b3261e'>{msg}</p>" if msg else ""
-    gap = "<p class=muted style='text-align:center;margin:22px 0 10px'>{}</p>"
+    Яндекс ID — когда подключён, Face ID — где браузер умеет ключи доступа. Telegram — первым."""
+    import clientkeys
     return _login_shell(
-        "<h2 style='text-align:center'>Вход и регистрация</h2>"
-        "<p class=muted style='text-align:center'>Регистрация отдельно не нужна: при первом входе кабинет создаётся сам.</p>"
-        f"{note}"
-        "<p><a class=\"btn\" style='display:block;text-align:center' href=\"/chat/login/tg\">✈️ Войти через Telegram</a></p>"
-        "<p class=muted style='text-align:center;font-size:.9em;margin-top:-4px'>Подтвердите в Telegram и вернитесь сюда — кабинет откроется сам.</p>"
-        + ("<p><a class=\"btn ghost\" style='display:block;text-align:center' href=\"/chat/login/yandex\">"
-           "Войти через Яндекс ID</a></p>" if _yandex_on() else "")
-        + (gap.format("или по почте — без Telegram и VPN") +
-           "<form method=post action=\"/chat/login/email\"><label>Почта</label>"
-           "<input name=\"email\" type=email inputmode=email autocomplete=email placeholder='name@example.com' required style='width:100%'>"
-           "<button class='btn ghost' style='width:100%;margin-top:10px'>Получить код на почту</button></form>"
+        "<h2>Вход и регистрация</h2>"
+        "<p class=auth-note>Регистрация отдельно не нужна: при первом входе кабинет создаётся сам.</p>"
+        + _err(msg)
+        + f"<button id=\"pklogin\" class='auth-btn fid' type=button hidden>{ICON_FID}Войти по Face ID</button>"
+        f"<a class='auth-btn tg' href=\"/chat/login/tg\">{ICON_TG}Войти через Telegram</a>"
+        + (f"<a class='auth-btn ya' href=\"/chat/login/yandex\">{ICON_YA}Войти с Яндекс ID</a>" if _yandex_on() else "")
+        + ("<div class=auth-sep>или по почте, без Telegram и VPN</div>"
+           "<form method=post action=\"/chat/login/email\">"
+           "<input name=\"email\" type=email inputmode=email autocomplete=email placeholder='Ваша почта' aria-label='Почта' required>"
+           f"<button class='auth-btn mail main'>{ICON_MAIL}Получить код на почту</button></form>"
            if _mail_on() else "")
-        + "<details style='margin-top:22px'><summary class=muted style='cursor:pointer;text-align:center'>"
-        "Уже заказывали в боте? Войти по номеру телефона</summary>"
-        "<form method=post action=\"/chat/login/phone\" style='margin-top:10px'><label>Телефон</label>"
-        "<input name=\"phone\" type=tel inputmode=tel autocomplete=tel placeholder='+7 900 000-00-00' required style='width:100%'>"
-        "<button class='btn ghost' style='width:100%;margin-top:10px'>Получить код в Telegram</button></form>"
-        "<p class=muted style='font-size:.9em;margin-top:8px'>Код придёт в Telegram только если номер уже есть у нас и вы раньше открывали бота. СМС мы не отправляем.</p>"
+        + "<p id=pkst class=auth-note role=status></p>"
+        "<details><summary>Уже заказывали в боте? Войти по номеру телефона</summary>"
+        "<form method=post action=\"/chat/login/phone\">"
+        "<input name=\"phone\" type=tel inputmode=tel autocomplete=tel placeholder='+7 900 000-00-00' aria-label='Телефон' required>"
+        "<button class='auth-btn'>Получить код в Telegram</button></form>"
+        "<p class=auth-note style='margin-top:8px'>Код придёт в Telegram только если номер уже есть у нас и вы раньше открывали бота. СМС мы не отправляем.</p>"
         "</details>"
-        "<p class=muted style='margin-top:22px;text-align:center'>Нет Telegram? "
-        "<a href=\"/request\">Оставьте заявку</a> — администратор свяжется с вами по телефону.</p>")
+        "<p class=auth-note style='margin-top:6px'>Нет Telegram? <a href=\"/request\">Оставьте заявку</a> — администратор свяжется с вами по телефону.</p>"
+        + clientkeys.LOGIN_JS)
 
 
 def _email_code_form(email: str, msg: str = "") -> web.Response:
     import html as _h
-    note = f"<p style='color:#b3261e'>{msg}</p>" if msg else ""
     return _login_shell(
-        "<h2 style='text-align:center'>Введите код из письма</h2>"
-        f"<p>Мы отправили код на {_h.escape(email)}. Он действует 10 минут. Проверьте и папку «Спам».</p>"
-        f"{note}<form method=post action=\"/chat/login/emailcode\"><input type=hidden name=email value='{_h.escape(email, quote=True)}'>"
-        f"{_CODE_INPUT}<button class='btn' style='width:100%;margin-top:12px'>Войти</button></form>"
+        "<h2>Введите код из письма</h2>"
+        f"<p class=auth-note>Мы отправили код на {_h.escape(email)}. Он действует 10 минут. Проверьте и папку «Спам».</p>"
+        + _err(msg)
+        + f"<form method=post action=\"/chat/login/emailcode\"><input type=hidden name=email value='{_h.escape(email, quote=True)}'>"
+        f"{_CODE_INPUT}<button class='auth-btn main'>Войти</button></form>"
         + _resend("/chat/login/email", "email", email) +
-        "<p class=muted style='margin-top:18px'><a href=\"/chat/login\">Другой способ входа</a></p>")
+        "<p class=auth-note><a href=\"/chat/login\">Другой способ входа</a></p>")
 
 
 def _code_form(phone: str, msg: str = "") -> web.Response:
     import html as _h
-    note = f"<p style='color:#b3261e'>{msg}</p>" if msg else ""
     return _login_shell(
-        "<h2 style='text-align:center'>Введите код</h2>"
-        "<p>Если этот номер есть у нас и привязан к Telegram, код уже там (в чате с ботом). Он действует 10 минут.</p>"
-        f"{note}<form method=post action=\"/chat/login/code\"><input type=hidden name=phone value='{_h.escape(phone, quote=True)}'>"
-        f"{_CODE_INPUT}<button class='btn' style='width:100%;margin-top:12px'>Войти</button></form>"
+        "<h2>Введите код</h2>"
+        "<p class=auth-note>Если этот номер есть у нас и привязан к Telegram, код уже там (в чате с ботом). Он действует 10 минут.</p>"
+        + _err(msg)
+        + f"<form method=post action=\"/chat/login/code\"><input type=hidden name=phone value='{_h.escape(phone, quote=True)}'>"
+        f"{_CODE_INPUT}<button class='auth-btn main'>Войти</button></form>"
         + _resend("/chat/login/phone", "phone", phone) +
-        "<p class=muted style='margin-top:18px'>Код не пришёл? Номера может не быть в нашей базе — "
+        "<p class=auth-note>Код не пришёл? Номера может не быть в нашей базе — "
         "<a href=\"/chat/login/tg\">войдите через Telegram</a>"
         + (", <a href=\"/chat/login/yandex\">через Яндекс ID</a>" if _yandex_on() else "")
         + ". Или <a href=\"/chat/login\">введите другой номер</a>.</p>")
@@ -498,21 +550,29 @@ ADMIN_AS_CLIENT_TEXT = ("Этот Telegram — администратора, п�
                         "Чтобы посмотреть сайт глазами клиента, зайдите с другого Telegram или нажмите «Чат» на главной без входа.")
 
 
-async def confirm_tg_login(token: str, tg_id: int) -> bool:
-    """Бот зовёт это, когда клиент нажал «Start» по ссылке входа. Админ так не входит: у него портал."""
+async def confirm_tg_login(token: str, tg_id: int) -> str | None:
+    """Бот зовёт это, когда клиент нажал «Start» по ссылке входа. Возвращает 6-значный код для окна на сайте
+    (его бот показывает человеку) или None. Админ так не входит: у него портал."""
     import loginstore
     if not token:
-        return False
+        return None
     entry = await loginstore.get("tg", _hash(token))
     if not entry or entry.get("tg") is not None:
-        return False
+        return None
     if tg_id in config.admin_ids:
         entry["admin"] = True
         await loginstore.update("tg", _hash(token), entry)
-        return False
-    entry["tg"] = tg_id
+        return None
+    code = f"{secrets.randbelow(10**6):06d}"
+    entry.update(tg=tg_id, h=_hash(f"{token}:{code}"), tries=0)
     await loginstore.update("tg", _hash(token), entry)
-    return True
+    return code
+
+
+def tg_login_done_text(code: str) -> str:
+    return (f"✅ Готово! Код для входа на сайт: {code}\n"
+            "Вернитесь на сайт — кабинет откроется сам, или введите этот код в окне «Код из Telegram».\n"
+            "Никому код не сообщайте. Если страница закрылась, нажмите кнопку ниже.")
 
 
 async def tg_login_done_markup(tg_id: int):
@@ -546,13 +606,25 @@ async def page_login_tg(request: web.Request) -> web.Response:
         token = secrets.token_urlsafe(18)
         await loginstore.put("tg", _hash(token), {"tg": None}, TG_LOGIN_TTL)
     link = f"https://t.me/{config.bot_username}?start=lg_{token}"
-    resp = _login_shell(
-        "<h2 style='text-align:center'>Вход через Telegram</h2>"
-        "<ol style='padding-left:20px;line-height:1.5'><li>Нажмите «Открыть Telegram».</li>"
+    resp = _tg_page(token, link)
+    resp.set_cookie(LOGIN_COOKIE, token, max_age=TG_LOGIN_TTL, httponly=True, samesite="Lax", path="/chat/login",
+                    secure=request.headers.get("X-Forwarded-Proto", request.scheme) == "https")
+    return resp
+
+
+def _tg_page(token: str, link: str, msg: str = "") -> web.Response:
+    import html as _h
+    return _login_shell(
+        "<h2>Вход через Telegram</h2>"
+        "<ol><li>Нажмите «Открыть Telegram».</li>"
         "<li>В чате с ботом нажмите «Запустить» (Start) внизу экрана.</li>"
-        "<li>Вернитесь сюда — кабинет откроется сам. Если нет, нажмите в Telegram кнопку «Открыть кабинет на сайте».</li></ol>"
-        f"<p><a class=\"btn\" style='display:block;text-align:center' href=\"{link}\">Открыть Telegram</a></p>"
-        "<p id=st class=muted style='text-align:center'>Ждём подтверждения из Telegram…</p>"
+        "<li>Вернитесь сюда: кабинет откроется сам. Или введите код, который пришлёт бот.</li></ol>"
+        f"<a class='auth-btn tg' href=\"{link}\">{ICON_TG}Открыть Telegram</a>"
+        "<p id=st class=auth-note role=status>Ждём подтверждения из Telegram…</p>"
+        + _err(msg)
+        + "<div class=auth-sep>или введите код из Telegram</div>"
+        f"<form method=post action=\"/chat/login/tgcode\"><input type=hidden name=t value='{_h.escape(token, quote=True)}'>"
+        f"{_CODE_INPUT.replace(' autofocus', '')}<button class='auth-btn main'>Войти по коду</button></form>"
         "<script>(function(){var t=" + json.dumps(token) + ",tm,busy=0,done=0,st=document.getElementById('st');"
         "function later(ms){clearTimeout(tm);tm=setTimeout(p,ms)}"
         "function p(){if(busy||done)return;busy=1;fetch('/chat/login/tg/poll?t='+encodeURIComponent(t),{credentials:'same-origin',cache:'no-store'})"
@@ -565,9 +637,40 @@ async def page_login_tg(request: web.Request) -> web.Response:
         "document.addEventListener('visibilitychange',function(){if(!document.hidden)p()});"
         "window.addEventListener('pageshow',function(){p()});window.addEventListener('focus',function(){p()});"
         "later(1500)})();</script>"
-        "<p class=muted style='margin-top:18px;text-align:center'><a href=\"/chat/login\">Другой способ входа</a></p>")
-    resp.set_cookie(LOGIN_COOKIE, token, max_age=TG_LOGIN_TTL, httponly=True, samesite="Lax", path="/chat/login",
-                    secure=request.headers.get("X-Forwarded-Proto", request.scheme) == "https")
+        "<p class=auth-note><a href=\"/chat/login\">Другой способ входа</a></p>")
+
+
+async def post_login_tgcode(request: web.Request) -> web.Response:
+    """Окно «Код из Telegram»: бот прислал 6 цифр после «Запустить» — человек вводит их здесь (хоть в другом браузере)."""
+    import loginstore
+    import portal
+    if not portal._same_origin(request):
+        return web.Response(status=403, text="Нет доступа")
+    form = await request.post()
+    token = str(form.get("t", "")) or request.cookies.get(LOGIN_COOKIE, "")
+    code = re.sub(r"\D", "", str(form.get("code", "")))
+    link = f"https://t.me/{config.bot_username}?start=lg_{token}"
+    key = _hash(token)
+    entry = await loginstore.get("tg", key) if token else None
+    if entry is None:
+        return _tg_page(token, link, "Время ожидания вышло. Нажмите «Другой способ входа» и начните вход заново.")
+    if entry.get("admin"):
+        return _tg_page(token, link, ADMIN_AS_CLIENT_TEXT)
+    if entry.get("tg") is None or not entry.get("h"):
+        return _tg_page(token, link, "Сначала нажмите «Запустить» в Telegram: бот пришлёт код.")
+    if entry.get("tries", 0) >= CODE_TRIES:
+        return _tg_page(token, link, "Слишком много ошибок. Начните вход заново.")
+    entry["tries"] = entry.get("tries", 0) + 1
+    await loginstore.update("tg", key, entry)
+    if not secrets.compare_digest(entry["h"], _hash(f"{token}:{code}")):
+        return _tg_page(token, link, "Неверный код. Проверьте цифры в сообщении от бота.")
+    entry = await loginstore.take("tg", key)                     # код одноразовый
+    if not entry:
+        return _tg_page(token, link, "Код уже использован. Начните вход заново.")
+    session = await new_session(entry["tg"], device=device_label(request.headers.get("User-Agent")), ip=client_ip(request))
+    resp = web.Response(status=302, headers={"Location": "/chat"})
+    _set_cookie(request, resp, session)
+    resp.del_cookie(LOGIN_COOKIE, path="/chat/login")
     return resp
 
 
@@ -663,7 +766,7 @@ async def post_login_email(request: web.Request) -> web.Response:
     email = str((await request.post()).get("email", "")).strip().lower()[:200]
     if not _EMAIL_RE.match(email):
         return _phone_form("Проверьте адрес почты: он должен выглядеть как name@example.com.")
-    if not mailer.configured():
+    if not mailer.client_mail_on():
         return _phone_form("Почта для входа ещё не настроена. Войдите через Telegram или оставьте заявку.")
     import loginstore
     now = time.time()
@@ -939,6 +1042,7 @@ def setup(app: web.Application) -> None:
     app.router.add_get("/chat/login/tg/poll", poll_login_tg)
     app.router.add_post("/chat/login/phone", post_login_phone)
     app.router.add_post("/chat/login/code", post_login_code)
+    app.router.add_post("/chat/login/tgcode", post_login_tgcode)
     app.router.add_post("/chat/login/email", post_login_email)
     app.router.add_post("/chat/login/emailcode", post_login_emailcode)
     app.router.add_get("/chat/logout", logout)

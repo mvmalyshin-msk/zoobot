@@ -132,7 +132,14 @@ async def _services() -> list[dict]:
 
 
 async def get_form(request: web.Request) -> web.Response:
-    return web.Response(text=render_form(await _services(), {}, {}), content_type="text/html",
+    """Форма заявки. С главной приходят с ?service=walk — тогда эта услуга (самый доступный вариант) уже выбрана."""
+    services = await _services()
+    values = {}
+    cat = request.query.get("service", "")
+    variants = [s for s in services if s["category"] == cat]
+    if variants:
+        values["service_id"] = min(variants, key=lambda s: s.get("from_price", s["base_price"]))["id"]
+    return web.Response(text=render_form(services, values, {}), content_type="text/html",
                         headers={"Cache-Control": "no-cache"})
 
 
