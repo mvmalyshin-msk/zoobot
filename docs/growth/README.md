@@ -9,6 +9,8 @@
 - Чек-лист «паспорт питомца» (Telegraph, 15.11.2026): https://telegra.ph/Pasport-pitomca-dlya-perederzhki-i-zoonyan-chek-list-chto-peredat-ispolnitelyu-11-15
 - Передержка дома или в зоогостинице (Telegraph, 15.11.2026, неделя 2): https://telegra.ph/Perederzhka-doma-ili-v-zoogostinice-kak-vybrat-dlya-svoego-pitomca-11-15
 - Знакомство с исполнителем до первой услуги (Telegraph, 15.11.2026, неделя 3): https://telegra.ph/Znakomstvo-s-nyanej-ili-dogsitterom-do-pervoj-uslugi-kak-provesti-i-o-chyom-sprosit-11-15
+- Как перевезти кошку или собаку без стресса, про зоотакси (Telegraph, 15.11.2026): https://telegra.ph/Kak-perevezti-koshku-ili-sobaku-bez-stressa-perenoska-podgotovka-i-zootaksi-11-15-2 (ссылку без «-2» в конце не использовать: в ней была непроверенная фраза, исправить её нельзя)
+- Передержка на Новый год 2027: когда искать, кого выбрать, что подготовить (Telegraph, 15.11.2026): https://telegra.ph/Perederzhka-na-Novyj-god-2027-kogda-iskat-kogo-vybrat-i-chto-podgotovit-11-15 ; пост в ВК запланирован на 18.11 в 20:11 (в очереди сообщества)
 - [market-research.md](market-research.md) — исследование рынка: конкуренты, спрос по Вордстату, аудитория, география (15.11.2026)
 
 ## 1. Аудит присутствия (14.11.2026)
@@ -106,3 +108,8 @@
 | Telegraph | Три статьи опубликованы (плюс праздничная и чек-лист «паспорт питомца», см. выше) (аккаунт и телефон не нужны): [передержка для кошки](https://telegra.ph/Kak-vybrat-perederzhku-dlya-koshki-5-voprosov-do-togo-kak-ostavit-pitomca-11-15), [подготовка кошки к отъезду](https://telegra.ph/Kak-podgotovit-koshku-k-otezdu-hozyaev-chto-sdelat-zaranee-11-15), [сколько гулять с собакой](https://telegra.ph/Skolko-gulyat-s-sobakoj-v-den-orientiry-dlya-hozyaina-11-15) |
 | Дзен | Канал «Зооконсьерж» создан, статья лежит черновиком; публикация ждёт подтверждения телефона (СМС не приходит) |
 | Следующее | VK-сообщество, Telegram-канал, Яндекс Услуги, Авито Услуги, Профи.ру (см. content.md) |
+
+## Площадки, проверено 15.11
+- ВК: крупные сообщества по передержке в Москве принадлежат конкурентам (Догси, Гульдог) или приютам; потеряшки — не для рекламы. Прямых постов в чужие группы не делаем.
+- Telegram частично блокируется (Роскомнадзор, 2026): рассмотреть заявки через сайт или Max.
+- Просмотры статей Telegraph снимаются через api.telegra.ph/getViews/<путь>; на 15.11 — единицы.
