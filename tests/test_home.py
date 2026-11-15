@@ -34,7 +34,7 @@ class HomeTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_home_text_and_services(self):
         t = await self.home()
-        for must in ("Зооконсьерж", "Подберём проверенного специалиста", "Выгул", "Зооняня", "Передержка", "Зоотакси",
+        for must in ("Зооконсьерж", "Подбираем специалистов под вашего питомца", "Выгул", "Зооняня", "Передержка", "Зоотакси",
                      "от\u00a0"):                                  # цена «от … ₽» прямо на карточках услуг
             self.assertIn(must, t)
 

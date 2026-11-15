@@ -1,4 +1,4 @@
-"""Одна философия во всех описаниях: «подбираем проверенных специалистов», четыре услуги в одном порядке, одинаковые слова."""
+"""Одна философия во всех описаниях: «подбираем специалистов под вашего питомца» (с 15.11: исполнителей формально не проверяем — не обещаем), четыре услуги в одном порядке, одинаковые слова."""
 import json
 import os
 import sys
@@ -34,12 +34,12 @@ class CopyTest(unittest.IsolatedAsyncioTestCase):
         low = brand.PITCH.lower()
         self.assertEqual(sorted(low.index(w) for w in ("выгул", "зоонян", "передержк", "зоотакси")),
                          [low.index(w) for w in ("выгул", "зоонян", "передержк", "зоотакси")])    # порядок как в меню
-        self.assertIn("проверенных специалистов", brand.PITCH)
+        self.assertIn("специалистов под вашего питомца", brand.PITCH)
 
     def test_bot_and_manifest_use_the_same_words(self):
         self.assertEqual(texts.BOT_SHORT_DESCRIPTION, brand.SHORT)
         self.assertLessEqual(len(brand.SHORT), 120)
-        self.assertIn("проверенн", texts.BOT_DESCRIPTION)
+        self.assertIn("специалистов", texts.BOT_DESCRIPTION)
         man = json.loads((ROOT / "webapp" / "manifest.webmanifest").read_text(encoding="utf-8"))
         self.assertEqual(man["description"], brand.SHORT)
         adm = json.loads((ROOT / "webapp" / "manifest-admin.webmanifest").read_text(encoding="utf-8"))
@@ -47,10 +47,10 @@ class CopyTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_home_says_the_canon(self):
         t = await (await self.client.get("/")).text()
-        self.assertIn('name="description" content="Подберём проверенного специалиста', t)   # мета-описание: та же суть
+        self.assertIn('name="description" content="Подберём специалиста под вашего питомца', t)   # мета-описание: та же суть
         for w in ORDER:
             self.assertIn(w, t)
-        self.assertIn("Подберём проверенного специалиста", t)   # услуги и так на карточках (14.11)
+        self.assertIn("Подбираем специалистов под вашего питомца", t)   # услуги и так на карточках (14.11)
         self.assertIn("выбирать будете вы", t)
 
     async def test_every_client_page_has_the_strap(self):
