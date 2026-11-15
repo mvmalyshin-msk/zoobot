@@ -138,9 +138,9 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
 <div class="form-grid">
 <div class="field"><label for="service_id">Услуга</label><select id="service_id" name="service_id"><option value="">Выберите…</option>{"".join(groups)}</select>{err("service_id")}</div>
 <div class="field"><label for="when">Когда нужно</label><input id="when" name="when" maxlength="100" value="{v("when")}" placeholder="например, завтра в 10:00"></div>
-<div class="field field-wide"><label for="address">Адрес</label><input id="address" name="address" maxlength="200" value="{v("address")}" placeholder="город, улица, дом, квартира">{err("address")}</div>
-<div class="field"><label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="кличка, вид, порода"></div>
-<div class="field"><label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name">{err("name")}</div>
+<div class="field field-wide"><label for="address">Адрес</label><input id="address" name="address" maxlength="200" value="{v("address")}" placeholder="например, Химки, улица Победы, 3, кв. 5">{err("address")}</div>
+<div class="field"><label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="например, Рекс, собака, лабрадор, 3 года"></div>
+<div class="field"><label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name" placeholder="например, Анна">{err("name")}</div>
 <div class="field"><label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 900 123-45-67">{err("phone")}</div>
 <div class="field field-wide"><label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500">{v("comment")}</textarea></div>
 </div>
@@ -247,14 +247,14 @@ def render_service_form(cat: str, variants: list[dict], values: dict, errors: di
         opts = lambda k: "".join(  # noqa: E731
             f'<button type="button" class="sug" data-for="{k}" data-pick="{_e(o)}">{_e(o)}</button>'
             for o in (values.get(k + "_opts") or []))
-        where = (f'<label for="address">Откуда</label><input id="address" name="address" maxlength="200" value="{v("address")}" placeholder="город, улица, дом" autocomplete="off">'
+        where = (f'<label for="address">Откуда</label><input id="address" name="address" maxlength="200" value="{v("address")}" placeholder="например, Москва, Тверская улица, 12" autocomplete="off">'
                  f'<input type="hidden" name="address_ok" value="{v("address_ok")}">{err("address")}<div class="sug-box" id="address-sug">{opts("address")}</div>'
-                 f'<label for="dest">Куда</label><input id="dest" name="dest" maxlength="200" value="{v("dest")}" placeholder="например, ветклиника на Ленина, 5" autocomplete="off">'
+                 f'<label for="dest">Куда</label><input id="dest" name="dest" maxlength="200" value="{v("dest")}" placeholder="например, Москва, Ленинский проспект, 10" autocomplete="off">'
                  f'<input type="hidden" name="dest_ok" value="{v("dest_ok")}">{err("dest")}<div class="sug-box" id="dest-sug">{opts("dest")}</div>'
                  f'<p class="hint">Начните писать адрес и выберите нужный из списка: так машина приедет точно.</p>{ADDR_JS}')
     else:
         label = "Ваш район или адрес" if cat == "boarding" else "Адрес"
-        hint = "подберём передержку поближе" if cat == "boarding" else "город, улица, дом, квартира"
+        hint = "подберём передержку поближе" if cat == "boarding" else "например, Химки, улица Победы, 3, кв. 5"
         where = f'<label for="address">{label}</label><input id="address" name="address" maxlength="200" value="{v("address")}" placeholder="{hint}">{err("address")}'
     checked = " checked" if values.get("consent") else ""
     title = SERVICE_TITLE[cat]
@@ -268,8 +268,8 @@ def render_service_form(cat: str, variants: list[dict], values: dict, errors: di
 <h2 class="step">2. Когда</h2>{when}
 <h2 class="step">3. Где</h2>{where}
 <h2 class="step">4. Питомец и контакты</h2>
-<label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="кличка, вид, порода, возраст">
-<div class="row2"><div><label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name">{err("name")}</div>
+<label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="например, Рекс, собака, лабрадор, 3 года">
+<div class="row2"><div><label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name" placeholder="например, Анна">{err("name")}</div>
 <div><label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 900 123-45-67">{err("phone")}</div></div>
 <label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500" placeholder="характер, привычки, что важно знать">{v("comment")}</textarea>
 <div class="hp"><label>Не заполняйте <input name="site" tabindex="-1" autocomplete="off"></label></div>
