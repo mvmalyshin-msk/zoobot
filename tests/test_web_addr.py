@@ -169,7 +169,7 @@ class Submit(unittest.TestCase):
 
     def test_map_down_does_not_block_the_client(self):
         async def case(c):
-            r = await c.post("/request", data=body(await taxi_id(), "Москва, Ленина 1", "Химки, ветклиника", "n6"))
+            r = await c.post("/request", data=body(await taxi_id(), "Москва, Ленина 1", "Химки, Победы 3", "n6"))
             self.assertEqual(r.status, 200, await r.text())
         run(case, const(None))
 
@@ -184,6 +184,61 @@ class Submit(unittest.TestCase):
                                                "when_date": TOMORROW, "when_time": "09:00", "nonce": "w1"})
             self.assertEqual(r.status, 200, await r.text())
         run(case, boom)
+
+
+class HouseRequired(unittest.TestCase):
+    """Без номера дома водитель не найдёт место: улица сама по себе — не адрес."""
+
+    def test_street_without_house_is_refused_even_if_picked(self):
+        async def case(c):
+            r = await c.post("/request", data=body(await taxi_id(), "Ленина улица, Москва", B, "h1",
+                                                   address_ok="Ленина улица, Москва", dest_ok=B))
+            self.assertEqual(r.status, 400)
+            self.assertIn("Укажите номер дома", await r.text())
+            self.assertEqual((await db.fetch_one("SELECT COUNT(*) AS n FROM web_requests"))["n"], 0)
+        run(case, const([]))
+
+    def test_street_without_house_refused_when_map_is_down(self):
+        async def case(c):
+            r = await c.post("/request", data=body(await taxi_id(), "Москва, Ленина", "Химки, Победы 3", "h2"))
+            self.assertEqual(r.status, 400)
+            self.assertIn("Укажите номер дома", await r.text())
+        run(case, const(None))
+
+    def test_destination_without_house_is_refused_too(self):
+        async def case(c):
+            r = await c.post("/request", data=body(await taxi_id(), A, "ветклиника на Ленина", "h3", address_ok=A))
+            self.assertEqual(r.status, 400)
+            self.assertIn("Укажите номер дома", await r.text())
+        run(case, const([pl(A)]))
+
+    def test_map_knows_only_the_street_not_the_house(self):
+        async def case(c):
+            r = await c.post("/request", data=body(await taxi_id(), "Ленина 99", B, "h4", dest_ok=B))
+            self.assertEqual(r.status, 400)
+            self.assertIn("дома с таким номером", await r.text())
+        run(case, const([pl("Ленина улица, Москва", house=False)]))
+
+    def test_houseless_results_are_not_suggested(self):
+        async def case(c):
+            d = await (await c.get("/api/addr", params={"q": "Ленина улица"})).json()
+            self.assertEqual(d["items"], [A])
+            self.assertFalse(d["street_only"])
+        run(case, const([pl("Ленина улица, Москва", house=False), pl(A)]))
+
+    def test_nothing_with_house_gives_street_only_flag(self):
+        async def case(c):
+            d = await (await c.get("/api/addr", params={"q": "Ленина улица"})).json()
+            self.assertEqual(d["items"], [])
+            self.assertTrue(d["street_only"])
+        run(case, const([pl("Ленина улица, Москва", house=False)]))
+
+    def test_page_script_asks_photon_first_and_only_shows_houses(self):
+        async def case(c):
+            t = await (await c.get("/request?service=taxi")).text()
+            self.assertIn("photon.komoot.io", t)
+            self.assertIn("housenumber", t)
+        run(case, const([]))
 
 
 class Page(unittest.TestCase):

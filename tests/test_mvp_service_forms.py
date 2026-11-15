@@ -116,16 +116,16 @@ class Submit(unittest.TestCase):
         async def case(c, sent):
             svc = (await variants("taxi"))[0]
             r = await c.post("/request", data={**CONTACT, "service": "taxi", "service_id": str(svc["id"]),
-                                               "address": "Москва, Ленина 1", "dest": "Химки, ветклиника",
+                                               "address": "Москва, Ленина 1", "dest": "Химки, Победы 3",
                                                "when_date": TOMORROW, "when_time": "10:30", "nonce": "a1"})
             self.assertEqual(r.status, 200, await r.text())
             row = await db.fetch_one("SELECT * FROM web_requests ORDER BY id DESC LIMIT 1")
             self.assertIn("Москва, Ленина 1", row["address"])
-            self.assertIn("Химки, ветклиника", row["address"])
+            self.assertIn("Химки, Победы 3", row["address"])
             d = date.fromisoformat(TOMORROW)
             self.assertIn(d.strftime("%d.%m.%Y"), row["when_text"])
             self.assertIn("10:30", row["when_text"])
-            self.assertIn("Химки, ветклиника", sent[-1])
+            self.assertIn("Химки, Победы 3", sent[-1])
         run_app(case)
 
     def test_boarding_period(self):

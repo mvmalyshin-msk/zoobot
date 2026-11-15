@@ -161,16 +161,27 @@ padding:12px 14px;border:1.5px solid var(--line,#ddd);border-radius:12px;cursor:
 """
 
 ADDR_JS = """<script>(function(){
+var BBOX=[35.1,54.2,40.3,56.97],STATES=['москва','московская область','moscow','moscow oblast'];
+function label(p){var street=p.street||p.name||'',parts=[street,p.housenumber,p.district||p.suburb,p.city||p.town||p.village||p.locality||p.county],seen=[];
+parts.forEach(function(x){if(x&&seen.indexOf(x)<0)seen.push(x)});return seen.join(', ')}
+function photon(q){var url='https://photon.komoot.io/api/?limit=10&lang=default&lat=55.75&lon=37.62&bbox='+BBOX.join(',')+'&q='+encodeURIComponent(q);
+return fetch(url).then(function(r){return r.json()}).then(function(j){var items=[],street=false;
+(j.features||[]).forEach(function(f){var p=f.properties||{},c=f.geometry&&f.geometry.coordinates;
+if(!c||c[0]<BBOX[0]||c[0]>BBOX[2]||c[1]<BBOX[1]||c[1]>BBOX[3])return;
+if(p.state&&STATES.indexOf(String(p.state).toLowerCase())<0)return;
+if(!p.housenumber){street=true;return}var l=label(p);if(l&&items.indexOf(l)<0)items.push(l)});
+return{items:items.slice(0,5),street_only:street&&!items.length}})}
+function server(q){return fetch('/api/addr?q='+encodeURIComponent(q)).then(function(r){return r.json()})}
 function attach(id){var inp=document.getElementById(id),ok=document.querySelector('input[name='+id+'_ok]'),box=document.getElementById(id+'-sug'),t,last='';
 if(!inp||!box)return;
-inp.addEventListener('input',function(){ok.value='';clearTimeout(t);var q=inp.value.trim();
-if(q.length<5){box.innerHTML='';return}
-t=setTimeout(function(){if(q===last)return;last=q;
-fetch('/api/addr?q='+encodeURIComponent(q)).then(function(r){return r.json()}).then(function(d){
-box.innerHTML='';(d.items||[]).forEach(function(it){var b=document.createElement('button');b.type='button';b.className='sug';
+function note(text){var n=document.createElement('div');n.className='sug-note';n.textContent=text;box.appendChild(n)}
+function show(d){box.innerHTML='';(d.items||[]).forEach(function(it){var b=document.createElement('button');b.type='button';b.className='sug';
 b.setAttribute('data-for',id);b.setAttribute('data-pick',it);b.textContent=it;box.appendChild(b)});
-if(!(d.items||[]).length&&!d.down){var n=document.createElement('div');n.className='sug-note';
-n.textContent='Не нашёл такой адрес. Проверьте написание, добавьте город и номер дома.';box.appendChild(n)}}).catch(function(){})},600)})}
+if(!(d.items||[]).length&&!d.down){note(d.street_only?'Нашёл улицу. Допишите номер дома, например: Ленина 5.':'Не нашёл такой адрес. Проверьте написание, добавьте город и номер дома.')}}
+inp.addEventListener('input',function(){ok.value='';clearTimeout(t);var q=inp.value.trim();
+if(q.length<4){box.innerHTML='';return}
+t=setTimeout(function(){if(q===last)return;last=q;
+photon(q).catch(function(){return server(q)}).then(show).catch(function(){})},400)})}
 attach('address');attach('dest');
 document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('.sug');if(!b)return;
 var id=b.getAttribute('data-for'),v=b.getAttribute('data-pick');document.getElementById(id).value=v;
@@ -278,11 +289,17 @@ def _norm(text: str) -> str:
 
 
 async def check_taxi_addresses(clean: dict, errors: dict) -> None:
-    """Зоотакси: адрес не «что угодно». Выбран из подсказок или набран ровно как в подсказке — принимаем;
-    не найден на карте или не выбран — просим выбрать, показывая варианты. Карта недоступна — клиента не блокируем."""
+    """Зоотакси: адрес с номером дома, найденный на карте. Выбран из подсказок или набран ровно как в подсказке — принимаем;
+    без дома, не найден или не выбран — просим исправить, показывая варианты. Карта недоступна — клиента не блокируем,
+    но номер дома требуем всё равно: улица без дома — не адрес."""
     for key in ("address", "dest"):
         text = clean.get(key) or ""
-        if key in errors or not text or clean.get(key + "_ok") == text:
+        if key in errors or not text:
+            continue
+        if not geo.has_house_number(text):
+            errors[key] = "Укажите номер дома: без него водитель не найдёт место. Например: Ленина улица, 5."
+            continue
+        if clean.get(key + "_ok") == text:
             continue
         places = await geo.search(text)
         if places is None:
@@ -290,12 +307,16 @@ async def check_taxi_addresses(clean: dict, errors: dict) -> None:
         if not places:
             errors[key] = "Не нашёл такой адрес на карте. Проверьте написание, добавьте город и номер дома."
             continue
-        if any(_norm(p.label) == _norm(text) for p in places):
+        houses = [p for p in places if p.has_house]
+        if not houses:
+            errors[key] = "Нашёл улицу, но дома с таким номером на карте нет. Проверьте номер дома."
+            continue
+        if any(_norm(p.label) == _norm(text) for p in houses):
             clean[key + "_ok"] = text
             continue
-        clean[key + "_opts"] = [p.label for p in places[:5]]
-        errors[key] = (geo.house_notice(text, places) or "").strip().removeprefix("⚠️ ") or ""
-        errors[key] = (errors[key] + " " if errors[key] else "") + "Выберите адрес из подсказок ниже."
+        clean[key + "_opts"] = [p.label for p in houses[:5]]
+        notice = (geo.house_notice(text, houses) or "").strip().removeprefix("⚠️ ")
+        errors[key] = (notice + " " if notice else "") + "Выберите адрес из подсказок ниже."
 
 
 _addr_hits: dict[str, list[float]] = {}
@@ -312,7 +333,8 @@ async def get_addr(request: web.Request) -> web.Response:
     places = await geo.search(q)
     if places is None:
         return web.json_response({"items": [], "down": True})
-    return web.json_response({"items": [p.label for p in places[:5]]})
+    houses = [p.label for p in places if p.has_house][:5]
+    return web.json_response({"items": houses, "street_only": bool(places) and not houses})
 
 
 async def get_form(request: web.Request) -> web.Response:
