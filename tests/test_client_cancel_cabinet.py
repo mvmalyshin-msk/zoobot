@@ -114,5 +114,37 @@ class CancelInCabinet(unittest.TestCase):
         run(case)
 
 
+class BehindProxy(unittest.TestCase):
+    """За прокси хостинга Host может быть внутренним, а браузер шлёт Origin с публичным адресом сайта."""
+
+    def _cancel_with_origin(self, headers):
+        from config import config
+        async def case(c, sent):
+            tok = await webchat.new_session()
+            uid = (await db.fetch_one("SELECT uid FROM web_sessions ORDER BY id DESC LIMIT 1"))["uid"]
+            c.session.cookie_jar.update_cookies({webchat.COOKIE: tok})
+            rid = await new_request(uid)
+            r = await c.post(f"/request/cancel/{rid}", headers=headers, allow_redirects=False)
+            return r.status, (await db.fetch_one("SELECT status FROM web_requests WHERE id=?", (rid,)))["status"]
+        old = config.webapp_url
+        object.__setattr__(config, "webapp_url", "https://zoo.example.test")
+        try:
+            return run(case)
+        finally:
+            object.__setattr__(config, "webapp_url", old)
+
+    def test_public_origin_is_accepted_when_host_is_internal(self):
+        status, st = self._cancel_with_origin({"Origin": "https://zoo.example.test"})
+        self.assertEqual((status, st), (302, "rejected"))
+
+    def test_forwarded_host_is_accepted(self):
+        status, st = self._cancel_with_origin({"Origin": "https://front.example.test", "X-Forwarded-Host": "front.example.test"})
+        self.assertEqual((status, st), (302, "rejected"))
+
+    def test_foreign_origin_is_still_refused(self):
+        status, st = self._cancel_with_origin({"Origin": "https://evil.example.org"})
+        self.assertEqual((status, st), (403, "new"))
+
+
 if __name__ == "__main__":
     unittest.main()
