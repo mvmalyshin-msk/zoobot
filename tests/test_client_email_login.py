@@ -67,6 +67,15 @@ class ClientEmailLoginTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(p > 0 for p in pos), pos)
         self.assertEqual(pos, sorted(pos))               # Telegram → почта → телефон
 
+    async def test_failed_delivery_is_not_reported_as_sent(self):
+        async def fail(to, subject, body):
+            return False
+        with mock.patch.object(mailer, "send", side_effect=fail):
+            t = await (await self.ask("nobody@example.com")).text()
+        self.assertIn("не удалось отправить", t.lower())
+        self.assertNotIn('action="/chat/login/emailcode"', t)     # формы ввода кода нет: кода никто не получил
+        self.assertIn("/chat/login/tg", t)                         # путь через Telegram предложен
+
     async def test_new_email_registers_and_logs_in(self):
         r = await self.ask(MAIL)
         self.assertEqual(r.status, 200)
