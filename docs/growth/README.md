@@ -94,6 +94,6 @@
 | Google Search Console | Сайт подтверждён метатегом, `/sitemap.xml` отправлен |
 | ВКонтакте | Сообщество https://vk.com/zooconcierge: название, описание, сайт, короткий адрес заполнены; пост опубликован, обложка загружена |
 | Bing Webmaster | Сайт импортирован из Google Search Console, `/sitemap.xml` принят (статус Success, 37 страниц) |
-| Telegraph | Статья «Как выбрать передержку для кошки…» опубликована: https://telegra.ph/Kak-vybrat-perederzhku-dlya-koshki-5-voprosov-do-togo-kak-ostavit-pitomca-11-15 |
+| Telegraph | Три статьи опубликованы (аккаунт и телефон не нужны): [передержка для кошки](https://telegra.ph/Kak-vybrat-perederzhku-dlya-koshki-5-voprosov-do-togo-kak-ostavit-pitomca-11-15), [подготовка кошки к отъезду](https://telegra.ph/Kak-podgotovit-koshku-k-otezdu-hozyaev-chto-sdelat-zaranee-11-15), [сколько гулять с собакой](https://telegra.ph/Skolko-gulyat-s-sobakoj-v-den-orientiry-dlya-hozyaina-11-15) |
 | Дзен | Канал «Зооконсьерж» создан, статья лежит черновиком; публикация ждёт подтверждения телефона (СМС не приходит) |
 | Следующее | VK-сообщество, Telegram-канал, Яндекс Услуги, Авито Услуги, Профи.ру (см. content.md) |
