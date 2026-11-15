@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 400" width="720" height="400" role="img" aria-labelledby="t d">
+<title id="t">Зоогостиница или передержка дома: кому что подходит</title>
+<desc id="d">Передержка дома подходит робким, пожилым питомцам и тем, кому нужен один человек рядом. Зоогостиница подходит общительным питомцам, тем, кому нужен чёткий распорядок, и на долгий срок.</desc>
+<rect width="720" height="400" rx="24" fill="#FFF6EE"/>
+<text x="36" y="56" font-family="PT Sans, Arial, sans-serif" font-size="26" font-weight="700" fill="#2b2420">Кому что подходит</text>
+<g font-family="PT Sans, Arial, sans-serif">
+<g transform="translate(36 84)"><rect width="312" height="282" rx="18" fill="#fff" stroke="#E8D6C4" stroke-width="2"/>
+<rect width="312" height="56" rx="18" fill="#FC6751"/><rect y="38" width="312" height="18" fill="#FC6751"/>
+<text x="20" y="37" font-size="21" font-weight="700" fill="#fff">Передержка дома</text>
+<g font-size="17" fill="#2b2420"><text x="20" y="98">• робкий или тревожный питомец</text><text x="20" y="138">• пожилой, нужны лекарства</text><text x="20" y="178">• важен один человек рядом</text><text x="20" y="218">• не любит других животных</text><text x="20" y="258">• короткий срок, «как дома»</text></g></g>
+<g transform="translate(372 84)"><rect width="312" height="282" rx="18" fill="#fff" stroke="#E8D6C4" stroke-width="2"/>
+<rect width="312" height="56" rx="18" fill="#5b5047"/><rect y="38" width="312" height="18" fill="#5b5047"/>
+<text x="20" y="37" font-size="21" font-weight="700" fill="#fff">Зоогостиница</text>
+<g font-size="17" fill="#2b2420"><text x="20" y="98">• общительный, спокойный питомец</text><text x="20" y="138">• нужен чёткий распорядок</text><text x="20" y="178">• уход не зависит от одного человека</text><text x="20" y="218">• отдельный номер или вольер</text><text x="20" y="258">• долгая поездка</text></g></g>
+</g>
+</svg>
