@@ -493,6 +493,7 @@ def _phone_form(msg: str = "") -> web.Response:
     """Вход и регистрация. Показываем только способы, которые сейчас работают: почта — когда настроена,
     Яндекс ID — когда подключён, Face ID — где браузер умеет ключи доступа. Telegram — первым."""
     import clientkeys
+    import pwlogin
     return _login_shell(
         "<h2>Вход и регистрация</h2>"
         "<p class=auth-note>Регистрация отдельно не нужна: при первом входе кабинет создаётся сам.</p>"
@@ -505,6 +506,7 @@ def _phone_form(msg: str = "") -> web.Response:
            "<input name=\"email\" type=email inputmode=email autocomplete=email placeholder='Ваша почта' aria-label='Почта' required>"
            f"<button class='auth-btn mail main'>{ICON_MAIL}Получить код на почту</button></form>"
            if _mail_on() else "")
+        + pwlogin.FORM
         + "<p id=pkst class=auth-note role=status></p>"
         "<details><summary>Уже заказывали в боте? Войти по номеру телефона</summary>"
         "<form method=post action=\"/chat/login/phone\">"
@@ -1047,6 +1049,8 @@ def setup(app: web.Application) -> None:
     app.router.add_post("/chat/login/tgcode", post_login_tgcode)
     app.router.add_post("/chat/login/email", post_login_email)
     app.router.add_post("/chat/login/emailcode", post_login_emailcode)
+    import pwlogin
+    app.router.add_post("/chat/login/pw", pwlogin.post_login)
     app.router.add_get("/chat/logout", logout)
     app.router.add_get("/chat/api/history", api_history)
     app.router.add_get("/chat/api/poll", api_poll)

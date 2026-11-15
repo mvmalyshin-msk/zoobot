@@ -245,6 +245,10 @@ CREATE TABLE IF NOT EXISTS pending_logins (
 );
 CREATE INDEX IF NOT EXISTS idx_pending_logins_exp ON pending_logins(exp);
 """,
+    # 29: вход клиента по почте и паролю (pwlogin.py): непроверенная почта и хеш пароля, отдельно от users.email
+    29: """ALTER TABLE users ADD COLUMN login_email TEXT;
+ALTER TABLE users ADD COLUMN pw_hash TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_login_email ON users(login_email);""",
     # 28: заявка с сайта → заказ бота (web_orders.make_order); только добавление столбца
     28: "ALTER TABLE web_requests ADD COLUMN order_id INTEGER;",
     # 27: откуда клиент узнал о сервисе (один вопрос после первой заявки)
