@@ -12,6 +12,7 @@ from datetime import date, datetime
 from aiohttp import web
 
 import db
+import geo
 import orders
 import pricing
 import webchat
@@ -96,6 +97,8 @@ def validate(form: dict) -> tuple[dict, dict]:
         clean["when"] = _when(cat, form, errors)
         if cat == "taxi" and not clean["dest"]:
             errors["dest"] = "Напишите, куда отвезти питомца."
+        elif cat == "taxi" and geo.same_place(clean["address"], clean["dest"]):
+            errors["dest"] = "Адреса «Откуда» и «Куда» совпадают. Напишите, куда отвезти питомца."
     return clean, errors
 
 

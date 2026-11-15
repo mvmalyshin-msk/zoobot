@@ -620,7 +620,7 @@ async def _address_input(m: Message, state: FSMContext, text: str, target: str, 
                             addr_fails=fails if opts else fails + 1)
     await state.set_state(Addr.pick)
     if opts:
-        await m.answer(_pick_prefix(target) + texts.ADDR_PICK,
+        await m.answer(_pick_prefix(target) + (geo.house_notice(text, places) or "") + texts.ADDR_PICK,
                        reply_markup=kb.address_options([o["label"] for o in opts], False))
     else:
         fails += 1
@@ -741,6 +741,8 @@ async def _address_done(msg: Message, state: FSMContext, target: str, label: str
         await state.set_state(Order.point_b)
         await msg.answer(texts.ASK_POINT_B, reply_markup=kb.address_ask("b", _pt(data.get("pt_a"))))
     else:
+        if geo.same_place(data.get("address") or "", label):  # подача = назначению: предупредим, не блокируя
+            await msg.answer(texts.ADDR_SAME_AB)
         await show_confirm(msg, state, tg_user)
 
 
