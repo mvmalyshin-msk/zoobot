@@ -35,6 +35,7 @@ HELP = """Команды админа
 
 Заказы:
 /orders — активные заказы
+/sources — откуда клиенты узнали о сервисе
 /confirm <id> — подтвердить заказ
 /send_payment <id> <ссылка> — отправить клиенту ссылку на оплату
 /paid <id> — отметить оплату полученной
@@ -101,6 +102,19 @@ def _ids(command: CommandObject, n: int) -> list[int] | None:
     if len(parts) < n or not all(p.lstrip("-").isdigit() for p in parts[:n]):
         return None
     return [int(p) for p in parts[:n]]
+
+
+@router.message(Command("sources"))
+async def cmd_sources(m: Message) -> None:
+    """Откуда клиенты узнали о сервисе (по ответам после первой заявки)."""
+    rows = await db.fetch_all(
+        "SELECT heard_from, COUNT(*) AS n FROM users WHERE heard_from IS NOT NULL GROUP BY heard_from ORDER BY n DESC")
+    if not rows:
+        await m.answer("Пока нет ответов на вопрос «Как вы узнали о нас?».")
+        return
+    lines = ["Откуда узнали о сервисе:", ""]
+    lines += [f"{kb.HEARD_FROM.get(r['heard_from'], r['heard_from'])}: {r['n']}" for r in rows]
+    await m.answer("\n".join(lines))
 
 
 @router.message(Command("admin", "help_admin"))

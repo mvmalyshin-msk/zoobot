@@ -346,7 +346,7 @@ async def main():
     ok("от 1 794 ₽" in last_text(r), "итог за МКАД: (1000 + 150) × 1,2 × 1,3 = 1 794 ₽")
     await edit_click(CLIENT, "За МКАД")
     r = await click(CLIENT, "Подтвердить")
-    ok("принята" in last_text(r, CLIENT), "клиент получил подтверждение заявки")
+    ok(any("принята" in m["text"] for m in r if m["to"] == CLIENT), "клиент получил подтверждение заявки")
     ok(any(m["to"] == ADMIN and "Новая заявка" in m["text"] for m in r), "админ получил уведомление")
     adm = next((m["text"] for m in r if m["to"] == ADMIN and "Новая заявка" in m["text"]), "")
     ok("Вилка для клиента: от 1 560 ₽" in adm and "Зарегистрирован:" in adm and "Крупная собака" in adm,

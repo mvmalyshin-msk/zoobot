@@ -1502,10 +1502,28 @@ async def cb_order_ok(cb: CallbackQuery, state: FSMContext) -> None:
     )
     await state.clear()
     await cb.message.answer(texts.ORDER_ACCEPTED.format(id=order_id) + "\n\nНужна ещё одна услуга?", reply_markup=kb.offer_order())
+    if not user.get("heard_from"):
+        await cb.message.answer("Один вопрос: как вы узнали о «Зооконсьерже»? Это поможет нам понять, где нас ищут.",
+                                reply_markup=kb.heard_from())
     o = await orders.get_order_full(order_id)
     await orders.notify_admins(
         cb.bot, f"🆕 Новая заявка\n\n{orders.order_card(o, for_staff=True)}",
         reply_markup=kb.admin_new_order(order_id, orders.chat_url(o["client_username"], o["client_tg_id"])))
+
+
+@router.callback_query(F.data.startswith("src:"))
+async def cb_heard_from(cb: CallbackQuery) -> None:
+    key = cb.data.split(":", 1)[1]
+    if key not in kb.HEARD_FROM:
+        await cb.answer()
+        return
+    user = await repo.get_or_create_user(cb.from_user)
+    await db.execute("UPDATE users SET heard_from=? WHERE id=? AND heard_from IS NULL", (key, user["id"]))
+    await cb.answer("Спасибо!")
+    try:
+        await cb.message.edit_text("Спасибо, учтём!")
+    except TelegramBadRequest:
+        pass
 
 
 # ---- Повтор последнего заказа ----
