@@ -320,10 +320,10 @@ async def post_form(request: web.Request) -> web.Response:
 
 async def post_cancel(request: web.Request) -> web.Response:
     """Клиент отменяет свою заявку: статус «Отменена клиентом», админ получает уведомление (Telegram, пуш, письмо)."""
-    from urllib.parse import quote, urlparse
+    from urllib.parse import quote
     import cabinet
-    origin = request.headers.get("Origin")
-    if origin and urlparse(origin).netloc != request.host:
+    import portal
+    if not portal._same_origin(request):                 # за прокси хостинга Host бывает внутренним: проверка та же, что в портале
         return cabinet._html("<p>Запрос отклонён. Откройте сайт заново и повторите.</p><p><a class='btn' href='/cabinet'>В кабинет</a></p>", status=403)
     uid = await webchat.session_uid(request)
     if uid is None:

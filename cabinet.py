@@ -3,7 +3,7 @@
 Один клиент — один кабинет: если веб-гость привязан к Telegram (users.verified_tg_id),
 кабинет тот же, что у клиента в Telegram. Иначе — кабинет самой сессии (гость видит пустой)."""
 import html as _h
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 
 from aiohttp import web
 
@@ -98,8 +98,8 @@ async def order_action(request: web.Request) -> web.Response:
     uid = await webchat.session_uid(request)
     if uid is None:
         return _html("<p>Войдите в кабинет, чтобы управлять заказом.</p>", status=401)
-    origin = request.headers.get("Origin")
-    if origin and urlparse(origin).netloc != request.host:
+    import portal
+    if not portal._same_origin(request):                 # за прокси хостинга Host бывает внутренним: проверка та же, что в портале
         return _html("<p>Запрос отклонён.</p>", status=403)
     user = await repo.get_user_by_tg(await canonical_tg(uid))
     oid = int(request.match_info["oid"])
