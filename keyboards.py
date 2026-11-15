@@ -290,6 +290,7 @@ def address_options(labels: list[str], can_keep: bool, confirm: bool = False) ->
     rows = [[Btn(text=(f"✅ Да, верно: {lb if len(lb) <= 40 else lb[:37] + '…'}" if confirm
                        else f"📍 {lb if len(lb) <= 55 else lb[:52] + '…'}"), callback_data=f"ad:{i}")]
             for i, lb in enumerate(labels)]
+    rows.append([Btn(text="🗺 Указать точку на карте", callback_data="ad:map")])  # геопозиция неточна — точку можно поправить
     rows.append([Btn(text="✏️ Ввести заново", callback_data="ad:retry")])
     if can_keep:
         rows.append([Btn(text="Оставить как написано", callback_data="ad:keep")])

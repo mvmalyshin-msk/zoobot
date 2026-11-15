@@ -130,7 +130,7 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
         if not opts:
             continue
         rows = "".join(
-            f'<option value="{s["id"]}"{" selected" if str(s["id"]) == str(values.get("service_id")) else ""}>'
+            f'<option value="{s["id"]}" data-cat="{cat}"{" selected" if str(s["id"]) == str(values.get("service_id")) else ""}>'
             f'{_e(texts.variant_label(cat, s["name"]))} — от {rub(s.get("from_price", s["base_price"]))}</option>' for s in opts)
         groups.append(f'<optgroup label="{_e(texts.CATEGORY_TITLES[cat])}">{rows}</optgroup>')
     checked = " checked" if values.get("consent") else ""
@@ -143,7 +143,7 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
 <div class="form-grid">
 <div class="field"><label for="service_id">Услуга</label><select id="service_id" name="service_id"><option value="">Выберите…</option>{"".join(groups)}</select>{err("service_id")}</div>
 <div class="field"><label for="when">Когда нужно</label><input id="when" name="when" maxlength="100" value="{v("when")}" placeholder="например, завтра в 10:00"></div>
-<div class="field field-wide"><label for="address">Адрес</label><input id="address" name="address" maxlength="200" value="{v("address")}" placeholder="например, Химки, улица Победы, 3, кв. 5">{err("address")}</div>
+<div class="field field-wide">{addr_field("address", "Адрес", "например, Химки, улица Победы, 3", values, errors)}</div>
 <div class="field"><label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="например, Рекс, собака, лабрадор, 3 года">{err("pet")}</div>
 <div class="field"><label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name" placeholder="например, Анна">{err("name")}</div>
 <div class="field"><label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 900 123-45-67">{err("phone")}</div>
@@ -151,7 +151,7 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
 </div>
 <div class="hp"><label>Не заполняйте <input name="site" tabindex="-1" autocomplete="off"></label></div>
 <label class="check"><input type="checkbox" name="consent"{checked}><span>Согласен(на) на обработку персональных данных, <a href="/policy">политика</a></span></label>{err("consent")}
-<button class="btn" type="submit">Отправить заявку</button><p class="form-note">Нажимая кнопку, вы отправляете заявку на подбор услуги. Это не обязывает вас подтверждать заказ.</p></form>{PROF_JS}{LIVE_JS}</main>{brand.public_footer()}</body></html>"""
+<button class="btn" type="submit">Отправить заявку</button><p class="form-note">Нажимая кнопку, вы отправляете заявку на подбор услуги. Это не обязывает вас подтверждать заказ.</p></form>{PROF_JS}{LIVE_JS}{ADDR_JS}</main>{brand.public_footer()}</body></html>"""
 
 
 SERVICE_CSS = """
@@ -160,9 +160,22 @@ padding:12px 14px;border:1.5px solid var(--line,#ddd);border-radius:12px;cursor:
 .variant b{margin-left:auto;white-space:nowrap}.variant input{accent-color:var(--coral)}.variant:has(input:checked){border-color:var(--coral);background:var(--peach)}
 .step{font-size:1.05rem;margin:22px 0 2px}.row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}.row2>div{min-width:0}.row2 input{min-width:0;max-width:100%;box-sizing:border-box}.row2 label{margin-top:8px}
 .other{font-size:.95rem}
-.sug-box{display:grid;gap:4px;margin:4px 0}.sug-box:empty{display:none}
-.sug{display:block;width:100%;text-align:left;font:inherit;padding:10px 12px;border:1.5px solid var(--line,#ddd);border-radius:10px;background:#fff;cursor:pointer}
-.sug:hover,.sug:focus{border-color:var(--coral);background:var(--peach)}.sug-note{font-size:.9rem;color:#777;padding:4px 2px}
+.addr-in{position:relative}.addr-in input{padding-left:40px;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-3.5-3.5'/%3E%3C/svg%3E") 12px 50%/20px no-repeat}
+.sug-box{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;display:none;background:#fff;border:1px solid var(--line,#ddd);border-radius:14px;box-shadow:0 10px 28px rgba(0,0,0,.16);overflow:hidden}
+.sug-box.open{display:block}.sug-box:empty{display:none}
+.sug{display:block;width:100%;text-align:left;font:inherit;padding:11px 14px;border:0;border-bottom:1px solid var(--line,#eee);border-radius:0;background:#fff;color:inherit;cursor:pointer;margin:0}
+.sug:last-child{border-bottom:0}.sug-main{display:block;font-weight:600}.sug-sub{display:block;font-size:.85rem;color:var(--mute,#777);margin-top:1px}
+.sug:hover,.sug:focus,.sug.on{background:var(--peach,#fdf1ea)}.sug-note{font-size:.92rem;color:var(--mute,#777);padding:12px 14px}
+.addr-tools{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 0}
+.addr-btn{width:auto;margin:0;padding:9px 14px;font:inherit;font-size:.92rem;border:1.5px solid var(--line,#ddd);border-radius:999px;background:#fff;color:inherit;cursor:pointer}
+.addr-btn:hover{border-color:var(--coral);background:var(--peach,#fdf1ea)}.addr-btn[disabled]{opacity:.55;cursor:progress}
+.addr-note{font-size:.92rem;color:var(--mute,#777);margin-top:6px}.addr-note:empty{display:none}.addr-note.bad{color:var(--err,#c0392b)}
+.zc-modal{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:center;justify-content:center}
+.zc-modal-box{width:min(560px,100%);height:min(760px,100dvh);background:#fff;border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
+.zc-modal-bar{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line,#ddd)}
+.zc-modal-x{width:auto;margin:0;padding:8px 14px;font:inherit;border:1.5px solid var(--line,#ddd);border-radius:999px;background:#fff;cursor:pointer}
+.zc-modal-box iframe{flex:1;width:100%;border:0}
+@media(max-width:600px){.zc-modal-box{width:100%;height:100dvh;border-radius:0}}
 """
 
 PROF_JS = r"""<script>(function(){var PF=__PROF__,PC=PF.patterns.map(function(p){return new RegExp(p)}),PL=PF.latin.map(function(p){return new RegExp(p)}),
@@ -184,21 +197,25 @@ if(run.length>=3&&hit(run.join('')))return true;run=[]}return false};
 LIVE_JS = """<script>(function(){
 var f=document.querySelector('main form');if(!f)return;f.noValidate=true;
 var M={phone:'Проверьте номер: например, 8 900 123-45-67.',name:'Напишите, как к вам обращаться.',
-address:'Напишите адрес: улица и дом.',house:'Укажите номер дома: без него водитель не найдёт место. Например: Ленина улица, 5.',
+address:'Напишите адрес: улица и дом.',house:'Укажите номер дома: без него водитель не найдёт место. Например: Ленина улица, 5.',house2:'Укажите номер дома: без него мы не найдём место. Например: Ленина улица, 5.',
 dest:'Напишите, куда отвезти питомца.',same:'Адреса «Откуда» и «Куда» совпадают. Напишите, куда отвезти питомца.',
 past:'Дата уже прошла — выберите сегодня или позже.',to:'Дата «по» раньше даты «с».',
 consent:'Нужно согласие на обработку данных.',prof:'Уберите нецензурные слова: так мы не сможем принять заявку.',service_id:'Выберите услугу.'};
 function val(n){var e=f.elements[n];return e?String(e.value||'').trim():''}
 function phoneOk(t){var d=t.replace(/\\D/g,''),n;if(d.length==11&&'78'.indexOf(d[0])>=0)n=d.slice(1);else if(d.length==10)n=d;else return false;
  if(/^(\\d)\\1+$/.test(n))return false;var a='01234567890123456789',b='98765432109876543210';return a.indexOf(n)<0&&b.indexOf(n)<0}
-function taxi(){return val('service')=='taxi'}
+function cat(){var c=val('service');if(c)return c;var s=f.elements.service_id;
+ if(s&&s.tagName=='SELECT'&&s.selectedOptions&&s.selectedOptions[0])return s.selectedOptions[0].getAttribute('data-cat')||'';
+ return ''}
+function taxi(){return cat()=='taxi'}
+function needHouse(){return cat()!='boarding'}
 function pf(n){return window.zcProf&&window.zcProf(val(n))?M.prof:''}
 var R={
 phone:function(){return phoneOk(val('phone'))?'':M.phone},
 name:function(){return val('name')?pf('name'):M.name},
 pet:function(){return pf('pet')},
 comment:function(){return pf('comment')},
-address:function(){var a=val('address');if(!a)return M.address;if(pf('address'))return M.prof;if(taxi()&&!/\\d/.test(a.replace(/(,|\\s)*(кв|квартира|офис|оф)\\.?\\s*\\d+.*$/i,'')))return M.house;return ''},
+address:function(){var a=val('address');if(!a)return M.address;if(pf('address'))return M.prof;if(needHouse()&&!/\\d/.test(a.replace(/(,|\\s)*(кв|квартира|офис|оф)\\.?\\s*\\d+.*$/i,'')))return taxi()?M.house:M.house2;return ''},
 dest:function(){if(!taxi())return '';var d=val('dest');if(!d)return M.dest;if(pf('dest'))return M.prof;if(d.toLowerCase()==val('address').toLowerCase())return M.same;
  if(!/\\d/.test(d))return M.house;return ''},
 when_date:function(){var e=f.elements.when_date;if(!e||!e.value)return '';return e.min&&e.value<e.min?M.past:''},
@@ -221,33 +238,52 @@ f.addEventListener('submit',function(ev){var first=null;
  if(first){ev.preventDefault();ev.stopImmediatePropagation();first.scrollIntoView({block:'center'});first.focus()}},true);
 })();</script>"""
 
-ADDR_JS = """<script>(function(){
-var BBOX=[35.1,54.2,40.3,56.97],STATES=['москва','московская область','moscow','moscow oblast'];
-function label(p){var street=p.street||p.name||'',parts=[street,p.housenumber,p.district||p.suburb,p.city||p.town||p.village||p.locality||p.county],seen=[];
-parts.forEach(function(x){if(x&&seen.indexOf(x)<0)seen.push(x)});return seen.join(', ')}
-function photon(q){var url='https://photon.komoot.io/api/?limit=10&lang=default&lat=55.75&lon=37.62&bbox='+BBOX.join(',')+'&q='+encodeURIComponent(q);
-return fetch(url).then(function(r){return r.json()}).then(function(j){var items=[],street=false;
-(j.features||[]).forEach(function(f){var p=f.properties||{},c=f.geometry&&f.geometry.coordinates;
-if(!c||c[0]<BBOX[0]||c[0]>BBOX[2]||c[1]<BBOX[1]||c[1]>BBOX[3])return;
-if(p.state&&STATES.indexOf(String(p.state).toLowerCase())<0)return;
-if(!p.housenumber){street=true;return}var l=label(p);if(l&&items.indexOf(l)<0)items.push(l)});
-return{items:items.slice(0,5),street_only:street&&!items.length}})}
-function server(q){return fetch('/api/addr?q='+encodeURIComponent(q)).then(function(r){return r.json()})}
-function attach(id){var inp=document.getElementById(id),ok=document.querySelector('input[name='+id+'_ok]'),box=document.getElementById(id+'-sug'),t,last='';
-if(!inp||!box)return;
-function note(text){var n=document.createElement('div');n.className='sug-note';n.textContent=text;box.appendChild(n)}
-function show(d){box.innerHTML='';(d.items||[]).forEach(function(it){var b=document.createElement('button');b.type='button';b.className='sug';
-b.setAttribute('data-for',id);b.setAttribute('data-pick',it);b.textContent=it;box.appendChild(b)});
-if(!(d.items||[]).length&&!d.down){note(d.street_only?'Нашёл улицу. Допишите номер дома, например: Ленина 5.':'Не нашёл такой адрес. Проверьте написание, добавьте город и номер дома.')}}
-inp.addEventListener('input',function(){ok.value='';clearTimeout(t);var q=inp.value.trim();
-if(q.length<4){box.innerHTML='';return}
-t=setTimeout(function(){if(q===last)return;last=q;
-photon(q).catch(function(){return server(q)}).then(show).catch(function(){})},400)})}
-attach('address');attach('dest');
-document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('.sug');if(!b)return;
-var id=b.getAttribute('data-for'),v=b.getAttribute('data-pick');document.getElementById(id).value=v;
-document.querySelector('input[name='+id+'_ok]').value=v;document.getElementById(id+'-sug').innerHTML=''});
+ADDR_JS = r"""<script src="/addr.js"></script><script>(function(){
+var Z=window.zcAddr;if(!Z)return;
+Array.prototype.forEach.call(document.querySelectorAll('[data-addr]'),function(w){
+var id=w.getAttribute('data-addr'),inp=document.getElementById(id),ok=w.querySelector('input[name='+id+'_ok]'),box=document.getElementById(id+'-sug'),
+note=w.querySelector('.addr-note'),house=w.getAttribute('data-house')==='1',pt=w.getAttribute('data-pt')||'',coords=null,b1=w.querySelector('[data-act=locate]'),b2=w.querySelector('[data-act=map]');
+if(!inp||!ok||!box)return;
+function say(t,bad){note.textContent=t||'';note.className='addr-note'+(bad?' bad':'')}
+function fire(){inp.dispatchEvent(new Event('change',{bubbles:true}))}
+function done(text,sure){inp.value=text;ok.value=sure?text:'';box.innerHTML='';box.classList.remove('open');fire()}
+function street(text){inp.value=text;ok.value='';fire();say('Нашли улицу. Допишите номер дома или уточните на карте.',true);inp.focus()}
+function got(p,flat){coords={lat:p.lat,lon:p.lon};var t=p.label||'';
+ if(!t){say('Адрес по точке не определился. Впишите его в строку.',true);inp.focus();return}
+ if(flat)t+=', кв. '+flat;
+ if(house&&!/\d/.test(String(p.label).replace(/(,|\s)*(кв|квартира|офис|оф)\.?\s*\d+.*$/i,''))){street(t);return}
+ done(t,true);say('Проверьте адрес. Если точка неточная, нажмите «Уточнить на карте».')}
+Z.bind(inp,{box:box,min:4,onChange:function(){ok.value='';coords=null;say('')},onPick:function(it){coords=it.lat!=null?{lat:it.lat,lon:it.lon}:null;done(it.label,true);say('')}});
+box.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('.sug');
+ if(!b||b.querySelector('.sug-main'))return;done(b.getAttribute('data-pick'),true);say('')});
+if(box.children.length)box.classList.add('open');
+b1.addEventListener('click',function(){b1.disabled=true;say('Определяю, где вы…');
+ Z.locate().then(function(c){
+  if(!Z.inBox(c.lat,c.lon)){say('Похоже, вы вне Москвы и области. Впишите адрес или отметьте точку на карте.',true);return}
+  return Z.reverse(c.lat,c.lon).then(function(r){got({lat:c.lat,lon:c.lon,label:r.label});},function(){
+   coords={lat:c.lat,lon:c.lon};say('Место определили, а адрес по нему не нашёлся. Впишите адрес или отметьте точку на карте.',true)})
+ },function(e){say(Z.locateError(e),true)}).then(function(){b1.disabled=false},function(){b1.disabled=false})});
+b2.addEventListener('click',function(){Z.openMap({pt:pt,lat:coords&&coords.lat,lon:coords&&coords.lon,label:inp.value.trim(),house:house?1:0,
+ onPick:function(p){got(p,p.flat)}})});
+});
 })();</script>"""
+
+
+def addr_field(key: str, label: str, placeholder: str, values: dict, errors: dict, *, house: bool = True, pt: str = "") -> str:
+    """Строка адреса, одна на все услуги: подсказки с карты по мере набора, «Определить по геопозиции» и «Уточнить на карте»
+    (геопозиция в России бывает неточной, поэтому точку всегда можно поправить), ошибка прямо под строкой."""
+    val = lambda k: _e(values.get(k, ""))  # noqa: E731
+    opts = "".join(f'<button type="button" class="sug" data-for="{key}" data-pick="{_e(o)}">{_e(o)}</button>'
+                   for o in (values.get(key + "_opts") or []))
+    err = f'<div class="err">{_e(errors[key])}</div>' if key in errors else ""
+    return (f'<label for="{key}">{label}</label><div class="addr" data-addr="{key}" data-house="{1 if house else 0}" data-pt="{pt}">'
+            f'<div class="addr-in"><input id="{key}" name="{key}" maxlength="200" value="{val(key)}" placeholder="{_e(placeholder)}" '
+            f'autocomplete="off" autocapitalize="sentences" enterkeyhint="search" role="combobox" aria-autocomplete="list">'
+            f'<div class="sug-box" id="{key}-sug">{opts}</div></div>{err}'
+            f'<input type="hidden" name="{key}_ok" value="{val(key + "_ok")}">'
+            '<div class="addr-tools"><button type="button" class="addr-btn" data-act="locate">📍 Определить по геопозиции</button>'
+            '<button type="button" class="addr-btn" data-act="map">🗺 Уточнить на карте</button></div>'
+            '<div class="addr-note" role="status" aria-live="polite"></div></div>')
 
 
 def render_service_form(cat: str, variants: list[dict], values: dict, errors: dict, nonce: str) -> str:
@@ -268,18 +304,15 @@ def render_service_form(cat: str, variants: list[dict], values: dict, errors: di
         when = (f'<div class="row2"><div><label for="when_date">Дата</label><input id="when_date" name="when_date" type="date" min="{today}" value="{v("when_date")}">{err("when_date")}</div>'
                 f'<div><label for="when_time">Время</label><input id="when_time" name="when_time" type="time" step="900" value="{v("when_time")}"></div></div>')
     if cat == "taxi":
-        opts = lambda k: "".join(  # noqa: E731
-            f'<button type="button" class="sug" data-for="{k}" data-pick="{_e(o)}">{_e(o)}</button>'
-            for o in (values.get(k + "_opts") or []))
-        where = (f'<label for="address">Откуда</label><input id="address" name="address" maxlength="200" value="{v("address")}" placeholder="например, Москва, Тверская улица, 12" autocomplete="off">'
-                 f'<input type="hidden" name="address_ok" value="{v("address_ok")}">{err("address")}<div class="sug-box" id="address-sug">{opts("address")}</div>'
-                 f'<label for="dest">Куда</label><input id="dest" name="dest" maxlength="200" value="{v("dest")}" placeholder="например, Москва, Ленинский проспект, 10" autocomplete="off">'
-                 f'<input type="hidden" name="dest_ok" value="{v("dest_ok")}">{err("dest")}<div class="sug-box" id="dest-sug">{opts("dest")}</div>'
-                 f'<p class="hint">Начните писать адрес и выберите нужный из списка: так машина приедет точно.</p>{ADDR_JS}')
+        where = (addr_field("address", "Откуда", "например, Москва, Тверская улица, 12", values, errors, pt="a")
+                 + addr_field("dest", "Куда", "например, Москва, Ленинский проспект, 10", values, errors, pt="b")
+                 + '<p class="hint">Начните писать адрес и выберите нужный из списка: так машина приедет точно.</p>')
+    elif cat == "boarding":
+        where = (addr_field("address", "Ваш район или адрес", "например, Химки, Ленинский проспект", values, errors, house=False)
+                 + '<p class="hint">Подберём передержку поближе. Дом можно не указывать.</p>')
     else:
-        label = "Ваш район или адрес" if cat == "boarding" else "Адрес"
-        hint = "подберём передержку поближе" if cat == "boarding" else "например, Химки, улица Победы, 3, кв. 5"
-        where = f'<label for="address">{label}</label><input id="address" name="address" maxlength="200" value="{v("address")}" placeholder="{hint}">{err("address")}'
+        where = (addr_field("address", "Адрес", "например, Химки, улица Победы, 3", values, errors)
+                 + '<p class="hint">Начните писать адрес и выберите нужный из списка.</p>')
     checked = " checked" if values.get("consent") else ""
     title = SERVICE_TITLE[cat]
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
@@ -298,7 +331,7 @@ def render_service_form(cat: str, variants: list[dict], values: dict, errors: di
 <label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500" placeholder="характер, привычки, что важно знать">{v("comment")}</textarea>{err("comment")}
 <div class="hp"><label>Не заполняйте <input name="site" tabindex="-1" autocomplete="off"></label></div>
 <label class="check"><input type="checkbox" name="consent"{checked}><span>Согласен(на) на обработку персональных данных, <a href="/policy">политика</a></span></label>{err("consent")}
-<button class="btn" type="submit">Отправить заявку</button><p class="form-note">Это не заказ: администратор сначала подтвердит цену и исполнителя.</p></form>{PROF_JS}{LIVE_JS}</main>{brand.public_footer()}</body></html>"""
+<button class="btn" type="submit">Отправить заявку</button><p class="form-note">Это не заказ: администратор сначала подтвердит цену и исполнителя.</p></form>{PROF_JS}{LIVE_JS}{ADDR_JS}</main>{brand.public_footer()}</body></html>"""
 
 
 def _page(services: list[dict], values: dict, errors: dict) -> str:
@@ -349,16 +382,18 @@ def _norm(text: str) -> str:
     return " ".join(text.lower().replace("ё", "е").split())
 
 
-async def check_taxi_addresses(clean: dict, errors: dict) -> None:
-    """Зоотакси: адрес с номером дома, найденный на карте. Выбран из подсказок или набран ровно как в подсказке — принимаем;
+async def check_addresses(clean: dict, errors: dict, cat: str) -> None:
+    """Адрес в любой услуге: найден на карте, с номером дома. Выбран из подсказок или набран ровно как в подсказке — принимаем;
     без дома, не найден или не выбран — просим исправить, показывая варианты. Карта недоступна — клиента не блокируем,
-    но номер дома требуем всё равно: улица без дома — не адрес."""
+    но номер дома требуем всё равно: улица без дома — не адрес. Передержка: подойдёт и район без дома, но место должно существовать."""
+    taxi = cat == "taxi"
     for key in ("address", "dest"):
         text = clean.get(key) or ""
         if key in errors or not text:
             continue
-        if not geo.has_house_number(text):
-            errors[key] = "Укажите номер дома: без него водитель не найдёт место. Например: Ленина улица, 5."
+        if cat != "boarding" and not geo.has_house_number(text):
+            errors[key] = ("Укажите номер дома: без него водитель не найдёт место. Например: Ленина улица, 5." if taxi
+                           else "Укажите номер дома: без него мы не найдём место. Например: Ленина улица, 5.")
             continue
         if clean.get(key + "_ok") == text:
             continue
@@ -366,7 +401,11 @@ async def check_taxi_addresses(clean: dict, errors: dict) -> None:
         if places is None:
             continue
         if not places:
-            errors[key] = "Не нашёл такой адрес на карте. Проверьте написание, добавьте город и номер дома."
+            errors[key] = ("Не нашёл такой район или адрес. Напишите район или улицу, например: Химки, Ленинский проспект."
+                           if cat == "boarding" else
+                           "Не нашёл такой адрес на карте. Проверьте написание, добавьте город и номер дома.")
+            continue
+        if cat == "boarding":
             continue
         houses = [p for p in places if p.has_house]
         if not houses:
@@ -425,8 +464,9 @@ async def post_form(request: web.Request) -> web.Response:
         errors["service_id"] = "Выберите услугу."
     if "bot" in errors:
         return web.Response(text=render_done(0), content_type="text/html")  # боту делаем вид, что приняли
-    if clean["service"] == "taxi" and "bot" not in errors:
-        await check_taxi_addresses(clean, errors)
+    chosen = next((x for x in services if str(x["id"]) == clean["service_id"]), None)
+    if chosen and "bot" not in errors:
+        await check_addresses(clean, errors, chosen["category"])
     if errors:
         return web.Response(status=400, text=_page(services, clean, errors), content_type="text/html")
     svc = next(s for s in services if str(s["id"]) == clean["service_id"])

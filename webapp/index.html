@@ -41,6 +41,11 @@
   #ok:disabled { opacity: .45; }
   .leaflet-container { font-family: inherit; }
   #bk[hidden] { display: none !important; }
+  body.embed .role-ribbon { display: none !important; }
+  .pin { background: none; border: 0; }
+  .pin span { display: block; width: 26px; height: 26px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: #2481cc;
+    border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+  .pin span::after { content: ""; position: absolute; left: 7px; top: 7px; width: 6px; height: 6px; border-radius: 50%; background: #fff; }
   #title { margin: 0 0 8px; font-size: 17px; font-weight: 700; }
   #here { width: 100%; margin: 0 0 8px; padding: 11px; border-radius: 999px; border: 1.5px solid var(--line);
     background: var(--card); color: var(--fg); font-size: 15px; }
@@ -71,10 +76,12 @@
 (function () {
   // telegram-web-app.js создаёт Telegram.WebApp в ЛЮБОМ браузере; внутри Telegram platform — ios/android/tdesktop…,
   // снаружи — "unknown". Поэтому смотрим на platform, а не на сам объект, иначе в браузере кнопка «молчит».
+  var embed = /[?&]embed=1(&|$)/.test(location.search);        // карта внутри окна на сайте: результат уходит в форму
+  if (embed) document.body.classList.add("embed");
   var tgApi = window.Telegram && window.Telegram.WebApp;
   var tg = tgApi && tgApi.platform && tgApi.platform !== "unknown" ? tgApi : null;
   if (tg) { tg.ready(); tg.expand(); }
-  else { document.getElementById("bk").hidden = false; }  // в Telegram есть своя кнопка «Назад»
+  else if (!embed) { document.getElementById("bk").hidden = false; }  // в Telegram есть своя кнопка «Назад»
 
   // Москва и Московская область: lon_min, lat_min, lon_max, lat_max (как на сервере)
   var BBOX = [35.1, 54.2, 40.3, 56.97];
@@ -92,6 +99,7 @@
   // Зоотакси: бот открывает карту с ?pt=a (откуда забрать) или ?pt=b (куда поедем) и &from=lat,lon — подача на карте
   var params = new URLSearchParams(location.search);
   var pt = params.get("pt");
+  var needHouse = params.get("h") !== "0";                       // передержке хватает района, без дома
   if (pt === "a" || pt === "b") {
     var title = $("title");
     title.hidden = false;
@@ -105,20 +113,26 @@
     map.setView([from[0], from[1]], 13);
   }
 
+  var start = [parseFloat(params.get("lat")), parseFloat(params.get("lon"))];
   function setPoint(lat, lon, text, zoom) {
     sel = { lat: lat, lon: lon };
     if (marker) marker.setLatLng([lat, lon]);
-    else marker = L.circleMarker([lat, lon], { radius: 10, weight: 3, color: "#fff", fillColor: "#2481cc", fillOpacity: 1 }).addTo(map);
+    else {
+      // метку можно перетащить: геопозиция в России бывает неточной, адрес по новой точке определяется заново
+      marker = L.marker([lat, lon], { draggable: true, keyboard: false, title: "Перетащите метку, если она стоит не там",
+        icon: L.divIcon({ className: "pin", html: "<span></span>", iconSize: [28, 36], iconAnchor: [14, 34] }) }).addTo(map);
+      marker.on("dragend", function () { var p = marker.getLatLng(); pickAt(p.lat, p.lng, null); });
+    }
     if (zoom) map.setView([lat, lon], Math.max(map.getZoom(), zoom));
     if (text != null) label.value = text;
     refresh();
   }
   function refresh() {
     var t = label.value.trim();
-    var hasHouse = /\d/.test(t);
-    ok.disabled = !(sel && t.length >= 5 && hasHouse);
+    var hasHouse = !needHouse || /\d/.test(t.replace(/(,|\s)*(кв|квартира|офис|оф)\.?\s*\d+.*$/i, ""));
+    ok.disabled = !(sel && t.length >= 3 && hasHouse);
     if (sel && !hasHouse) hint.textContent = "Допишите номер дома в поле «Адрес».";
-    else if (sel) hint.textContent = "Проверьте адрес и нажмите «Выбрать». Если точка неточная — сдвиньте её касанием по карте.";
+    else if (sel) hint.textContent = "Проверьте адрес и нажмите «Выбрать». Если метка стоит не там, перетащите её или коснитесь нужного места.";
   }
 
   // ---------- Подсказки по мере набора (Photon: поиск по данным OpenStreetMap, бесплатно) ----------
@@ -207,6 +221,7 @@
     if (!sel) return;
     var payload = JSON.stringify({ lat: sel.lat, lon: sel.lon, label: label.value.trim(), flat: flat.value.trim() });
     if (tg) { tg.sendData(payload); return; }
+    if (embed) { parent.postMessage({ zcPick: JSON.parse(payload) }, location.origin); return; }
     // открыто в браузере с сайта: адрес уходит в чат того же гостя (cookie) и страница возвращает в чат
     window.__picked = payload;
     hint.textContent = "Передаю адрес в чат…";
@@ -217,6 +232,11 @@
         hint.innerHTML = "Не получилось передать адрес. Откройте <a href=\"/chat\">чат</a> и попробуйте снова.";
       }).catch(function () { hint.textContent = "Нет связи. Попробуйте ещё раз."; });
   });
+  if (embed && inBox(start[0], start[1])) {                       // форма уже знает точку (геопозиция или выбранный адрес)
+    setPoint(start[0], start[1], params.get("label") || "", 17);
+  } else if (embed && params.get("label")) {
+    q.value = params.get("label"); label.value = params.get("label");
+  }
   window.__test = { setPoint: setPoint };
 })();
 </script>
