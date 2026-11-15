@@ -132,7 +132,7 @@ class Mail(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(mailer.client_mail_on())
         with no_mail_env(), mock.patch.dict(os.environ, {"SMTP_HOST": "smtp.gmail.com", "SMTP_USER": "a@gmail.com",
                                                         "SMTP_PASSWORD": "x"}):
-            self.assertTrue(mailer.client_mail_on())
+            self.assertFalse(mailer.client_mail_on())                         # порты SMTP закрыты хостингом
         with no_mail_env(), mock.patch.dict(os.environ, {"BREVO_API_KEY": "k", "BREVO_FROM": "a@gmail.com"}):
             self.assertTrue(mailer.client_mail_on())
         with no_mail_env(), mock.patch.dict(os.environ, {"RESEND_API_KEY": "k"}):
@@ -173,13 +173,15 @@ class Mail(unittest.IsolatedAsyncioTestCase):
 
 
 class MailOnLoginPage(Base):
-    async def test_email_form_appears_with_gmail_settings_only(self):
+    async def test_email_form_appears_only_with_working_client_mail(self):
         with no_mail_env():
             self.assertNotIn("/chat/login/email", await (await self.client.get("/chat/login")).text())
         with no_mail_env(), mock.patch.dict(os.environ, {"RESEND_API_KEY": "k"}):
             self.assertNotIn("/chat/login/email", await (await self.client.get("/chat/login")).text())
         with no_mail_env(), mock.patch.dict(os.environ, {"SMTP_HOST": "smtp.gmail.com", "SMTP_USER": "a@gmail.com",
                                                         "SMTP_PASSWORD": "x"}):
+            self.assertNotIn("/chat/login/email", await (await self.client.get("/chat/login")).text())
+        with no_mail_env(), mock.patch.dict(os.environ, {"BREVO_API_KEY": "k", "BREVO_FROM": "a@gmail.com"}):
             self.assertIn('action="/chat/login/email"', await (await self.client.get("/chat/login")).text())
 
 

@@ -48,9 +48,9 @@ def configured() -> bool:
 
 
 def client_mail_on() -> bool:
-    """Письмо уйдёт на любой адрес клиента. Resend с тестовым адресом resend.dev пишет только владельцу — не считается."""
+    """Письмо уйдёт на любой адрес клиента (Brevo или Resend со своим доменом). Resend с тестовым адресом resend.dev пишет только владельцу — не считается."""
     own_resend = _resend_on() and "@" in (os.getenv("RESEND_FROM") or "") and "resend.dev" not in os.getenv("RESEND_FROM", "")
-    return _smtp_on() or _brevo_on() or own_resend
+    return _brevo_on() or own_resend  # SMTP не считаем: хостинг закрывает его порты, письма клиентам не доходят
 
 
 def missing() -> list[str]:

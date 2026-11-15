@@ -55,5 +55,15 @@ class ResendTest(unittest.TestCase):
         self.assertIn("Resend", why)
 
 
+    def test_smtp_alone_does_not_count_as_client_mail(self):
+        # Хостинг (Amvera) закрывает порты SMTP: письма клиентам по нему не уходят, форму входа по почте не показываем
+        with mock.patch.dict(os.environ, dict(SMTP), clear=True):
+            self.assertFalse(mailer.client_mail_on())
+
+    def test_brevo_counts_as_client_mail(self):
+        with mock.patch.dict(os.environ, {"BREVO_API_KEY": "k", "BREVO_FROM": "a@example.test"}, clear=True):
+            self.assertTrue(mailer.client_mail_on())
+
+
 if __name__ == "__main__":
     unittest.main()
