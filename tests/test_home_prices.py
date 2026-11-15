@@ -75,7 +75,7 @@ class HomePrices(unittest.IsolatedAsyncioTestCase):
         for c in CATS:
             cheapest = min((s for s in items if s["category"] == c), key=lambda s: s["from_price"])
             t = await (await self.client.get(f"/request?service={c}")).text()
-            self.assertRegex(t, rf'<option value="{cheapest["id"]}" selected>', c)
+            self.assertRegex(t, rf'<input type="radio" name="service_id" value="{cheapest["id"]}" checked>', c)
         t = await (await self.client.get("/request?service=nonsense")).text()
         self.assertNotIn(" selected>", t)
 
