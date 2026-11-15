@@ -146,7 +146,7 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
 </div>
 <div class="hp"><label>Не заполняйте <input name="site" tabindex="-1" autocomplete="off"></label></div>
 <label class="check"><input type="checkbox" name="consent"{checked}><span>Согласен(на) на обработку персональных данных, <a href="/policy">политика</a></span></label>{err("consent")}
-<button class="btn" type="submit">Отправить заявку</button><p class="form-note">Нажимая кнопку, вы отправляете заявку на подбор услуги. Это не обязывает вас подтверждать заказ.</p></form></main>{brand.public_footer()}</body></html>"""
+<button class="btn" type="submit">Отправить заявку</button><p class="form-note">Нажимая кнопку, вы отправляете заявку на подбор услуги. Это не обязывает вас подтверждать заказ.</p></form>{LIVE_JS}</main>{brand.public_footer()}</body></html>"""
 
 
 SERVICE_CSS = """
@@ -159,6 +159,43 @@ padding:12px 14px;border:1.5px solid var(--line,#ddd);border-radius:12px;cursor:
 .sug{display:block;width:100%;text-align:left;font:inherit;padding:10px 12px;border:1.5px solid var(--line,#ddd);border-radius:10px;background:#fff;cursor:pointer}
 .sug:hover,.sug:focus{border-color:var(--coral);background:var(--peach)}.sug-note{font-size:.9rem;color:#777;padding:4px 2px}
 """
+
+LIVE_JS = """<script>(function(){
+var f=document.querySelector('main form');if(!f)return;f.noValidate=true;
+var M={phone:'Проверьте номер: например, 8 900 123-45-67.',name:'Напишите, как к вам обращаться.',
+address:'Напишите адрес: улица и дом.',house:'Укажите номер дома: без него водитель не найдёт место. Например: Ленина улица, 5.',
+dest:'Напишите, куда отвезти питомца.',same:'Адреса «Откуда» и «Куда» совпадают. Напишите, куда отвезти питомца.',
+past:'Дата уже прошла — выберите сегодня или позже.',to:'Дата «по» раньше даты «с».',
+consent:'Нужно согласие на обработку данных.',service_id:'Выберите услугу.'};
+function val(n){var e=f.elements[n];return e?String(e.value||'').trim():''}
+function phoneOk(t){var d=t.replace(/\\D/g,''),n;if(d.length==11&&'78'.indexOf(d[0])>=0)n=d.slice(1);else if(d.length==10)n=d;else return false;
+ if(/^(\\d)\\1+$/.test(n))return false;var a='01234567890123456789',b='98765432109876543210';return a.indexOf(n)<0&&b.indexOf(n)<0}
+function taxi(){return val('service')=='taxi'}
+var R={
+phone:function(){return phoneOk(val('phone'))?'':M.phone},
+name:function(){return val('name')?'':M.name},
+address:function(){var a=val('address');if(!a)return M.address;if(taxi()&&!/\\d/.test(a.replace(/(,|\\s)*(кв|квартира|офис|оф)\\.?\\s*\\d+.*$/i,'')))return M.house;return ''},
+dest:function(){if(!taxi())return '';var d=val('dest');if(!d)return M.dest;if(d.toLowerCase()==val('address').toLowerCase())return M.same;
+ if(!/\\d/.test(d))return M.house;return ''},
+when_date:function(){var e=f.elements.when_date;if(!e||!e.value)return '';return e.min&&e.value<e.min?M.past:''},
+when_to:function(){var e=f.elements.when_to,a=f.elements.when_date;return e&&a&&e.value&&a.value&&e.value<a.value?M.to:''},
+service_id:function(){var e=f.elements.service_id;return e&&e.tagName=='SELECT'&&!e.value?M.service_id:''},
+consent:function(){var e=f.elements.consent;return e&&!e.checked?M.consent:''}};
+var touched={};
+function show(n){var e=f.elements[n];if(!e||!e.setAttribute||!R[n])return '';var m=R[n]();var host=(e.type=='checkbox'?e.closest('label'):e);
+ var box=f.querySelector('[data-live-for="'+n+'"]');
+ var old=host.nextElementSibling;if(old&&old.classList.contains('err')&&!old.hasAttribute('data-live-for'))old.remove();
+ if(!box){box=document.createElement('div');box.className='err';box.setAttribute('data-live-for',n);box.setAttribute('role','alert');host.insertAdjacentElement('afterend',box)}
+ box.textContent=m;box.hidden=!m;e.setAttribute('aria-invalid',m?'true':'false');if(e.style)e.style.borderColor=m?'var(--err,#c0392b)':'';return m}
+Object.keys(R).forEach(function(n){var e=f.elements[n];if(!e||!e.addEventListener)return;
+ var ev=e.type=='checkbox'||e.tagName=='SELECT'?'change':'blur';
+ e.addEventListener(ev,function(){touched[n]=1;show(n)});
+ e.addEventListener('input',function(){if(touched[n])show(n)});
+ e.addEventListener('change',function(){touched[n]=1;show(n)})});
+f.addEventListener('submit',function(ev){var first=null;
+ Object.keys(R).forEach(function(n){if(!f.elements[n])return;touched[n]=1;if(show(n)&&!first)first=f.elements[n]});
+ if(first){ev.preventDefault();ev.stopImmediatePropagation();first.scrollIntoView({block:'center'});first.focus()}},true);
+})();</script>"""
 
 ADDR_JS = """<script>(function(){
 var BBOX=[35.1,54.2,40.3,56.97],STATES=['москва','московская область','moscow','moscow oblast'];
@@ -237,7 +274,7 @@ def render_service_form(cat: str, variants: list[dict], values: dict, errors: di
 <label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500" placeholder="характер, привычки, что важно знать">{v("comment")}</textarea>
 <div class="hp"><label>Не заполняйте <input name="site" tabindex="-1" autocomplete="off"></label></div>
 <label class="check"><input type="checkbox" name="consent"{checked}><span>Согласен(на) на обработку персональных данных, <a href="/policy">политика</a></span></label>{err("consent")}
-<button class="btn" type="submit">Отправить заявку</button><p class="form-note">Это не заказ: администратор сначала подтвердит цену и исполнителя.</p></form></main>{brand.public_footer()}</body></html>"""
+<button class="btn" type="submit">Отправить заявку</button><p class="form-note">Это не заказ: администратор сначала подтвердит цену и исполнителя.</p></form>{LIVE_JS}</main>{brand.public_footer()}</body></html>"""
 
 
 def _page(services: list[dict], values: dict, errors: dict) -> str:
