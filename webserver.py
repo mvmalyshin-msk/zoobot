@@ -62,6 +62,24 @@ _LONG_CACHE = ("/fonts/", "/images/", "/icons/", "/apple-touch-icon.png")
 LONG_CACHE = "public, max-age=2592000"   # 30 дней: шрифты и картинки меняются редко
 
 
+SEC_HEADERS = {"X-Content-Type-Options": "nosniff", "Referrer-Policy": "strict-origin-when-cross-origin",
+               "X-Frame-Options": "SAMEORIGIN"}
+
+
+@web.middleware
+async def security_middleware(request: web.Request, handler):
+    """Защитные заголовки на каждом ответе (и на страницах ошибок): запрет подмены типа, чужих рамок, утечки адреса."""
+    try:
+        resp = await handler(request)
+    except web.HTTPException as e:
+        for k, v in SEC_HEADERS.items():
+            e.headers.setdefault(k, v)
+        raise
+    for k, v in SEC_HEADERS.items():
+        resp.headers.setdefault(k, v)
+    return resp
+
+
 @web.middleware
 async def speed_middleware(request: web.Request, handler):
     """Сжатие gzip, долгий кэш для шрифтов и картинок, Server-Timing (время сервера видно в браузере)."""
@@ -104,7 +122,7 @@ async def _touch_icon(request: web.Request) -> web.Response:
 
 
 def make_app() -> web.Application:
-    app = web.Application(middlewares=[speed_middleware])
+    app = web.Application(middlewares=[security_middleware, speed_middleware])
     app.router.add_get("/", _index)
     app.router.add_get("/map", _map)
     app.router.add_get("/healthz", _health)
