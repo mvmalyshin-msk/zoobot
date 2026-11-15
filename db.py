@@ -245,6 +245,8 @@ CREATE TABLE IF NOT EXISTS pending_logins (
 );
 CREATE INDEX IF NOT EXISTS idx_pending_logins_exp ON pending_logins(exp);
 """,
+    # 28: заявка с сайта → заказ бота (web_orders.make_order); только добавление столбца
+    28: "ALTER TABLE web_requests ADD COLUMN order_id INTEGER;",
     # 27: откуда клиент узнал о сервисе (один вопрос после первой заявки)
     27: "ALTER TABLE users ADD COLUMN heard_from TEXT;",
     # 23: почта клиента — вход и регистрация по коду из письма (webchat.post_login_email)

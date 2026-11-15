@@ -13,6 +13,7 @@ import logging
 import re
 import secrets
 import time
+from datetime import datetime
 from urllib.parse import quote, urlencode
 
 from aiohttp import web
@@ -26,6 +27,7 @@ import orders
 import payinfo
 import talk
 import texts
+import web_orders
 import webchat
 from config import config
 from utils import from_db, fmt_local, now_utc, rub, to_local
@@ -793,6 +795,19 @@ async def request_page(request: web.Request, uid: int) -> web.Response:
                   '<label for="cnote">Причина (по желанию)</label>'
                   '<input id="cnote" name="note" maxlength="1000" style="width:100%">'
                   '<button class="btn small" name="cancel" value="1" style="margin-top:10px;background:#d62b2b">❌ Отменить заявку</button></form>')
+    if r["order_id"]:
+        mk = (f'<div class="card" style="padding:14px"><p><b>✅ Заказ оформлен:</b> '
+              f'<a href="/portal/order/{r["order_id"]}">№{r["order_id"]}</a></p></div>')
+    elif r["status"] == "rejected":
+        mk = ""
+    else:
+        mk = ('<form method="post" class="card" style="padding:14px"><h2 style="margin-top:0">Оформить заказ</h2>'
+              '<p class="muted" style="font-size:14px">Цену посчитает бот по тем же правилам, что в Telegram. Клиент получит сообщение. '
+              'Зоотакси оформляется в боте.</p>'
+              '<label for="start">Когда начать</label><input id="start" name="start" type="datetime-local" required>'
+              '<label for="qty">Сколько (часов или суток; выгул — 1)</label>'
+              '<input id="qty" name="qty" type="number" min="1" max="60" value="1" inputmode="numeric">'
+              '<button class="btn" name="make_order" value="1" style="margin-top:10px">Оформить заказ</button></form>')
     who = [f"Устройство: {r['device'] or '—'}", f"IP: {r['ip'] or '—'}"]
     same = await db.fetch_all("SELECT id, device, ip, created_at FROM web_requests WHERE phone=? AND id<>? ORDER BY id DESC LIMIT 10",
                               (r["phone"], r["id"]))
@@ -810,7 +825,7 @@ async def request_page(request: web.Request, uid: int) -> web.Response:
     reg = reg_html(r["created_at"], f"Заявка с сайта №{r['id']} зарегистрирована")
     body = (f'<h1>Заявка с сайта №{r["id"]} <span class="src">{_e(site)}</span></h1>{reg}{pager}<div class="card pre">{_e(info)}\n{_e(chr(10).join(who))}</div>'
             f'<div class="actions">{chat}<a class="btn small" href="tel:{_e(r["phone"])}">📞 Позвонить</a>'
-            f'<a class="btn small ghost" href="sms:{_e(r["phone"])}">✉️ СМС</a></div>'
+            f'<a class="btn small ghost" href="sms:{_e(r["phone"])}">✉️ СМС</a></div>' + mk +
             f'<form method="post" class="card" style="padding:14px"><label for="status">Статус</label><select id="status" name="status">{opts}</select>'
             f'<label for="note">Заметка</label><textarea id="note" name="note" maxlength="1000" style="width:100%;min-height:80px">{_e(r["admin_note"])}</textarea>'
             f'<button class="btn" style="margin-top:10px">Сохранить</button></form>' + cancel + same_html)
@@ -823,6 +838,14 @@ async def request_action(request: web.Request, uid: int) -> web.Response:
     if not rid.isdigit():
         return web.Response(status=404)
     form = await request.post()
+    if form.get("make_order"):
+        try:
+            start = datetime.strptime(str(form.get("start", "")), "%Y-%m-%dT%H:%M").replace(tzinfo=config.tz)
+            qty = int(str(form.get("qty") or "1"))
+        except ValueError:
+            return _redirect(f"/portal/request/{rid}", "Укажите время и количество числом.")
+        ok, msg, _ = await web_orders.make_order(request.app["bot"], int(rid), start, qty, actor=f"admin:{uid}")
+        return _redirect(f"/portal/request/{rid}", msg)
     if form.get("cancel") or form.get("restore"):  # отмена и возврат одной кнопкой
         if form.get("cancel"):
             await db.execute(f"UPDATE web_requests SET status='rejected', admin_note=COALESCE(?, admin_note), {db.touch()} WHERE id=?",
