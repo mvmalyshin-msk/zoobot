@@ -97,6 +97,42 @@ def query_variants(text: str, limit: int = 3) -> list[str]:
     return seen[:limit]
 
 
+_HOUSE = re.compile(r"(?:^|[\s,.])(?:д(?:ом)?\.?\s*)?(\d+[а-яa-z]?(?:/\d+)?)(?=$|[\s,.])", re.I)
+
+
+def typed_house(text: str) -> str | None:
+    """Номер дома так, как его написал клиент («Ленина 5, кв. 12» → «5», «д. 5А» → «5а»). Без дома — None."""
+    base, _ = split_flat(text)
+    m = _HOUSE.search(base)
+    return m.group(1).lower() if m else None
+
+
+def house_of(label: str) -> str | None:
+    """Номер дома в найденном адресе: вторая часть вида «5», «5А», «5/2» («Ленина улица, 5А, Москва»)."""
+    for part in (p.strip() for p in label.split(",")[1:]):
+        if re.fullmatch(r"\d+[а-яa-z]?(?:/\d+)?", part, re.I):
+            return part.lower()
+    return None
+
+
+def house_notice(text: str, places: list) -> str | None:
+    """Правило «не менять молча номер дома»: клиент написал дом, а среди найденных такого нет
+    (5 и 5А — разные дома). Тогда показываем предупреждение, а не подсовываем соседний дом как будто так и надо."""
+    want = typed_house(text)
+    if not want or not places:
+        return None
+    if any(house_of(p.label) == want for p in places):
+        return None
+    return (f"⚠️ Дома «{want}» среди найденных нет: это соседние дома или другой корпус. "
+            "Выберите подходящий или напишите адрес точнее.\n\n")
+
+
+def same_place(a: str, b: str) -> bool:
+    """Подача и назначение — один и тот же адрес (без учёта регистра и лишних пробелов)."""
+    na, nb = " ".join(a.lower().replace("ё", "е").split()), " ".join(b.lower().replace("ё", "е").split())
+    return bool(na) and na == nb
+
+
 _STREET_WORDS = {"ул", "улица", "пр", "проспект", "пер", "переулок", "шоссе", "ш", "бульвар", "бул", "наб", "набережная",
                  "проезд", "площадь", "пл", "тупик", "аллея", "микрорайон", "мкр", "дом", "д", "квартал"}
 _TOWN_PREFIX = {"г", "город", "пос", "поселок", "посёлок", "п", "пгт", "с", "село", "деревня", "дер"}
