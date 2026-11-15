@@ -34,6 +34,7 @@ input,select,textarea{font:inherit;color:var(--ink);background:var(--card);borde
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--coral)}
 
 .site-header{position:sticky;top:0;z-index:20;background:rgba(253,246,236,.94);border-bottom:1px solid rgba(234,223,206,.8);backdrop-filter:blur(14px)}
+.site-header+.backrow{max-width:1200px;margin:10px auto 0;padding:0 28px;box-sizing:border-box}
 .site-header-inner{max-width:1200px;min-height:76px;margin:auto;padding:12px 28px;display:flex;align-items:center;justify-content:space-between;gap:24px}
 .site-header .brand{font-size:1.15rem;white-space:nowrap}
 .site-nav{display:flex;align-items:center;gap:24px}
@@ -77,6 +78,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--coral)}
 }
 @media(max-width:760px){
   .site-header-inner{min-height:66px;padding:10px 18px;gap:12px}
+  .site-header+.backrow{padding:0 18px;margin-top:8px}
   .site-header .brand{font-size:1rem}
   .site-nav{gap:0}
   .site-nav>a:not(.site-nav-cta){display:none}
