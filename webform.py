@@ -321,20 +321,23 @@ async def post_form(request: web.Request) -> web.Response:
 async def post_cancel(request: web.Request) -> web.Response:
     """Клиент отменяет свою заявку: статус «Отменена клиентом», админ получает уведомление (Telegram, пуш, письмо)."""
     from urllib.parse import quote, urlparse
+    import cabinet
     origin = request.headers.get("Origin")
     if origin and urlparse(origin).netloc != request.host:
-        return web.Response(status=403, text="Запрос отклонён.")
+        return cabinet._html("<p>Запрос отклонён. Откройте сайт заново и повторите.</p><p><a class='btn' href='/cabinet'>В кабинет</a></p>", status=403)
     uid = await webchat.session_uid(request)
     if uid is None:
-        return web.Response(status=401, text="Откройте сайт с того же телефона и браузера, где отправляли заявку.")
+        return cabinet._html("<p>Чтобы отменить заявку, войдите в кабинет: откройте сайт с того же телефона и браузера, "
+                             "где отправляли заявку, или войдите заново.</p><p><a class='btn' href='/chat/login'>Войти</a></p>", status=401)
     try:
         rid = int(request.match_info["rid"])
     except ValueError:
         return web.Response(status=404)
+    tg = await cabinet.canonical_tg(uid)           # те же владельцы, что и в списке кабинета: сессия и её Telegram
     async with db.transaction() as conn:
         cur = await conn.execute(
             f"UPDATE web_requests SET status='rejected', admin_note=?, {db.touch()} "
-            "WHERE id=? AND web_uid=? AND status IN ('new','work')", ("Отменена клиентом", rid, uid))
+            "WHERE id=? AND web_uid IN (?, ?) AND status IN ('new','work')", ("Отменена клиентом", rid, uid, tg))
         changed = cur.rowcount == 1
     if changed:
         row = await db.fetch_one("SELECT r.*, s.name AS service FROM web_requests r LEFT JOIN services s ON s.id=r.service_id WHERE r.id=?", (rid,))
@@ -349,7 +352,7 @@ async def post_cancel(request: web.Request) -> web.Response:
         msg = f"Заявка №{rid} отменена."
     else:
         row = await db.fetch_one("SELECT status, web_uid FROM web_requests WHERE id=?", (rid,))
-        if not row or row["web_uid"] != uid:
-            return web.Response(status=404, text="Заявка не найдена.")
+        if not row or row["web_uid"] not in (uid, tg):
+            raise web.HTTPFound(f"/cabinet?m={quote('Эта заявка не найдена в вашем кабинете.')}")
         msg = "Эту заявку уже нельзя отменить самостоятельно — напишите нам в чат."
     raise web.HTTPFound(f"/cabinet?m={quote(msg)}")
