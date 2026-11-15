@@ -7,6 +7,8 @@
 - Праздничная статья (Telegraph, 15.11.2026): https://telegra.ph/S-kem-ostavit-pitomca-na-novogodnie-prazdniki-6-voprosov-do-otezda-11-15
 - Вторая статья про подготовку кошки (Telegraph, 15.11.2026, пересекается с уже опубликованной из таблицы статуса; новую для постов не использовать): https://telegra.ph/Kak-podgotovit-koshku-k-otezdu-hozyaev-6-shagov-11-15
 - Чек-лист «паспорт питомца» (Telegraph, 15.11.2026): https://telegra.ph/Pasport-pitomca-dlya-perederzhki-i-zoonyan-chek-list-chto-peredat-ispolnitelyu-11-15
+- Передержка дома или в зоогостинице (Telegraph, 15.11.2026, неделя 2): https://telegra.ph/Perederzhka-doma-ili-v-zoogostinice-kak-vybrat-dlya-svoego-pitomca-11-15
+- Знакомство с исполнителем до первой услуги (Telegraph, 15.11.2026, неделя 3): https://telegra.ph/Znakomstvo-s-nyanej-ili-dogsitterom-do-pervoj-uslugi-kak-provesti-i-o-chyom-sprosit-11-15
 - [market-research.md](market-research.md) — исследование рынка: конкуренты, спрос по Вордстату, аудитория, география (15.11.2026)
 
 ## 1. Аудит присутствия (14.11.2026)
