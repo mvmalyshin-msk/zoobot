@@ -107,7 +107,7 @@ def render_done(request_id: int) -> str:
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — заявка принята</title>
 {brand.HEAD}<style>{CSS}</style></head><body>{brand.public_header()}<main class="public-main public-form"><h1>Заявка принята</h1>
-<p>Номер заявки: <b>№{request_id}</b>. Мы свяжемся с вами по указанному телефону, уточним детали и сообщим цену.</p>
+<p>Номер заявки: <b>№{request_id}</b>. Администратор свяжется с вами в течение рабочего дня, обычно за 1–2 часа: уточнит детали и назовёт точную цену.</p>
 <p class="hint">Данные используются только для выполнения заявки. Удалить их можно, написав нам.</p>
 <p><a class="btn" href="/chat">💬 Открыть чат с администратором</a></p>
 <p class="hint">Администратор напишет вам в этот чат. Заходите с этого же телефона и браузера — мы вас узнаем.</p>
@@ -176,7 +176,7 @@ async def post_form(request: web.Request) -> web.Response:
         rid = cur.lastrowid
     text = "\n".join(filter(None, [
         f"🌐 Заявка с сайта №{rid}",
-        f"Услуга: {svc['name']} (от {rub(svc['base_price'])})",
+        f"Услуга: {svc['name']} (от {rub(svc.get('from_price', svc['base_price']))} для клиента)",
         f"Имя: {clean['name']}", f"Телефон: {clean['phone']}",
         f"Зарегистрирована: {fmt_local(now_utc())}",
         f"Когда: {clean['when']}" if clean["when"] else "",
