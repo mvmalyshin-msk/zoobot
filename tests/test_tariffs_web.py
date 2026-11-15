@@ -104,7 +104,10 @@ class TariffsWebTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(total, base + round(base * 0.10))
         self.assertTrue(any("Наценка сервиса" in n for n, _ in parts))
         await self.post({"step": "rule", "id": str(mk["id"]), "value": "0", "active": "1"})
-        self.assertEqual((await pricing.calculate_price(sid, {"quantity": 1}))[0], base)
+        try:
+            self.assertEqual((await pricing.calculate_price(sid, {"quantity": 1}))[0], base)
+        finally:  # БД общая для всех тестов: возвращаем начальную наценку
+            await self.post({"step": "rule", "id": str(mk["id"]), "value": "30", "active": "1"})
 
     async def test_post_protected(self):
         sid = (await db.fetch_one("SELECT id FROM services WHERE code='walk30'"))["id"]

@@ -50,13 +50,15 @@ STRAP = f'<div class="strap"><p>Подбираем специалистов по
 LOGO = '<a class="brand" href="/" aria-label="На главную"><span class="zoo">ЗОО</span>КОНСЬЕРЖ</a>'
 
 
-def public_header() -> str:
+def public_header(back_href: str | None = "/") -> str:
+    """Шапка публичного сайта. Под ней — «Назад» на каждой внутренней странице (правило проекта); на главной back_href=None."""
+    row = backrow(back_href) if back_href else ""
     return (f'<header class="site-header"><div class="site-header-inner">{LOGO}'
             '<nav class="site-nav" aria-label="Основная навигация">'
             '<a href="/#services">Услуги</a><a href="/#how-it-works">Как работаем</a><a href="/stati">Статьи</a>'
             '<a class="site-nav-access" href="/chat/login">Кабинет клиента</a>'
             '<a class="site-nav-access" href="/portal">Вход администратора</a>'
-            '<a class="site-nav-cta" href="/request">Оставить заявку</a></nav></div></header>')
+            '<a class="site-nav-cta" href="/request">Оставить заявку</a></nav></div></header>' + row)
 
 
 def public_footer() -> str:

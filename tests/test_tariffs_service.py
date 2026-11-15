@@ -41,6 +41,8 @@ class ServiceTariffTest(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await db.execute("DELETE FROM price_rules WHERE service_id IS NOT NULL")
         await db.execute("UPDATE services SET active=1")
+        # база общая для всех тестов в одном прогоне: возвращаем наценку сервиса 30 %, иначе тесты цен после этого видят 0 %
+        await db.execute("UPDATE price_rules SET active=1, value=30 WHERE condition_type='always' AND service_id IS NULL")
         await self.client.close()
 
     async def post(self, sid, data):
