@@ -4,6 +4,7 @@
 админу сразу уходит сообщение в Telegram с телефоном: дальше он связывается с клиентом по телефону или СМС.
 """
 import html as _html
+import json
 import logging
 import secrets
 import time
@@ -13,6 +14,7 @@ from aiohttp import web
 
 import db
 import geo
+import profanity
 import orders
 import pricing
 import webchat
@@ -86,6 +88,9 @@ def validate(form: dict) -> tuple[dict, dict]:
         errors["name"] = "Напишите, как к вам обращаться."
     if not clean["address"]:
         errors["address"] = "Напишите адрес: улица и дом."
+    for k in ("name", "pet", "comment", "address", "dest", "when"):  # мат не принимаем ни в одном поле
+        if clean.get(k) and k not in errors and profanity.has_profanity(clean[k]):
+            errors[k] = profanity.MESSAGE
     if not clean["service_id"].isdigit():
         errors["service_id"] = "Выберите услугу."
     if not form.get("consent"):
@@ -139,14 +144,14 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
 <div class="field"><label for="service_id">Услуга</label><select id="service_id" name="service_id"><option value="">Выберите…</option>{"".join(groups)}</select>{err("service_id")}</div>
 <div class="field"><label for="when">Когда нужно</label><input id="when" name="when" maxlength="100" value="{v("when")}" placeholder="например, завтра в 10:00"></div>
 <div class="field field-wide"><label for="address">Адрес</label><input id="address" name="address" maxlength="200" value="{v("address")}" placeholder="например, Химки, улица Победы, 3, кв. 5">{err("address")}</div>
-<div class="field"><label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="например, Рекс, собака, лабрадор, 3 года"></div>
+<div class="field"><label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="например, Рекс, собака, лабрадор, 3 года">{err("pet")}</div>
 <div class="field"><label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name" placeholder="например, Анна">{err("name")}</div>
 <div class="field"><label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 900 123-45-67">{err("phone")}</div>
-<div class="field field-wide"><label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500">{v("comment")}</textarea></div>
+<div class="field field-wide"><label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500">{v("comment")}</textarea>{err("comment")}</div>
 </div>
 <div class="hp"><label>Не заполняйте <input name="site" tabindex="-1" autocomplete="off"></label></div>
 <label class="check"><input type="checkbox" name="consent"{checked}><span>Согласен(на) на обработку персональных данных, <a href="/policy">политика</a></span></label>{err("consent")}
-<button class="btn" type="submit">Отправить заявку</button><p class="form-note">Нажимая кнопку, вы отправляете заявку на подбор услуги. Это не обязывает вас подтверждать заказ.</p></form>{LIVE_JS}</main>{brand.public_footer()}</body></html>"""
+<button class="btn" type="submit">Отправить заявку</button><p class="form-note">Нажимая кнопку, вы отправляете заявку на подбор услуги. Это не обязывает вас подтверждать заказ.</p></form>{PROF_JS}{LIVE_JS}</main>{brand.public_footer()}</body></html>"""
 
 
 SERVICE_CSS = """
@@ -160,22 +165,41 @@ padding:12px 14px;border:1.5px solid var(--line,#ddd);border-radius:12px;cursor:
 .sug:hover,.sug:focus{border-color:var(--coral);background:var(--peach)}.sug-note{font-size:.9rem;color:#777;padding:4px 2px}
 """
 
+PROF_JS = r"""<script>(function(){var PF=__PROF__,PC=PF.patterns.map(function(p){return new RegExp(p)}),PL=PF.latin.map(function(p){return new RegExp(p)}),
+LOOK={a:'а',c:'с',e:'е',o:'о',m:'м',p:'р',h:'н',x:'х',y:'у',t:'т',k:'к',b:'в'};
+function col(w){return w.replace(/(.)\1+/g,'$1')}
+function any(L,c){for(var i=0;i<L.length;i++)if(L[i].test(c))return true;return false}
+function hit(tok){var vs=tok.indexOf('*')<0?[tok]:'аеиоуыэюя'.split('').map(function(v){return tok.replace(/\*/g,v)});
+for(var i=0;i<vs.length;i++){var t=vs[i],hl=/[a-z]/.test(t),hc=/[а-я]/.test(t);
+if(hl&&!hc){if(any(PL,col(t)))return true;continue}
+if(hl)t=t.replace(/[a-z]/g,function(ch){return LOOK[ch]||ch});
+if(any(PC,col(t)))return true}return false}
+window.zcProf=function(text){var toks=String(text||'').toLowerCase().replace(/ё/g,'е').match(/[a-zа-я*]+/g)||[],run=[];
+for(var i=0;i<toks.length;i++)if(hit(toks[i]))return true;
+toks.push('');for(var j=0;j<toks.length;j++){var t=toks[j];if(t.length===1&&t!=='*'){run.push(t);continue}
+if(run.length>=3&&hit(run.join('')))return true;run=[]}return false};
+})();</script>""".replace("__PROF__", json.dumps(profanity.js_spec(), ensure_ascii=False))
+
+
 LIVE_JS = """<script>(function(){
 var f=document.querySelector('main form');if(!f)return;f.noValidate=true;
 var M={phone:'Проверьте номер: например, 8 900 123-45-67.',name:'Напишите, как к вам обращаться.',
 address:'Напишите адрес: улица и дом.',house:'Укажите номер дома: без него водитель не найдёт место. Например: Ленина улица, 5.',
 dest:'Напишите, куда отвезти питомца.',same:'Адреса «Откуда» и «Куда» совпадают. Напишите, куда отвезти питомца.',
 past:'Дата уже прошла — выберите сегодня или позже.',to:'Дата «по» раньше даты «с».',
-consent:'Нужно согласие на обработку данных.',service_id:'Выберите услугу.'};
+consent:'Нужно согласие на обработку данных.',prof:'Уберите нецензурные слова: так мы не сможем принять заявку.',service_id:'Выберите услугу.'};
 function val(n){var e=f.elements[n];return e?String(e.value||'').trim():''}
 function phoneOk(t){var d=t.replace(/\\D/g,''),n;if(d.length==11&&'78'.indexOf(d[0])>=0)n=d.slice(1);else if(d.length==10)n=d;else return false;
  if(/^(\\d)\\1+$/.test(n))return false;var a='01234567890123456789',b='98765432109876543210';return a.indexOf(n)<0&&b.indexOf(n)<0}
 function taxi(){return val('service')=='taxi'}
+function pf(n){return window.zcProf&&window.zcProf(val(n))?M.prof:''}
 var R={
 phone:function(){return phoneOk(val('phone'))?'':M.phone},
-name:function(){return val('name')?'':M.name},
-address:function(){var a=val('address');if(!a)return M.address;if(taxi()&&!/\\d/.test(a.replace(/(,|\\s)*(кв|квартира|офис|оф)\\.?\\s*\\d+.*$/i,'')))return M.house;return ''},
-dest:function(){if(!taxi())return '';var d=val('dest');if(!d)return M.dest;if(d.toLowerCase()==val('address').toLowerCase())return M.same;
+name:function(){return val('name')?pf('name'):M.name},
+pet:function(){return pf('pet')},
+comment:function(){return pf('comment')},
+address:function(){var a=val('address');if(!a)return M.address;if(pf('address'))return M.prof;if(taxi()&&!/\\d/.test(a.replace(/(,|\\s)*(кв|квартира|офис|оф)\\.?\\s*\\d+.*$/i,'')))return M.house;return ''},
+dest:function(){if(!taxi())return '';var d=val('dest');if(!d)return M.dest;if(pf('dest'))return M.prof;if(d.toLowerCase()==val('address').toLowerCase())return M.same;
  if(!/\\d/.test(d))return M.house;return ''},
 when_date:function(){var e=f.elements.when_date;if(!e||!e.value)return '';return e.min&&e.value<e.min?M.past:''},
 when_to:function(){var e=f.elements.when_to,a=f.elements.when_date;return e&&a&&e.value&&a.value&&e.value<a.value?M.to:''},
@@ -268,13 +292,13 @@ def render_service_form(cat: str, variants: list[dict], values: dict, errors: di
 <h2 class="step">2. Когда</h2>{when}
 <h2 class="step">3. Где</h2>{where}
 <h2 class="step">4. Питомец и контакты</h2>
-<label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="например, Рекс, собака, лабрадор, 3 года">
+<label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="например, Рекс, собака, лабрадор, 3 года">{err("pet")}
 <div class="row2"><div><label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name" placeholder="например, Анна">{err("name")}</div>
 <div><label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 900 123-45-67">{err("phone")}</div></div>
-<label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500" placeholder="характер, привычки, что важно знать">{v("comment")}</textarea>
+<label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500" placeholder="характер, привычки, что важно знать">{v("comment")}</textarea>{err("comment")}
 <div class="hp"><label>Не заполняйте <input name="site" tabindex="-1" autocomplete="off"></label></div>
 <label class="check"><input type="checkbox" name="consent"{checked}><span>Согласен(на) на обработку персональных данных, <a href="/policy">политика</a></span></label>{err("consent")}
-<button class="btn" type="submit">Отправить заявку</button><p class="form-note">Это не заказ: администратор сначала подтвердит цену и исполнителя.</p></form>{LIVE_JS}</main>{brand.public_footer()}</body></html>"""
+<button class="btn" type="submit">Отправить заявку</button><p class="form-note">Это не заказ: администратор сначала подтвердит цену и исполнителя.</p></form>{PROF_JS}{LIVE_JS}</main>{brand.public_footer()}</body></html>"""
 
 
 def _page(services: list[dict], values: dict, errors: dict) -> str:

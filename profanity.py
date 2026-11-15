@@ -1,0 +1,86 @@
+"""Фильтр нецензурной лексики для полей заявок и ответов клиента.
+
+Ловит прямой мат и привычные обходы (пробелы и точки между буквами «х у й», звёздочки «бл*дь», растяжки «хуууй»,
+латиницу «xuy», «fuck»). Обычные слова не трогает («ребёнок», «хлеб», «Себастьян», «вебинар»). Слово «сука» разрешено: на
+сайте про питомцев это самка собаки. Те же правила работают в браузере (js_spec) и на сервере (has_profanity)."""
+import re
+
+MESSAGE = "Уберите нецензурные слова: так мы не сможем принять заявку."
+
+_LOOK = str.maketrans("aceomphxytkb", "асеомрнхутка")  # латинские буквы, похожие на русские (смешанные слова «xуй»)
+_PRE = ("на|по|до|вы|за|от|об|при|раз|разъ|ра|съ|у|пере|под|про|не|ни|без|объ|подъ|отъ|надъ|вз|о|рас|бес|ис")
+
+# Правила для русских слов: слово приведено к нижнему регистру, «ё»→«е», повторы букв схлопнуты
+CYR = [
+    rf"^({_PRE})?ху(й|е|я|ю)[а-я]*$",
+    r"^[а-я]{0,6}пизд[а-я]*$",
+    rf"^({_PRE}|съ)?еб(а|у|л|и|ы|н|о|к)[а-я]*$",
+    r"^еб$",
+    r"^бля([дтх][а-я]*)?$",
+    r"^пид(о|а)р[а-я]*$",
+    r"^пидр[а-я]*$",
+    r"^муд(ак|ач|ил|озв)[а-я]*$",
+    r"^залуп[а-я]*$",
+    r"^г(а|о)ндон[а-я]*$",
+    r"^шлюх[а-я]*$",
+    r"^долб(о|а)?е?б[а-я]*$",
+    r"^(на|по|вы|за|об|ис|у|рас)?ср(ал|ать|ан|аче|ач)[а-я]*$",
+    r"^г(о|а)вн[а-я]*$",
+    r"^дроч(и|у|е|к|ил|ит|ун)[а-я]*$",
+    r"^манд(а|ы|е|у|ой)$",
+]
+# Правила для слов латиницей
+LAT = [
+    r"^f+u+c+k[a-z]*$", r"^shit(s|ty|head)?$", r"^bitch[a-z]*$", r"^pizd[a-z]*$", r"^bly(a|ad|at|at)$",
+    r"^(h|x)uy[a-z]*$", r"^eb(a|u)(t|l|n)[a-z]*$", r"^mudak[a-z]*$", r"^pid(o|a)r[a-z]*$", r"^zalup[a-z]*$",
+    r"^g(a|o)ndon[a-z]*$",
+]
+_CYR = [re.compile(p) for p in CYR]
+_LAT = [re.compile(p) for p in LAT]
+_TOKEN = re.compile(r"[a-zа-яё*]+")
+_VOWELS = "аеиоуыэюя"
+
+
+def _collapse(w: str) -> str:
+    return re.sub(r"(.)\1+", r"\1", w)
+
+
+def _hit(tok: str) -> bool:
+    variants = [tok] if "*" not in tok else [tok.replace("*", v) for v in _VOWELS]
+    for t in variants:
+        has_lat, has_cyr = re.search(r"[a-z]", t), re.search(r"[а-я]", t)
+        if has_lat and not has_cyr:
+            c = _collapse(t)
+            if any(p.search(c) for p in _LAT):
+                return True
+            continue
+        if has_lat:
+            t = t.translate(_LOOK)
+        c = _collapse(t)
+        if any(p.search(c) for p in _CYR):
+            return True
+    return False
+
+
+def _tokens(text: str) -> list[str]:
+    return _TOKEN.findall(text.lower().replace("ё", "е").replace("Ё", "е"))
+
+
+def has_profanity(text) -> bool:
+    toks = _tokens(str(text or ""))
+    if any(_hit(t) for t in toks):
+        return True
+    run: list[str] = []  # «х у й», «х.у.й»: подряд идущие одиночные буквы склеиваем
+    for t in toks + [""]:
+        if len(t) == 1 and t != "*":
+            run.append(t)
+            continue
+        if len(run) >= 3 and _hit("".join(run)):
+            return True
+        run = []
+    return False
+
+
+def js_spec() -> dict:
+    """Те же правила для браузера: шаблоны как строки (синтаксис общий у Python и JavaScript)."""
+    return {"patterns": CYR, "latin": LAT, "look": "aceomphxytkb->асеомрнхутка"}
