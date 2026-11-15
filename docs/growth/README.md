@@ -14,6 +14,8 @@
 - Сколько стоит зоотакси в Москве: от чего зависит цена (Telegraph, 16.11.2026): https://telegra.ph/Skolko-stoit-zootaksi-v-Moskve-ot-chego-zavisit-cena-i-chto-utochnit-do-zakaza-11-15
 - Сколько стоит выгул собак в Москве (Telegraph, 16.11.2026): https://telegra.ph/Skolko-stoit-vygul-sobak-v-Moskve-iz-chego-skladyvaetsya-cena-i-chto-utochnit-11-15
 - Зооняня для кошки: что входит в визит и как выбрать (Telegraph, 16.11.2026): https://telegra.ph/Zoonyanya-dlya-koshki-chto-vhodit-v-vizit-i-kak-vybrat-11-15
+- Передержка собак в Москве: от чего зависит цена в сутки (Telegraph, 16.11.2026): https://telegra.ph/Perederzhka-sobak-v-Moskve-ot-chego-zavisit-cena-v-sutki-i-kak-vybrat-11-15
+- Передержка кошек в Москве: что влияет на цену (Telegraph, 16.11.2026): https://telegra.ph/Perederzhka-koshek-v-Moskve-chto-vliyaet-na-cenu-i-kak-vybrat-11-15
 - Партнёрские письма: `partners.md`
 - Как перевезти кошку или собаку без стресса, про зоотакси (Telegraph, 15.11.2026): https://telegra.ph/Kak-perevezti-koshku-ili-sobaku-bez-stressa-perenoska-podgotovka-i-zootaksi-11-15-2 (ссылку без «-2» в конце не использовать: в ней была непроверенная фраза, исправить её нельзя)
 - Передержка на Новый год 2027: когда искать, кого выбрать, что подготовить (Telegraph, 15.11.2026): https://telegra.ph/Perederzhka-na-Novyj-god-2027-kogda-iskat-kogo-vybrat-i-chto-podgotovit-11-15 ; пост в ВК запланирован на 18.11 в 20:11 (в очереди сообщества)
