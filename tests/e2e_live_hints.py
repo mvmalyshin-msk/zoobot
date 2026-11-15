@@ -86,6 +86,21 @@ async def main():
             await page.click("button[type=submit]")
             await page.wait_for_timeout(800)
             check(len(sent) == 1, "верная форма уходит на сервер (один раз)")
+            await page.goto(base + "/request?service=walk")
+            await page.fill("#comment", "бл*дь, ну и двор")
+            await page.press("#comment", "Tab")
+            check("нецензурн" in await hint(page, "comment"), "мат в комментарии: подсказка под полем")
+            await page.fill("#comment", "добрый пёс")
+            await page.press("#comment", "Tab")
+            check(await hint(page, "comment") == "", "комментарий поправлен: подсказка исчезла")
+            await page.fill("#pet", "х у й")
+            await page.press("#pet", "Tab")
+            check("нецензурн" in await hint(page, "pet"), "мат в поле питомца: подсказка")
+            import profanity
+            words = ["хуй", "х.у.й", "xuy", "п*здец", "ребёнок", "хлеб", "Себастьян", "вебинар", "заебал", "бляяя",
+                     "ёбаный", "сука", "Ленина 5", "нахуй", "oхуел", "fuck", "мандарин", "залупа", "ХУУУЙ", "блин"]
+            got = await page.evaluate("w=>w.map(x=>window.zcProf(x))", words)
+            check(got == [profanity.has_profanity(w) for w in words], "браузер и сервер одинаково определяют мат")
             await page.goto(base + "/request")
             await page.fill("#phone", "12")
             await page.press("#phone", "Tab")

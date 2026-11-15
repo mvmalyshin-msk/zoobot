@@ -10,6 +10,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
+from handlers.guard import ProfanityGuard
 import breeds
 import datepicker
 import db
@@ -32,6 +33,7 @@ from utils import (
 
 log = logging.getLogger(__name__)
 router = Router()
+router.message.outer_middleware(ProfanityGuard())  # мат на шагах сбора данных не принимаем
 
 
 class Profile(StatesGroup):
