@@ -781,6 +781,8 @@ async def post_login_email(request: web.Request) -> web.Response:
                              f"Код для входа на сайт Зооконсьерж: {code}\nДействует 10 минут. "
                              "Никому его не сообщайте. Если это были не вы — просто удалите письмо."):
             await loginstore.put("em", email, {"h": _hash(f"{email}:{code}"), "tries": 0, "sent": now}, CODE_TTL)
+        else:  # письмо не ушло: не пишем «код отправлен», это обман (адрес тут ни при чём, ответ не выдаёт аккаунты)
+            return _phone_form("Не удалось отправить письмо с кодом. Войдите через Telegram или оставьте заявку без входа.")
     return _email_code_form(email)                     # ответ одинаков для любого адреса
 
 
