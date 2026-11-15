@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import unittest
+from unittest import mock
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -27,6 +28,7 @@ for _s in ("", "-wal", "-shm"):
 from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
 
 import db  # noqa: E402
+import geo  # noqa: E402
 import orders  # noqa: E402
 import pricing  # noqa: E402
 import webform  # noqa: E402
@@ -50,11 +52,15 @@ def run_app(coro):
             sent.append(text)
         orig = orders.notify_admins
         orders.notify_admins = fake
+
+        async def no_map(text):
+            return None                                   # карта недоступна: адрес не проверяется, сеть не нужна
         try:
-            app = webserver.make_app()
-            app["bot"] = object()
-            async with TestClient(TestServer(app)) as c:
-                return await coro(c, sent)
+            with mock.patch.object(geo, "search", side_effect=no_map):
+                app = webserver.make_app()
+                app["bot"] = object()
+                async with TestClient(TestServer(app)) as c:
+                    return await coro(c, sent)
         finally:
             orders.notify_admins = orig
     return asyncio.run(go())

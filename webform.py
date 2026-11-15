@@ -74,6 +74,7 @@ def validate(form: dict) -> tuple[dict, dict]:
     g = lambda k: str(form.get(k) or "").strip()  # noqa: E731
     clean = {k: g(k)[:n] for k, n in MAX.items()}
     clean["service_id"] = g("service_id")
+    clean["address_ok"], clean["dest_ok"] = g("address_ok")[:200], g("dest_ok")[:200]  # адрес, выбранный из подсказок
     errors: dict[str, str] = {}
     if g("site"):  # ловушка для ботов: настоящий человек это поле не видит
         errors["bot"] = "spam"
@@ -154,7 +155,27 @@ padding:12px 14px;border:1.5px solid var(--line,#ddd);border-radius:12px;cursor:
 .variant b{margin-left:auto;white-space:nowrap}.variant input{accent-color:var(--coral)}.variant:has(input:checked){border-color:var(--coral);background:var(--peach)}
 .step{font-size:1.05rem;margin:22px 0 2px}.row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}.row2>div{min-width:0}.row2 input{min-width:0;max-width:100%;box-sizing:border-box}.row2 label{margin-top:8px}
 .other{font-size:.95rem}
+.sug-box{display:grid;gap:4px;margin:4px 0}.sug-box:empty{display:none}
+.sug{display:block;width:100%;text-align:left;font:inherit;padding:10px 12px;border:1.5px solid var(--line,#ddd);border-radius:10px;background:#fff;cursor:pointer}
+.sug:hover,.sug:focus{border-color:var(--coral);background:var(--peach)}.sug-note{font-size:.9rem;color:#777;padding:4px 2px}
 """
+
+ADDR_JS = """<script>(function(){
+function attach(id){var inp=document.getElementById(id),ok=document.querySelector('input[name='+id+'_ok]'),box=document.getElementById(id+'-sug'),t,last='';
+if(!inp||!box)return;
+inp.addEventListener('input',function(){ok.value='';clearTimeout(t);var q=inp.value.trim();
+if(q.length<5){box.innerHTML='';return}
+t=setTimeout(function(){if(q===last)return;last=q;
+fetch('/api/addr?q='+encodeURIComponent(q)).then(function(r){return r.json()}).then(function(d){
+box.innerHTML='';(d.items||[]).forEach(function(it){var b=document.createElement('button');b.type='button';b.className='sug';
+b.setAttribute('data-for',id);b.setAttribute('data-pick',it);b.textContent=it;box.appendChild(b)});
+if(!(d.items||[]).length&&!d.down){var n=document.createElement('div');n.className='sug-note';
+n.textContent='Не нашёл такой адрес. Проверьте написание, добавьте город и номер дома.';box.appendChild(n)}}).catch(function(){})},600)})}
+attach('address');attach('dest');
+document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('.sug');if(!b)return;
+var id=b.getAttribute('data-for'),v=b.getAttribute('data-pick');document.getElementById(id).value=v;
+document.querySelector('input[name='+id+'_ok]').value=v;document.getElementById(id+'-sug').innerHTML=''});
+})();</script>"""
 
 
 def render_service_form(cat: str, variants: list[dict], values: dict, errors: dict, nonce: str) -> str:
@@ -175,8 +196,14 @@ def render_service_form(cat: str, variants: list[dict], values: dict, errors: di
         when = (f'<div class="row2"><div><label for="when_date">Дата</label><input id="when_date" name="when_date" type="date" min="{today}" value="{v("when_date")}">{err("when_date")}</div>'
                 f'<div><label for="when_time">Время</label><input id="when_time" name="when_time" type="time" step="900" value="{v("when_time")}"></div></div>')
     if cat == "taxi":
-        where = (f'<label for="address">Откуда</label><input id="address" name="address" maxlength="200" value="{v("address")}" placeholder="город, улица, дом">{err("address")}'
-                 f'<label for="dest">Куда</label><input id="dest" name="dest" maxlength="200" value="{v("dest")}" placeholder="например, ветклиника на Ленина, 5">{err("dest")}')
+        opts = lambda k: "".join(  # noqa: E731
+            f'<button type="button" class="sug" data-for="{k}" data-pick="{_e(o)}">{_e(o)}</button>'
+            for o in (values.get(k + "_opts") or []))
+        where = (f'<label for="address">Откуда</label><input id="address" name="address" maxlength="200" value="{v("address")}" placeholder="город, улица, дом" autocomplete="off">'
+                 f'<input type="hidden" name="address_ok" value="{v("address_ok")}">{err("address")}<div class="sug-box" id="address-sug">{opts("address")}</div>'
+                 f'<label for="dest">Куда</label><input id="dest" name="dest" maxlength="200" value="{v("dest")}" placeholder="например, ветклиника на Ленина, 5" autocomplete="off">'
+                 f'<input type="hidden" name="dest_ok" value="{v("dest_ok")}">{err("dest")}<div class="sug-box" id="dest-sug">{opts("dest")}</div>'
+                 f'<p class="hint">Начните писать адрес и выберите нужный из списка: так машина приедет точно.</p>{ADDR_JS}')
     else:
         label = "Ваш район или адрес" if cat == "boarding" else "Адрес"
         hint = "подберём передержку поближе" if cat == "boarding" else "город, улица, дом, квартира"
@@ -246,6 +273,48 @@ async def _services() -> list[dict]:
     return await pricing.with_client_price(await db.fetch_all("SELECT * FROM services WHERE active=1 ORDER BY id"))
 
 
+def _norm(text: str) -> str:
+    return " ".join(text.lower().replace("ё", "е").split())
+
+
+async def check_taxi_addresses(clean: dict, errors: dict) -> None:
+    """Зоотакси: адрес не «что угодно». Выбран из подсказок или набран ровно как в подсказке — принимаем;
+    не найден на карте или не выбран — просим выбрать, показывая варианты. Карта недоступна — клиента не блокируем."""
+    for key in ("address", "dest"):
+        text = clean.get(key) or ""
+        if key in errors or not text or clean.get(key + "_ok") == text:
+            continue
+        places = await geo.search(text)
+        if places is None:
+            continue
+        if not places:
+            errors[key] = "Не нашёл такой адрес на карте. Проверьте написание, добавьте город и номер дома."
+            continue
+        if any(_norm(p.label) == _norm(text) for p in places):
+            clean[key + "_ok"] = text
+            continue
+        clean[key + "_opts"] = [p.label for p in places[:5]]
+        errors[key] = (geo.house_notice(text, places) or "").strip().removeprefix("⚠️ ") or ""
+        errors[key] = (errors[key] + " " if errors[key] else "") + "Выберите адрес из подсказок ниже."
+
+
+_addr_hits: dict[str, list[float]] = {}
+
+
+async def get_addr(request: web.Request) -> web.Response:
+    """Подсказки адреса для формы зоотакси: до 5 настоящих адресов с карты. Пустой ответ с down — карта недоступна."""
+    import portal
+    q = " ".join(request.query.get("q", "").split())[:200]
+    if portal._limit(_addr_hits, "a:" + _client_ip(request), 30, 60):
+        return web.json_response({"items": []}, status=429)
+    if len(q) < 5 or not geo.looks_like_address(q):
+        return web.json_response({"items": []})
+    places = await geo.search(q)
+    if places is None:
+        return web.json_response({"items": [], "down": True})
+    return web.json_response({"items": [p.label for p in places[:5]]})
+
+
 async def get_form(request: web.Request) -> web.Response:
     """Форма заявки. С главной приходят с ?service=walk — тогда эта услуга (самый доступный вариант) уже выбрана."""
     services = await _services()
@@ -273,6 +342,8 @@ async def post_form(request: web.Request) -> web.Response:
         errors["service_id"] = "Выберите услугу."
     if "bot" in errors:
         return web.Response(text=render_done(0), content_type="text/html")  # боту делаем вид, что приняли
+    if clean["service"] == "taxi" and "bot" not in errors:
+        await check_taxi_addresses(clean, errors)
     if errors:
         return web.Response(status=400, text=_page(services, clean, errors), content_type="text/html")
     svc = next(s for s in services if str(s["id"]) == clean["service_id"])

@@ -111,6 +111,7 @@ def make_app() -> web.Application:
     app.router.add_get("/policy", _policy)
     app.router.add_get("/request", webform.get_form)
     app.router.add_post("/request", webform.post_form)
+    app.router.add_get("/api/addr", webform.get_addr)
     app.router.add_post("/request/cancel/{rid}", webform.post_cancel)
     app.router.add_get("/contact", contact.get_page)
     app.router.add_post("/contact", contact.post_page)
