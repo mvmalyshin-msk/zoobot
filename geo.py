@@ -80,6 +80,22 @@ def split_flat(text: str) -> tuple[str, str | None]:
     return t[:m.start()].strip(" ,"), m.group(1)
 
 
+_ROUTE = re.compile(r"^\s*(?:от|с|со|из)\s+(?P<a>.+?)\s+(?:до|в|на|к)\s+(?P<b>.+?)\s*$", re.IGNORECASE)
+
+
+def split_route(text: str) -> tuple[str, str] | None:
+    """«с Ленина 5 до аэропорта» → («Ленина 5», «аэропорта»). Только при явных словах «с/от/из … до/в/на/к …»:
+    иначе не угадываем, это один адрес. Каждая половина должна выглядеть как адрес, иначе разбор не нужен."""
+    t = " ".join(text.split())
+    m = _ROUTE.match(t)
+    if not m:
+        return None
+    a, b = m.group("a").strip(" ,"), m.group("b").strip(" ,")
+    if not a or not b or not looks_like_address(a) or not looks_like_address(b):
+        return None
+    return a, b
+
+
 def query_variants(text: str, limit: int = 3) -> list[str]:
     """Что пробовать искать: как написано, без квартиры, без хвостовых чисел (корпус/квартира без «кв»)."""
     t = " ".join(text.split())

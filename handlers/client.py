@@ -739,6 +739,11 @@ async def _address_done(msg: Message, state: FSMContext, target: str, label: str
     await state.update_data(outside_mkad=bool(data.get("out_a")) or bool(data.get("out_b")))
     if target == "a":
         await state.set_state(Order.point_b)
+        pending = data.get("pending_b")
+        if pending:  # назначение клиент уже назвал в одном сообщении с подачей: не спрашиваем второй раз
+            await state.update_data(pending_b=None)
+            await _address_input(msg, state, pending, "b", Order.point_b.state, tg_user)
+            return
         await msg.answer(texts.ASK_POINT_B, reply_markup=kb.address_ask("b", _pt(data.get("pt_a"))))
     else:
         if geo.same_place(data.get("address") or "", label):  # подача = назначению: предупредим, не блокируя
@@ -1272,6 +1277,12 @@ async def cb_point_a_profile(cb: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(Order.point_a, F.text)
 async def msg_point_a(m: Message, state: FSMContext) -> None:
+    route = geo.split_route(m.text)
+    if route:  # «с Ленина 5 до аэропорта»: подачу уточняем сейчас, назначение — сразу после неё
+        await state.update_data(pending_b=route[1][:200])
+        await _address_input(m, state, route[0], "a", Order.point_a.state, m.from_user)
+        return
+    await state.update_data(pending_b=None)
     await _address_input(m, state, m.text, "a", Order.point_a.state, m.from_user)
 
 
