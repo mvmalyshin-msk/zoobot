@@ -891,20 +891,42 @@ def _row(r) -> dict:
     return {"id": r["id"], "op": r["op"], "mid": r["mid"], **json.loads(r["payload"])}
 
 
+def _panel(events: list[dict]) -> tuple[list | None, bool]:
+    """Какая нижняя панель («Найти на карте», «Отправить геопозицию») должна висеть сейчас. События — от старых к новым.
+    Её ставит сообщение бота; убирают: ответ человека («один раз»), нажатие кнопки под сообщением (событие reply),
+    команда бота убрать панель. Без этого после перезагрузки страницы панель возвращалась на уже пройденном шаге."""
+    rows, once = None, False
+    for e in events:
+        if e["op"] == "send" and "reply" in e:
+            rows, once = (e["reply"] or None), bool(e.get("once"))
+        elif e["op"] == "send" and e.get("who") == "me" and once:
+            rows, once = None, False
+        elif e["op"] == "reply":
+            rows, once = None, False
+    return rows, once
+
+
+async def panel_open(uid: int) -> bool:
+    rows = await db.fetch_all("SELECT * FROM web_events WHERE uid=? ORDER BY id DESC LIMIT 400", (uid,))
+    return _panel([_row(r) for r in reversed(rows)])[0] is not None
+
+
 @_need_uid
 async def api_history(request: web.Request, uid: int) -> web.Response:
     rows = await db.fetch_all("SELECT * FROM web_events WHERE uid=? ORDER BY id DESC LIMIT 400", (uid,))
+    panel, once = _panel([_row(r) for r in reversed(rows)])
     msgs: dict[int, dict] = {}
     for r in reversed(rows):
         e = _row(r)
         if e["op"] == "send":
-            msgs[e["mid"]] = {k: v for k, v in e.items() if k not in ("op", "id")}
+            msgs[e["mid"]] = {k: v for k, v in e.items() if k not in ("op", "id", "reply", "once")}
         elif e["op"] == "edit" and e["mid"] in msgs:
-            msgs[e["mid"]].update({k: v for k, v in e.items() if k not in ("op", "id", "mid")})
+            msgs[e["mid"]].update({k: v for k, v in e.items() if k not in ("op", "id", "mid", "reply", "once")})
         elif e["op"] == "delete":
             msgs.pop(e["mid"], None)
     last = rows[0]["id"] if rows else 0
-    return web.json_response({"messages": list(msgs.values()), "last": last, "admin": uid in config.admin_ids})
+    return web.json_response({"messages": list(msgs.values()), "last": last, "admin": uid in config.admin_ids,
+                              "panel": panel, "once": once})
 
 
 @_need_uid
@@ -977,6 +999,8 @@ async def feed(app, uid: int, *, text: str = "", cb: str = "", mid=None, phone: 
     chat = {"id": uid, "type": "private"}
     upd_id = int(time.time() * 1000) % 2_000_000_000
     if cb:
+        if await panel_open(uid):  # человек ушёл с шага кнопкой под сообщением — панель шага больше не нужна
+            await push(uid, "reply")
         src = await db.fetch_one("SELECT payload FROM web_events WHERE uid=? AND mid=? AND op='send'", (uid, int(mid or 0)))
         shown = json.loads(src["payload"]).get("text", "") if src else ""
         update = {"update_id": upd_id, "callback_query": {

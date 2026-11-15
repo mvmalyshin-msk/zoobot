@@ -146,7 +146,8 @@ function apply(ev){
     if(ev.op==='send'&&ev.who==='me'&&rkOnce)setReply(null);  // человек ответил сам (текстом, геопозицией, картой) — панель «один раз» больше не нужна
     render(ev);if(stick||ev.who==='me')bottom();
     if(ev.op==='send'&&ev.who==='bot'&&!initial)alert_(ev.text)
-  }else if(ev.op==='delete'){var d=nodes[ev.mid];if(d){d.remove();delete nodes[ev.mid]}}
+  }else if(ev.op==='reply'){setReply(null)}  // ушли с шага кнопкой под сообщением: панель карты/геопозиции убираем
+  else if(ev.op==='delete'){var d=nodes[ev.mid];if(d){d.remove();delete nodes[ev.mid]}}
 }
 function alert_(text){
   if(document.visibilityState==='visible')return;
@@ -227,7 +228,7 @@ nt.onclick=askPush;
 if(canPush&&Notification.permission==='granted')pushOn().then(function(ok){nt.hidden=ok});
 else nt.hidden=false;
 fetch('__API__/api/history',{credentials:'same-origin'}).then(function(r){return r.json()}).then(function(j){
-  (j.messages||[]).forEach(function(m){render(m)});bottom();last=j.last;initial=false;
+  (j.messages||[]).forEach(function(m){render(m)});setReply(j.panel,j.once);bottom();last=j.last;initial=false;
   if(j.admin)document.getElementById('ad').hidden=false;
   if(!j.messages.length)send({text:'/start'});
   poll();
