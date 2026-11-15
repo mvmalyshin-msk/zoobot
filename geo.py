@@ -123,6 +123,12 @@ def typed_house(text: str) -> str | None:
     return m.group(1).lower() if m else None
 
 
+def has_house_number(text: str) -> bool:
+    """В адресе есть номер дома (цифра, не считая квартиры). Без дома водитель не найдёт место."""
+    base, _ = split_flat(text)
+    return bool(re.search(r"\d", base))
+
+
 def house_of(label: str) -> str | None:
     """Номер дома в найденном адресе: вторая часть вида «5», «5А», «5/2» («Ленина улица, 5А, Москва»)."""
     for part in (p.strip() for p in label.split(",")[1:]):
