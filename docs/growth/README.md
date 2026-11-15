@@ -11,6 +11,7 @@
 - Знакомство с исполнителем до первой услуги (Telegraph, 15.11.2026, неделя 3): https://telegra.ph/Znakomstvo-s-nyanej-ili-dogsitterom-do-pervoj-uslugi-kak-provesti-i-o-chyom-sprosit-11-15
 - Как приучить питомца к зооняне или догситтеру до отъезда (Telegraph, 15.11.2026): https://telegra.ph/Kak-priuchit-pitomca-k-zoonyane-ili-dogsitteru-do-otezda-11-15-2 (ссылку без «-2» не использовать: опечатка в первом абзаце)
 - Кошка одна дома на несколько дней: что проверить до отъезда (Telegraph, 15.11.2026): https://telegra.ph/Koshka-odna-doma-na-neskolko-dnej-chto-proverit-do-otezda-11-15
+- Сколько стоит зоотакси в Москве: от чего зависит цена (Telegraph, 16.11.2026): https://telegra.ph/Skolko-stoit-zootaksi-v-Moskve-ot-chego-zavisit-cena-i-chto-utochnit-do-zakaza-11-15
 - Партнёрские письма: `partners.md`
 - Как перевезти кошку или собаку без стресса, про зоотакси (Telegraph, 15.11.2026): https://telegra.ph/Kak-perevezti-koshku-ili-sobaku-bez-stressa-perenoska-podgotovka-i-zootaksi-11-15-2 (ссылку без «-2» в конце не использовать: в ней была непроверенная фраза, исправить её нельзя)
 - Передержка на Новый год 2027: когда искать, кого выбрать, что подготовить (Telegraph, 15.11.2026): https://telegra.ph/Perederzhka-na-Novyj-god-2027-kogda-iskat-kogo-vybrat-i-chto-podgotovit-11-15 ; пост в ВК запланирован на 18.11 в 20:11 (в очереди сообщества)
