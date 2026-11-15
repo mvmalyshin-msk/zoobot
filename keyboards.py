@@ -413,3 +413,19 @@ def relay_end() -> InlineKeyboardMarkup:
 
 def chat_button(url: str) -> InlineKeyboardMarkup:
     return _kb([[_chat_btn(url)]])
+
+
+HEARD_FROM = {
+    "chat": "Чат соседей или дома",
+    "vk": "ВКонтакте",
+    "article": "Статья (Дзен, Telegraph)",
+    "maps": "Яндекс Карты или 2ГИС",
+    "search": "Поиск в интернете",
+    "friends": "Рассказали знакомые",
+    "other": "Другое",
+}
+
+
+def heard_from() -> InlineKeyboardMarkup:
+    """Один вопрос после первой заявки: откуда узнали о сервисе."""
+    return _kb([[Btn(text=label, callback_data=f"src:{key}")] for key, label in HEARD_FROM.items()])
