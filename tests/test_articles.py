@@ -14,7 +14,7 @@ import articles  # noqa: E402
 import seo  # noqa: E402
 import webserver  # noqa: E402
 
-SLUGS = ("/stati/zootaksi-dlya-sobak-i-koshek", "/stati/skolko-stoit-perederzhka-sobaki-i-koshki", "/stati/s-kem-ostavit-pitomca-na-novogodnie-prazdniki", "/stati/kak-vybrat-peredergku", "/stati/skolko-gulyat-s-sobakoi", "/stati/kak-podgotovit-koshku-k-otezdu")
+SLUGS = ("/stati/zoogostinica-ili-perederzhka-doma", "/stati/zootaksi-dlya-sobak-i-koshek", "/stati/skolko-stoit-perederzhka-sobaki-i-koshki", "/stati/s-kem-ostavit-pitomca-na-novogodnie-prazdniki", "/stati/kak-vybrat-peredergku", "/stati/skolko-gulyat-s-sobakoi", "/stati/kak-podgotovit-koshku-k-otezdu")
 
 
 class Articles(unittest.IsolatedAsyncioTestCase):
@@ -168,6 +168,15 @@ class Articles(unittest.IsolatedAsyncioTestCase):
         parent = await (await self.client.get("/peredergka")).text()
         self.assertIn('href="/peredergka-sobak"', parent)
         self.assertIn('href="/peredergka-koshek"', parent)
+
+    def test_site_texts_follow_positioning(self):
+        """positioning.md: фотоотчёт не обещаем, «проверенные» без конкретики не пишем."""
+        import about
+        import servicepages
+        text = (about.render("https://x") + str(servicepages.PAGES)
+                + " ".join(str(a.get("help", "")) + str(a.get("sections", "")) for a in articles.ARTICLES.values()))
+        for bad in ("фотоотчёты", "присылает фото.", "проверенных специалист", "короткий отчёт с фото"):
+            self.assertNotIn(bad, text)
 
 
 if __name__ == "__main__":
