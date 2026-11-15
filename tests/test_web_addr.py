@@ -173,17 +173,19 @@ class Submit(unittest.TestCase):
             self.assertEqual(r.status, 200, await r.text())
         run(case, const(None))
 
-    def test_other_services_never_touch_the_map(self):
-        async def boom(text):
-            raise AssertionError("карта не нужна")
-
+    def test_other_services_check_the_map_too(self):
+        """Адрес проверяется не только в зоотакси: выдуманный адрес в выгуле не принимается, настоящий — да."""
         async def case(c):
             items = await pricing.with_client_price(await db.fetch_all("SELECT * FROM services WHERE active=1"))
             sid = str([s for s in items if s["category"] == "walk"][0]["id"])
-            r = await c.post("/request", data={**CONTACT, "service": "walk", "service_id": sid, "address": "Москва, Тверская 1",
-                                               "when_date": TOMORROW, "when_time": "09:00", "nonce": "w1"})
+            data = {**CONTACT, "service": "walk", "service_id": sid, "address": "Москва слезам не верит 5",
+                    "when_date": TOMORROW, "when_time": "09:00", "nonce": "w1"}
+            r = await c.post("/request", data=data)
+            self.assertEqual(r.status, 400)
+            self.assertIn("Не нашёл такой адрес", await r.text())
+            r = await c.post("/request", data={**data, "address": A, "address_ok": A, "nonce": "w2"})
             self.assertEqual(r.status, 200, await r.text())
-        run(case, boom)
+        run(case, const([]))
 
 
 class HouseRequired(unittest.TestCase):
@@ -236,20 +238,28 @@ class HouseRequired(unittest.TestCase):
     def test_page_script_asks_photon_first_and_only_shows_houses(self):
         async def case(c):
             t = await (await c.get("/request?service=taxi")).text()
-            self.assertIn("photon.komoot.io", t)
-            self.assertIn("housenumber", t)
+            self.assertIn('src="/addr.js"', t)
+            js = await (await c.get("/addr.js")).text()
+            self.assertIn("photon.komoot.io", js)
+            self.assertIn("housenumber", js)
         run(case, const([]))
 
 
 class Page(unittest.TestCase):
-    def test_taxi_page_has_suggest_script_and_hidden_flags_other_pages_do_not(self):
+    def test_every_service_page_has_the_address_line(self):
+        """Строка адреса с подсказками одинакова во всех услугах и в общей форме."""
         async def case(c):
+            for url in ("/request?service=taxi", "/request?service=walk", "/request?service=sitter",
+                        "/request?service=boarding", "/request"):
+                page = await (await c.get(url)).text()
+                self.assertIn('src="/addr.js"', page, url)
+                self.assertIn('name="address_ok"', page, url)
+                self.assertIn('data-act="locate"', page, url)
+                self.assertIn('data-act="map"', page, url)
             taxi = await (await c.get("/request?service=taxi")).text()
-            self.assertIn("/api/addr", taxi)
-            self.assertIn('name="address_ok"', taxi)
             self.assertIn('name="dest_ok"', taxi)
-            walk = await (await c.get("/request?service=walk")).text()
-            self.assertNotIn("/api/addr", walk)
+            js = await (await c.get("/addr.js")).text()
+            self.assertIn("/api/addr", js)                 # запасной путь, если Photon недоступен
         run(case, const([]))
 
 

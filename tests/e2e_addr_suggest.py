@@ -64,7 +64,7 @@ async def main():
                 await page.goto(f"http://{server.host}:{server.port}/request?service=taxi")
                 await page.fill("#address", "ленина 5")
                 await page.wait_for_selector("#address-sug .sug", timeout=5000)
-                items = await page.locator("#address-sug .sug").all_inner_texts()
+                items = [await el.get_attribute("data-pick") for el in await page.locator("#address-sug .sug").all()]
                 check(items == LABELS, f"показаны только адреса с домом, и только Москва/область: {items}")
                 await page.click("#address-sug .sug >> nth=0")
                 check(await page.input_value("#address") == LABELS[0], "выбранный адрес лёг в поле")

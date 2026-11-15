@@ -29,6 +29,11 @@ async def _map(request: web.Request) -> web.Response:
     return web.FileResponse(WEBAPP_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
 
+async def _addr_js(request: web.Request) -> web.Response:
+    """Общий скрипт подбора адреса для сайта и чата (подсказки, геопозиция, карта)."""
+    return web.FileResponse(WEBAPP_DIR / "addr.js", headers={"Cache-Control": "no-cache"})
+
+
 async def _index(request: web.Request) -> web.Response:
     """Главная страница публичного сайта."""
     import homecards
@@ -125,6 +130,7 @@ def make_app() -> web.Application:
     app = web.Application(middlewares=[security_middleware, speed_middleware])
     app.router.add_get("/", _index)
     app.router.add_get("/map", _map)
+    app.router.add_get("/addr.js", _addr_js)
     app.router.add_get("/healthz", _health)
     app.router.add_get("/policy", _policy)
     app.router.add_get("/request", webform.get_form)

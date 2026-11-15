@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Зооконсьерж</title>
 <script defer src="/a.js"></script>
+<script src="/addr.js"></script>
 <meta name="theme-color" content="#FC6751">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -44,6 +45,11 @@ form button.cmd{background:var(--cream);color:var(--coral);border:1.5px solid va
 #cmds{display:flex;flex-direction:column;gap:6px;padding:8px;background:var(--cream);border-top:1.5px solid var(--line)}
 #cmds[hidden]{display:none}
 #cmds button{font:600 15px var(--font);text-align:left;padding:10px 16px;border:1.5px solid var(--line);border-radius:999px;background:#fff;color:var(--ink)}
+#sg{display:none;flex-direction:column;background:#fff;border-top:1.5px solid var(--line);max-height:42vh;overflow-y:auto}
+#sg.open{display:flex}#sg:empty{display:none}
+#sg .sug{display:block;width:100%;text-align:left;font:16px var(--font);padding:12px 16px;border:0;border-bottom:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer}
+#sg .sug:last-child{border-bottom:0}#sg .sug-main{display:block;font-weight:700}#sg .sug-sub{display:block;font-size:13px;color:var(--mute);margin-top:1px}
+#sg .sug:active,#sg .sug.on{background:var(--peach)}#sg .sug-note{font-size:14px;color:var(--mute);padding:12px 16px}
 #st{font-size:12px;color:var(--mute);text-align:center;padding:2px}
 #ios{display:none;margin:8px 10px 0;padding:10px 12px;border-radius:14px;background:var(--peach);font-size:14px}
 #ios b{color:var(--coral)}
@@ -55,12 +61,13 @@ __RIBBON__<header><span class="hl">__BACK__<a class="brand" href="/" aria-label=
 <div id="log" aria-live="polite"></div>
 <div id="st"></div>
 <div id="rk"></div>
+<div id="sg" role="listbox" aria-label="Подсказки адреса"></div>
 <div id="cmds" hidden><button type="button" data-cmd="/menu">Главное меню</button><button type="button" data-cmd="/profile">Профиль и питомцы</button><button type="button" data-cmd="/policy">Политика обработки данных</button><button type="button" data-cmd="/delete_me">Удалить мои данные</button></div><form id="f" autocomplete="off"><button type="button" id="cmd" class="cmd" aria-label="Меню команд" aria-expanded="false">☰</button><input id="t" placeholder="Сообщение…" enterkeyhint="send" maxlength="1000"><button>➤</button></form>
 <script>
 (function(){
 var API='__API__';  // /chat — клиент, /portal/bot — администратор (подставляет сервер)
 var log=document.getElementById('log'),rk=document.getElementById('rk'),st=document.getElementById('st'),inp=document.getElementById('t');
-var rkOnce=false,nodes={},last=0,polling=false,fails=0,initial=true,unread=0,baseTitle=document.title;
+var rkOnce=false,mapPanel=false,nodes={},last=0,polling=false,fails=0,initial=true,unread=0,baseTitle=document.title;
 function H(h,o){h=h||{};h['X-Zc']='1';h['Content-Type']='application/json';return h}
 function linkify(el,text){
   var re=/https?:\/\/[^\s<>"]+/g,i=0,m;
@@ -100,6 +107,8 @@ function render(msg){
 }
 function setReply(rows,once){
   rk.textContent='';rkOnce=!!once;
+  mapPanel=!!(rows&&rows.some(function(r){return r.some(function(b){return b.map})}));  // шаг с адресом: в строке ввода работают подсказки
+  if(!mapPanel&&sg){sg.innerHTML='';sg.classList.remove('open')}
   if(!rows||!rows.length){rk.style.display='none';rkOnce=false;return}
   rows.forEach(function(row){
     var r=document.createElement('div');r.className='r';
@@ -134,6 +143,9 @@ function locate(){
     navigator.geolocation.getCurrentPosition(ok,fail,{enableHighAccuracy:false,timeout:20000,maximumAge:300000});
   },{enableHighAccuracy:true,timeout:10000,maximumAge:60000});
 }
+var sg=document.getElementById('sg');
+if(window.zcAddr&&sg)zcAddr.bind(inp,{box:sg,min:4,enabled:function(){return mapPanel},onPick:function(it){
+  inp.value='';if(rkOnce)setReply(null);send({text:it.label})}});
 function bottom(){log.scrollTop=log.scrollHeight}
 // «прилипание» к низу: пока человек внизу, новые сообщения и появление клавиатуры не уводят ленту
 var stick=true;
@@ -192,7 +204,7 @@ var cmds=document.getElementById('cmds'),cmdBtn=document.getElementById('cmd');
 cmdBtn.onclick=function(){cmds.hidden=!cmds.hidden;cmdBtn.setAttribute('aria-expanded',String(!cmds.hidden))};
 cmds.onclick=function(e){var b=e.target.closest('button[data-cmd]');if(!b)return;var c=b.getAttribute('data-cmd');cmds.hidden=true;cmdBtn.setAttribute('aria-expanded','false');send({text:c})};
 document.getElementById('f').onsubmit=function(e){
-  e.preventDefault();var v=inp.value.trim();if(!v)return;inp.value='';send({text:v});
+  e.preventDefault();var v=inp.value.trim();if(!v)return;inp.value='';sg.innerHTML='';sg.classList.remove('open');send({text:v});
 };
 try{var standalone=window.navigator.standalone||matchMedia('(display-mode: standalone)').matches;
   if(/iPhone|iPad/.test(navigator.userAgent)&&!standalone&&!localStorage.getItem('zc_ios')){var ios=document.getElementById('ios');ios.style.display='block';ios.onclick=function(){ios.style.display='none';localStorage.setItem('zc_ios','1')}}}catch(e){}

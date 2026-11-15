@@ -649,6 +649,9 @@ async def cb_addr(cb: CallbackQuery, state: FSMContext) -> None:
         await state.set_state(data["addr_back"])
         await cb.message.answer("Напишите адрес ещё раз.", reply_markup=_ask_for(data))
         return
+    if arg == "map":  # точку можно прислать или поправить на карте: шаг остаётся прежним
+        await cb.message.answer(texts.ADDR_SHARE, reply_markup=_ask_for(data))
+        return
     if arg == "keep":
         if data.get("addr_fails", 0) < 2 or not data.get("addr_text") or data.get("addr_outside"):
             await cb.message.answer(texts.ADDR_STALE)
