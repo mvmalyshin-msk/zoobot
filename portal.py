@@ -196,6 +196,8 @@ h3.day{margin:16px 4px 2px;font-size:13px;letter-spacing:.05em;text-transform:up
 .pager a,.pager .off{flex:1;text-align:center;padding:9px 6px;border-radius:999px;background:var(--card);border:1.5px solid var(--line);color:var(--ink);text-decoration:none;font-weight:700;font-size:15px}
 .pager .off{opacity:.4}
 .item.ord.st-new{background:#fff}
+.item.ord.express{background:#f8eaee;box-shadow:inset 6px 0 0 #7a1f3d}.xbadge{display:inline-block;border-radius:999px;padding:.1em .65em;font-size:12px;font-weight:800;background:#7a1f3d;color:#fff;letter-spacing:.02em}
+.reg.express{background:#7a1f3d;color:#fff;border-color:#7a1f3d}.reg.express em,.reg.express span{color:#fff}
 .item.ord.st-wait{background:#fff6dc;box-shadow:inset 5px 0 0 #e8b931}
 .item.ord.st-work{background:#e1f5e6;box-shadow:inset 5px 0 0 #2e9e5b}
 .item.ord.st-done{background:#45454a;color:#f1f1f3;box-shadow:inset 5px 0 0 #22e06b}
@@ -581,10 +583,10 @@ def day_label(created_at) -> str:
     return ("Сегодня · " if gap == 0 else "Вчера · " if gap == 1 else "") + base
 
 
-def reg_html(created_at, what: str) -> str:
-    """Плашка наверху карточки: когда заявка зарегистрирована (время и дата — крупно)."""
+def reg_html(created_at, what: str, express: bool = False) -> str:
+    """Плашка наверху карточки: когда заявка зарегистрирована (время и дата — крупно). Экспресс — бургунди."""
     d = _local_dt(created_at)
-    return f'<div class="reg"><b>{d:%H:%M}</b><span>{d:%d.%m.%Y}</span><em>{_e(what)}</em></div>'
+    return f'<div class="reg{" express" if express else ""}"><b>{d:%H:%M}</b><span>{d:%d.%m.%Y}</span><em>{_e(what)}</em></div>'
 
 
 def _row_html(r: dict) -> str:
@@ -603,9 +605,12 @@ def _row_html(r: dict) -> str:
     st = f'<span class="badge" style="background:{"var(--coral)" if r["status"] == "new" else "#8a8178"}">{request_label(r)}</span>'
     if r["status"] == "done":
         st = TICK + st
+    hot = bool(r.get("express")) and r["status"] in ("new", "work")      # экспресс: бургунди, пока заявка живая
+    if r.get("express"):
+        st = '<span class="xbadge">⚡ ЭКСПРЕСС</span> ' + st
     if str(r.get("address") or "").startswith("Сайт "):  # заявка с сайта конструктора: показываем, с какого
         src = f'<span class="src">{_e(r["address"])}</span>'
-    return (f'<a class="item card ord {REQ_CLASS.get(r["status"], "st-new")}" href="/portal/request/{r["id"]}">{stamp_html(r["created_at"], r["status"] == "new")}<div class="main">'
+    return (f'<a class="item card ord {"express" if hot else REQ_CLASS.get(r["status"], "st-new")}" href="/portal/request/{r["id"]}">{stamp_html(r["created_at"], r["status"] == "new")}<div class="main">'
             f'<div class="row"><span class="who">Заявка с сайта №{r["id"]} · {_e(r["name"])}</span><span class="stt">{st}</span></div>'
             f'<div class="row" style="margin-top:6px">{chip}{src}</div>'
             f'<div class="sub">{_e(r["when_text"] or "время не указано")} · {_e(r["phone"])}</div></div></a>')
@@ -822,8 +827,8 @@ async def request_page(request: web.Request, uid: int) -> web.Response:
     pager = _pager(f"/portal/request/{pn}" if pn else None, f"← №{pn}" if pn else "←",
                    f"/portal/chat/{r['web_uid']}" if r["web_uid"] else None, "👤 Клиент",
                    f"/portal/request/{nn}" if nn else None, f"№{nn} →" if nn else "→")
-    reg = reg_html(r["created_at"], f"Заявка с сайта №{r['id']} зарегистрирована")
-    body = (f'<h1>Заявка с сайта №{r["id"]} <span class="src">{_e(site)}</span></h1>{reg}{pager}<div class="card pre">{_e(info)}\n{_e(chr(10).join(who))}</div>'
+    reg = reg_html(r["created_at"], f"Заявка с сайта №{r['id']} зарегистрирована" + (" · ⚡ ЭКСПРЕСС: свяжитесь сразу" if r["express"] else ""), bool(r["express"]))
+    body = (f'<h1>Заявка с сайта №{r["id"]} <span class="src">{_e(site)}</span>{' <span class="xbadge">⚡ ЭКСПРЕСС</span>' if r["express"] else ""}</h1>{reg}{pager}<div class="card pre">{_e(info)}\n{_e(chr(10).join(who))}</div>'
             f'<div class="actions">{chat}<a class="btn small" href="tel:{_e(r["phone"])}">📞 Позвонить</a>'
             f'<a class="btn small ghost" href="sms:{_e(r["phone"])}">✉️ СМС</a></div>' + mk +
             f'<form method="post" class="card" style="padding:14px"><label for="status">Статус</label><select id="status" name="status">{opts}</select>'

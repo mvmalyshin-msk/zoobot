@@ -28,8 +28,14 @@ class ContactTest(unittest.IsolatedAsyncioTestCase):
         app["bot"] = mock.MagicMock()
         self.client = TestClient(TestServer(app))
         await self.client.start_server()
+        from datetime import datetime
+        from config import config
+        noon = datetime.now(config.tz).replace(hour=12, minute=0, second=0, microsecond=0)   # днём: показываем номер, не зависим от часов запуска
+        self._clock = mock.patch.object(contact, "_now", return_value=noon)
+        self._clock.start()
 
     async def asyncTearDown(self):
+        self._clock.stop()
         await self.client.close()
         await db.execute("DELETE FROM web_requests")      # общая база тестов: не оставляем заявки другим
 
@@ -91,6 +97,53 @@ class ContactTest(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(contact.orders, "notify_admins", mock.AsyncMock()):
             codes = [(await self.client.post("/contact", data=GOOD)).status for _ in range(contact.webform.RATE_LIMIT + 1)]
         self.assertEqual(codes[-1], 429)
+
+
+class PhoneHoursTest(unittest.IsolatedAsyncioTestCase):
+    """Номер показываем только с 09:00 до 22:00; ночью — ни кнопки, ни номера, вместо них окно обратной связи."""
+    async def asyncSetUp(self):
+        from aiohttp.test_utils import TestClient, TestServer
+        await db.init_db()
+        app = webserver.make_app()
+        app["bot"] = mock.MagicMock()
+        self.client = TestClient(TestServer(app))
+        await self.client.start_server()
+
+    async def asyncTearDown(self):
+        await self.client.close()
+
+    def at(self, h, m=0):
+        from datetime import datetime
+        from config import config
+        return datetime.now(config.tz).replace(hour=h, minute=m, second=0, microsecond=0)
+
+    async def page(self, h, m=0):
+        with mock.patch.object(contact, "ADMIN_PHONE", "+7 977 816-46-60"), mock.patch.object(contact, "_now", return_value=self.at(h, m)):
+            return await (await self.client.get("/contact")).text()
+
+    async def test_daytime_shows_call_button(self):
+        for h, m in ((9, 0), (12, 0), (21, 59)):
+            self.assertIn('href="/contact/call"', await self.page(h, m), (h, m))
+
+    async def test_night_hides_call_button_and_explains(self):
+        for h, m in ((22, 0), (23, 30), (3, 0), (8, 59)):
+            t = await self.page(h, m)
+            self.assertNotIn("/contact/call", t, (h, m))
+            for leak in ("816-46-60", "9778164660", "tel:"):
+                self.assertNotIn(leak, t)
+            self.assertIn("с 09:00 до 22:00", t)
+            self.assertIn("Оставьте сообщение", t)
+
+    async def test_call_url_does_not_dial_at_night(self):
+        with mock.patch.object(contact, "ADMIN_PHONE", "+7 977 816-46-60"), mock.patch.object(contact, "_now", return_value=self.at(23)):
+            r = await self.client.get("/contact/call", allow_redirects=False)
+        self.assertEqual(r.status, 302)
+        self.assertEqual(r.headers["Location"], "/contact")
+
+    async def test_call_url_dials_in_daytime(self):
+        with mock.patch.object(contact, "ADMIN_PHONE", "+7 977 816-46-60"), mock.patch.object(contact, "_now", return_value=self.at(12)):
+            r = await self.client.get("/contact/call", allow_redirects=False)
+        self.assertTrue(r.headers["Location"].startswith("tel:"))
 
 
 if __name__ == "__main__":
