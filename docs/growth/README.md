@@ -125,3 +125,15 @@
 - Сколько стоит выгул собаки в Москве (17.11): https://telegra.ph/Skolko-stoit-vygul-sobaki-v-Moskve-orientiry-i-kak-ne-pereplatit-11-17
 - Сколько стоит передержка собаки и кошки (17.11): https://telegra.ph/Skolko-stoit-perederzhka-sobaki-i-koshki-v-Moskve-v-2026-godu-11-17
 - Сколько стоит зооняня в Москве (17.11): https://telegra.ph/Skolko-stoit-zoonyanya-v-Moskve-v-2026-godu-ceny-i-kak-vybrat-11-17
+
+## Пакет статей 17.11 (10 шт.)
+- https://telegra.ph/CHto-vzyat-s-soboj-na-perederzhku-chek-list-dlya-hozyaina-sobaki-ili-koshki-11-17
+- https://telegra.ph/Sobaka-ne-ostayotsya-doma-odna-chto-delat-do-priezda-nyani-ili-perederzhki-11-17
+- https://telegra.ph/Kak-podgotovit-kvartiru-k-prihodu-zoonyani-8-veshchej-kotorye-stoit-sdelat-11-17
+- https://telegra.ph/Kak-chasto-dolzhna-prihodit-zoonyanya-k-koshke-ot-chego-ehto-zavisit-11-17
+- https://telegra.ph/10-voprosov-kotorye-stoit-zadat-dogsitteru-do-pervoj-progulki-11-17
+- https://telegra.ph/Kak-prohodyat-pervye-sutki-na-perederzhke-i-kak-pomoch-pitomcu-osvoitsya-11-17
+- https://telegra.ph/Kak-perevezti-koshku-ili-sobaku-na-taksi-pravila-i-podgotovka-11-17 (в тексте опечатка «ремнём-шлеёй»; токен правки не сохранён)
+- https://telegra.ph/Perederzhka-shchenka-ili-pozhiloj-sobaki-na-chto-obratit-vnimanie-11-17
+- https://telegra.ph/CHto-obsudit-s-ispolnitelem-pered-otezdom-pamyatka-iz-7-punktov-11-17
+- https://telegra.ph/Novogodnie-kanikuly-s-pitomcem-7-shagov-chtoby-ostavit-ego-spokojno-11-17
