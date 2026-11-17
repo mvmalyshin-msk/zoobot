@@ -149,3 +149,25 @@
 - https://telegra.ph/Kak-podgotovit-pitomca-k-perederzhke-spisok-veshchej-i-voprosov-11-17
 - https://telegra.ph/CHto-sprosit-u-dogsittera-pered-pervoj-progulkoj-11-17
 - https://telegra.ph/Kak-ostavit-koshku-odnu-na-neskolko-dnej-zoonyanya-ili-perederzhka-11-17
+
+### Пакет статей 17.11 (ночь, 19 шт. + страница-хаб)
+Хаб со ссылками на все статьи: https://telegra.ph/Zookonserzh-poleznye-materialy-o-perederzhke-vygule-zoonyanyah-i-zootaksi-11-17
+- https://telegra.ph/Perederzhka-shchenka-kak-projdyot-pervaya-razluka-11-17
+- https://telegra.ph/Perederzhka-pozhiloj-sobaki-na-chto-obratit-vnimanie-11-17
+- https://telegra.ph/Perederzhka-sobaki-melkoj-porody-taksa-jork-chihuahua-11-17
+- https://telegra.ph/Perederzhka-krupnoj-sobaki-ovcharka-labrador-haski-11-17
+- https://telegra.ph/Perederzhka-trevozhnoj-sobaki-chto-nuzhno-znat-11-17
+- https://telegra.ph/Perederzhka-dvuh-koshek-vmeste-kak-organizovat-11-17
+- https://telegra.ph/Perederzhka-gryzunov-i-ptic-homyak-krysa-popugaj-11-17
+- https://telegra.ph/Kak-prohodit-pervaya-vstrecha-so-specialistom-po-perederzhke-11-17
+- https://telegra.ph/CHto-delat-esli-sobaka-tyanet-povodok-na-vygule-11-17
+- https://telegra.ph/Kak-vybrat-shlejku-i-povodok-dlya-vygula-11-17
+- https://telegra.ph/Vygul-sobak-zimoj-kak-zashchitit-lapy-i-sogret-pitomca-11-17
+- https://telegra.ph/Vygul-sobak-letom-zhara-voda-i-bezopasnost-11-17
+- https://telegra.ph/Zoonyanya-dlya-koshki-chem-ona-zanimaetsya-na-vizite-11-17
+- https://telegra.ph/Zoonyanya-s-prozhivaniem-kogda-ona-nuzhna-11-17
+- https://telegra.ph/Kak-podgotovit-dom-k-prihodu-zoonyan-11-17
+- https://telegra.ph/Zootaksi-k-veterinaru-kak-vsyo-ustroeno-11-17
+- https://telegra.ph/Perevozka-koshki-v-mashine-kak-snizit-stress-11-17
+- https://telegra.ph/Perevozka-sobaki-v-mashine-remni-gamak-i-pereryvy-11-17
+- https://telegra.ph/Za-skolko-iskat-specialista-dlya-pitomca-sroki-i-sovety-11-17
