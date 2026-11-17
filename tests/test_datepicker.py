@@ -94,10 +94,11 @@ class Hours(unittest.TestCase):
             self.assertNotIn(f"cal:h:2026-11-08:{night}", d)
 
     def test_today_hides_hours_that_are_too_soon(self):
-        # сейчас 15:46, нужен запас 30 минут → самый ранний слот 16:16, значит час 16 ещё можно (16:30)
+        # сейчас 15:46, запас 2 часа → самый ранний слот 17:46, значит час 17 уже пуст, а 18:00 можно
         d = datas(dp.hours_markup(date(2026, 11, 7), NOW))
         self.assertNotIn("cal:h:2026-11-07:15", d)
-        self.assertIn("cal:h:2026-11-07:16", d)
+        self.assertNotIn("cal:h:2026-11-07:17", d)
+        self.assertIn("cal:h:2026-11-07:18", d)
         self.assertNotIn("cal:h:2026-11-07:00", d)
 
     def test_has_back_to_calendar(self):
@@ -116,9 +117,11 @@ class Minutes(unittest.TestCase):
                              "cal:t:2026-11-08:10:30", "cal:t:2026-11-08:10:45"])
 
     def test_today_current_hour_hides_too_soon(self):
-        # 16:00 и 16:15 раньше 16:16 → остаются 16:30 и 16:45
-        d = [x for x in datas(dp.minutes_markup(date(2026, 11, 7), 16, NOW)) if x.startswith("cal:t:")]
-        self.assertEqual(d, ["cal:t:2026-11-07:16:30", "cal:t:2026-11-07:16:45"])
+        # самый ранний слот 17:46 → в 17 часов свободных четвертей нет, в 18 — все четыре
+        d = [x for x in datas(dp.minutes_markup(date(2026, 11, 7), 17, NOW)) if x.startswith("cal:t:")]
+        self.assertEqual(d, [])
+        d = [x for x in datas(dp.minutes_markup(date(2026, 11, 7), 18, NOW)) if x.startswith("cal:t:")]
+        self.assertEqual(len(d), 4)
 
     def test_back_to_hours(self):
         self.assertIn("cal:d:2026-11-08", datas(dp.minutes_markup(date(2026, 11, 8), 10, NOW)))

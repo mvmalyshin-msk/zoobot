@@ -65,6 +65,19 @@ def run(coro):
 
 
 class MakeOrder(unittest.TestCase):
+
+    def test_express_request_is_priced_higher(self):
+        async def case(sent):
+            totals = []
+            for express in (0, 1):
+                rid, svc = await make_request()
+                await db.execute("UPDATE web_requests SET express=? WHERE id=?", (express, rid))
+                ok, msg, oid = await web_orders.make_order(None, rid, future(), 1, actor="admin:1")
+                self.assertTrue(ok, msg)
+                totals.append((await db.fetch_one("SELECT price_total FROM orders WHERE id=?", (oid,)))["price_total"])
+            self.assertGreater(totals[1], totals[0])
+        run(case)
+
     def test_creates_priced_order_linked_to_request_and_tells_client(self):
         async def case(sent):
             rid, svc = await make_request()

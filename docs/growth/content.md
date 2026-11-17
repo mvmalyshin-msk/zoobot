@@ -8,13 +8,13 @@
 Подберём проверенного специалиста для питомца: выгул собак, зооняня, передержка, зоотакси в Москве и области. Три варианта на выбор.
 
 **Расширенное (RU)**
-«Зооконсьерж» — сервис подбора специалистов для домашних животных в Москве и Московской области. Мы находим и проверяем исполнителей, чтобы вам не пришлось: выгул собак, зооняня (приходящая или с ночёвкой), передержка у частного исполнителя или в зоотеле, зоотакси к ветеринару, на передержку или в аэропорт. На каждую заявку предлагаем три варианта — эконом, комфорт и комфорт с деталями — и учитываем породу, возраст, характер, привычки и страхи питомца. Услуги подбора уже включены в итоговую стоимость, скрытых доплат нет. Заказы принимаем ежедневно с 6:00 до 22:00 в Telegram-боте @zooconcierge_bot или на сайте https://zookonsierz-maksimvasilevich.msk1.amvera.tech — сайт работает без VPN.
+«Зооконсьерж» — сервис подбора специалистов для домашних животных в Москве и Московской области. Мы находим и проверяем исполнителей, чтобы вам не пришлось: выгул собак, зооняня (приходящая или с ночёвкой), передержка у частного исполнителя или в зоотеле, зоотакси к ветеринару, на передержку или в аэропорт. На каждую заявку предлагаем три варианта — эконом, комфорт и комфорт с деталями — и учитываем породу, возраст, характер, привычки и страхи питомца. Услуги подбора уже включены в итоговую стоимость, скрытых доплат нет. Услуги ежедневно с 6:00 до 22:00 (заказ — минимум за 2 часа, заявки обрабатываем с 9:00 до 20:00); заказ — в Telegram-боте @zooconcierge_bot или на сайте https://zookonsierz-maksimvasilevich.msk1.amvera.tech — сайт работает без VPN.
 
 **Short (EN)**
 Zooconcierge finds vetted pet sitters, dog walkers, boarding and pet taxi in Moscow and the Moscow region. Three options for every request.
 
 **Extended (EN)**
-Zooconcierge is a pet-care matching service in Moscow and the Moscow region. We find and vet specialists for dog walking, in-home pet sitting, boarding and pet taxi, and offer three options for each request — economy, comfort and premium — tailored to your pet's breed, age, temperament and habits. Matching is included in the final price, with no hidden fees. Orders daily 6:00–22:00 via Telegram @zooconcierge_bot or https://zookonsierz-maksimvasilevich.msk1.amvera.tech.
+Zooconcierge is a pet-care matching service in Moscow and the Moscow region. We find and vet specialists for dog walking, in-home pet sitting, boarding and pet taxi, and offer three options for each request — economy, comfort and premium — tailored to your pet's breed, age, temperament and habits. Matching is included in the final price, with no hidden fees. Services daily 6:00–22:00, orders at least 2 hours ahead (requests processed 9:00–20:00), via Telegram @zooconcierge_bot or https://zookonsierz-maksimvasilevich.msk1.amvera.tech.
 
 ## Заголовки и слоганы
 

@@ -65,6 +65,7 @@ async def make_order(bot, web_rid: int, start_at, qty: int, actor: str) -> tuple
             (user["id"], name, species, "M" if species == "собака" else None, notes))
         params = {"quantity": qty, "start_at": start_at, "pet_size": "M" if species == "собака" else None,
                   "is_urgent": to_local(start_at).date() == to_local(now_utc()).date(),
+                  "is_express": bool(r["express"]),
                   "outside_mkad": False, "pet_traits": None, "pet_notes": notes or "", "pet_species": species,
                   "route": None}
         total, breakdown = await pricing.calculate_price(svc["id"], params)

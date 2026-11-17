@@ -7,7 +7,7 @@ import asyncio
 import os
 import sys
 import unittest
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -20,7 +20,6 @@ for _s in ("", "-wal", "-shm"):
     except FileNotFoundError:
         pass
 
-import datepicker  # noqa: E402
 import keyboards as kb  # noqa: E402
 import orders  # noqa: E402
 import pricing  # noqa: E402
@@ -56,25 +55,28 @@ class NoContactChoice(unittest.TestCase):
         self.assertNotIn("contact", clean)
 
 
-class Taxi40Minutes(unittest.TestCase):
-    NOW = datetime(2026, 11, 8, 17, 1, tzinfo=config.tz)
+class TwoHoursForEveryService(unittest.TestCase):
+    """Единое правило с сайтом: любой заказ минимум за 2 часа; вне часов админов (09:00–20:00) — утро 09:00 плюс 2 часа."""
+    def _ahead(self, cat, h, m=0):
+        from unittest import mock
+        from datetime import timezone
+        now = datetime(2026, 11, 8, h, m, tzinfo=config.tz)
+        with mock.patch.object(client_h, "now_utc", return_value=now.astimezone(timezone.utc)):
+            return client_h.min_ahead({"category": cat})
 
-    def test_taxi_needs_forty_minutes(self):
-        self.assertEqual(client_h.min_ahead({"category": "taxi"}), timedelta(minutes=40))
-        self.assertEqual(datepicker.TAXI_AHEAD, timedelta(minutes=40))
+    def test_daytime_every_service_needs_two_hours(self):
+        for cat in ("taxi", "walk", "sitter", "boarding"):
+            self.assertEqual(self._ahead(cat, 14, 0), timedelta(hours=2), cat)
 
-    def test_first_free_quarter_is_not_before_now_plus_40(self):
-        day = date(2026, 11, 8)
-        mins = [b.text for row in datepicker.minutes_markup(day, 17, self.NOW, datepicker.TAXI_AHEAD).inline_keyboard for b in row
-                if b.text[:2].isdigit()]
-        self.assertEqual(mins, ["17:45"])  # 17:41 → ближайшая четверть 17:45; 17:30 и 17:15 раньше нельзя
+    def test_night_waits_for_admins_then_two_hours(self):
+        self.assertEqual(self._ahead("walk", 3, 10), datetime(2026, 11, 8, 11, 0, tzinfo=config.tz) - datetime(2026, 11, 8, 3, 10, tzinfo=config.tz))
 
-    def test_text_input_too_early_names_the_earliest_taxi_time(self):
-        self.assertIn("40 минут", texts.PAST_WHEN)
-        self.assertNotIn("30 минут", texts.PAST_WHEN)
-
-    def test_other_services_still_need_a_day(self):
-        self.assertEqual(client_h.min_ahead({"category": "walk"}), timedelta(days=1))
+    def test_too_soon_text_is_the_agreed_wording(self):
+        self.assertIn("минимум 2 часа", texts.TOO_SOON)
+        self.assertIn("с 09:00 утра", texts.TOO_SOON_NIGHT)
+        self.assertIn("2 часа", texts.ASK_WHEN)
+        self.assertNotIn("за сутки", texts.ASK_WHEN)
+        self.assertNotIn("40 минут", texts.PAST_WHEN)
 
 
 class PriceForClient(unittest.TestCase):

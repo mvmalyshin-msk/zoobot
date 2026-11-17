@@ -25,6 +25,7 @@ import ribbons
 import talk
 import taxi
 import texts
+import timerules
 import traits
 from config import config
 from utils import (
@@ -1115,8 +1116,9 @@ async def msg_rider_phone(m: Message, state: FSMContext) -> None:
 
 
 def min_ahead(service) -> timedelta:
-    """Запас до начала: такси — не раньше чем через 40 минут, для остальных услуг нужно время найти исполнителя."""
-    return datepicker.TAXI_AHEAD if service["category"] == "taxi" else timedelta(days=1)
+    """Запас до начала — единый для всех услуг (timerules): 2 часа на подбор, а вне часов работы админов — до утра 09:00 плюс 2 часа."""
+    now = to_local(now_utc())
+    return timerules.earliest(now) - now
 
 
 async def _service_of(state: FSMContext) -> dict:
@@ -1124,10 +1126,10 @@ async def _service_of(state: FSMContext) -> dict:
 
 
 def too_soon_text(service) -> str:
-    if service["category"] == "taxi":
-        return texts.PAST_WHEN
-    earliest = datepicker.first_allowed(to_local(now_utc()) + min_ahead(service))  # ночь — на утро
-    return texts.TOO_SOON.format(earliest=earliest.strftime("%d.%m.%Y %H:%M"))
+    now = to_local(now_utc())
+    earliest = timerules.earliest(now)
+    tpl = texts.TOO_SOON if timerules.admin_open(now) else texts.TOO_SOON_NIGHT
+    return tpl.format(earliest=earliest.strftime("%d.%m.%Y %H:%M"))
 
 
 async def ask_when(msg: Message, service, prefix: str = "") -> None:

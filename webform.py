@@ -171,6 +171,9 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
 
 HELP = '<button type="button" class="help" data-tip="{tip}" aria-label="Подсказка">?</button>'
 TIPS = {
+    "variant": "Выберите длительность или формат услуги. Цена «от» ориентировочная: точную назовёт администратор до заказа, платить сейчас ничего не нужно.",
+    "where": "Начните писать адрес и выберите нужный из списка: так исполнитель приедет точно. Можно определить место по геопозиции или отметить на карте.",
+    "contacts": "Имя и телефон нужны, чтобы администратор связался с вами в рабочее время (09:00–20:00). Номер должен быть настоящим. Комментарий поможет подобрать подходящего исполнителя.",
     "time": f"Услуга оказывается с {timerules.SERVICE_FROM:02d}:00 до {timerules.SERVICE_TO:02d}:00. Нам нужно минимум 2 часа, чтобы подобрать трёх исполнителей; "
             f"администраторы принимают заявки с {timerules.ADMIN_FROM:02d}:00 до {timerules.ADMIN_TO:02d}:00. Недоступное время затемнено. Нужно раньше? Поставьте галочку «Экспресс».",
 }
@@ -302,7 +305,7 @@ d.addEventListener('change',load);d.addEventListener('input',load);if(x)x.addEve
 t.addEventListener('input',function(){if(last)draw(last)});
 Array.prototype.forEach.call(f.querySelectorAll('.help'),function(b){b.addEventListener('click',function(){var k=b.getAttribute('data-tip');
  if(!tip.hidden&&tip.getAttribute('data-k')===k){tip.hidden=true;return}tip.textContent=TIPS[k]||'';tip.setAttribute('data-k',k);tip.hidden=false;
- b.closest('label').insertAdjacentElement('afterend',tip)})});
+ b.closest('label,h2').insertAdjacentElement('afterend',tip)})});
 window.zcTime={bad:function(){return badNow()}};
 if(!d.value){var n=new Date(),p=function(v){return String(v).padStart(2,'0')};d.value=n.getFullYear()+'-'+p(n.getMonth()+1)+'-'+p(n.getDate())}
 load();
@@ -397,11 +400,11 @@ def render_service_form(cat: str, variants: list[dict], values: dict, errors: di
 {brand.HEAD}<style>{CSS}{SERVICE_CSS}</style></head><body>{brand.public_header()}<main class="public-main public-form">
 <h1>Заявка на {title}</h1><p class="hint form-intro">{SERVICE_HINT[cat]} Точную цену подтвердим до заказа.</p>
 <form method="post" action="/request"><input type="hidden" name="service" value="{cat}"><input type="hidden" name="nonce" value="{_e(nonce)}">
-<h2 class="step">1. Вариант</h2><div class="variants">{cards}</div>{err("service_id")}
+<h2 class="step">1. Вариант {HELP.format(tip="variant")}</h2><div class="variants">{cards}</div>{err("service_id")}
 <p class="other"><a href="/request">Другая услуга</a></p>
 <h2 class="step">2. Когда</h2>{when}
-<h2 class="step">3. Где</h2>{where}
-<h2 class="step">4. Питомец и контакты</h2>
+<h2 class="step">3. Где {HELP.format(tip="where")}</h2>{where}
+<h2 class="step">4. Питомец и контакты {HELP.format(tip="contacts")}</h2>
 <label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="например, Рекс, собака, лабрадор, 3 года">{err("pet")}
 <div class="row2"><div><label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name" placeholder="например, Анна">{err("name")}</div>
 <div><label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 916 204-58-31">{err("phone")}</div></div>
@@ -432,7 +435,7 @@ def render_done(request_id: int, express: bool = False) -> str:
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — заявка принята</title>
 {brand.HEAD}<style>{CSS}</style></head><body>{brand.public_header()}<main class="public-main public-form"><h1>Заявка принята</h1>{x}
-<p>Номер заявки: <b>№{request_id}</b>. Администратор свяжется с вами в течение рабочего дня, обычно за 1–2 часа: уточнит детали и назовёт точную цену.</p>
+<p>Номер заявки: <b>№{request_id}</b>. Администраторы работают с 09:00 до 20:00: свяжемся с вами в это время, обычно в течение 1–2 часов, уточним детали и назовём точную цену.</p>
 <p class="hint">Данные используются только для выполнения заявки. Удалить их можно, написав нам.</p>
 <p><a class="btn" href="/chat">💬 Открыть чат с администратором</a></p>
 <p class="hint">Администратор напишет вам в этот чат. Заходите с этого же телефона и браузера — мы вас узнаем.</p>
