@@ -137,3 +137,15 @@
 - https://telegra.ph/Perederzhka-shchenka-ili-pozhiloj-sobaki-na-chto-obratit-vnimanie-11-17
 - https://telegra.ph/CHto-obsudit-s-ispolnitelem-pered-otezdom-pamyatka-iz-7-punktov-11-17
 - https://telegra.ph/Novogodnie-kanikuly-s-pitomcem-7-shagov-chtoby-ostavit-ego-spokojno-11-17
+
+### Пакет статей 17.11 (вечер, ещё 10 шт.)
+- https://telegra.ph/Kak-vybrat-perederzhku-dlya-sobaki-v-Moskve-chek-list-11-17
+- https://telegra.ph/Perederzhka-koshki-chto-podgotovit-i-na-chto-smotret-11-17
+- https://telegra.ph/Vygul-sobak-v-Shodne-i-Himkah-kak-vybrat-dogsittera-11-17
+- https://telegra.ph/Zoonyanya-na-vremya-komandirovki-kak-prohodit-vizit-11-17
+- https://telegra.ph/Zootaksi-v-Moskve-kogda-nuzhno-i-kak-podgotovit-pitomca-11-17
+- https://telegra.ph/Kuda-pristroit-sobaku-ili-koshku-na-novogodnie-prazdniki-11-17
+- https://telegra.ph/Perederzhka-v-chastnom-dome-ili-zoogostinice-chto-vybrat-11-17
+- https://telegra.ph/Kak-podgotovit-pitomca-k-perederzhke-spisok-veshchej-i-voprosov-11-17
+- https://telegra.ph/CHto-sprosit-u-dogsittera-pered-pervoj-progulkoj-11-17
+- https://telegra.ph/Kak-ostavit-koshku-odnu-na-neskolko-dnej-zoonyanya-ili-perederzhka-11-17
