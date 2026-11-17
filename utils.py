@@ -91,3 +91,21 @@ def normalize_phone(raw: str) -> str | None:
     if len(set(national)) == 1 or national in "01234567890123456789" or national in "98765432109876543210":
         return None
     return "+7" + national
+
+
+def looks_fake_phone(phone: str) -> bool:
+    """Номер из заявки на сайте выглядит выдуманным: 123456…, 987654…, шесть одинаковых цифр подряд, три цифры на весь номер,
+    код не из российского плана нумерации. Настоящие номера такими почти не бывают."""
+    d = re.sub(r"\D", "", phone or "")
+    n = d[1:] if len(d) == 11 else d
+    if len(n) != 10:
+        return True
+    if n[0] not in "3489" or len(set(n)) <= 3 or re.search(r"(\d)\1{5}", n):
+        return True
+    asc = desc = 1
+    for a, b in zip(n, n[1:]):
+        asc = asc + 1 if int(b) - int(a) == 1 else 1
+        desc = desc + 1 if int(a) - int(b) == 1 else 1
+        if asc >= 6 or desc >= 6:
+            return True
+    return False
