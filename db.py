@@ -245,6 +245,8 @@ CREATE TABLE IF NOT EXISTS pending_logins (
 );
 CREATE INDEX IF NOT EXISTS idx_pending_logins_exp ON pending_logins(exp);
 """,
+    # 30: «Экспресс» — галочка в заявке с сайта: заказ за считанные минуты, дороже, акцентный цвет у админа
+    30: "ALTER TABLE web_requests ADD COLUMN express INTEGER NOT NULL DEFAULT 0;",
     # 29: вход клиента по почте и паролю (pwlogin.py): непроверенная почта и хеш пароля, отдельно от users.email
     29: """ALTER TABLE users ADD COLUMN login_email TEXT;
 ALTER TABLE users ADD COLUMN pw_hash TEXT;

@@ -19,7 +19,7 @@ import webform  # noqa: E402
 
 def form(**kw):
     base = {"service_id": "1", "name": "Анна", "phone": "8 926 417-35-82", "address": "Химки, улица Победы, 3",
-            "pet": "Рекс", "comment": "добрый пёс", "consent": "on", "service": "walk", "when_date": "2099-01-01", "when_time": "10:00"}
+            "pet": "Рекс", "comment": "добрый пёс", "consent": "on", "service": "walk", "when_date": (__import__("datetime").date.today() + __import__("datetime").timedelta(days=30)).isoformat(), "when_time": "10:00"}
     base.update(kw)
     return base
 
@@ -47,6 +47,15 @@ class WebProfanity(unittest.TestCase):
         html = webform.render_service_form("walk", [{"id": 1, "name": "Выгул", "category": "walk", "from_price": 400,
                                                     "base_price": 400}], form(), {}, "n")
         self.assertIn("zcProf", html)
+
+    def test_member_word_is_caught_but_innocent_phrases_pass(self):
+        import profanity
+        for bad in ("Член", "член", "ЧЛЕН!", "ч л е н", "Членом"):
+            self.assertTrue(profanity.has_profanity(bad), bad)
+        for ok in ("член семьи гуляет с собакой", "я член клуба собаководов", "член экипажа", "члены семьи", "членство в клубе"):
+            self.assertFalse(profanity.has_profanity(ok), ok)
+        self.assertIn("zcProf", webform.PROF_JS)
+        self.assertIn("allow", webform.PROF_JS)
 
 
 if __name__ == "__main__":
