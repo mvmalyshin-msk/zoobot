@@ -29,7 +29,15 @@
       return { items: (j.items || []).map(function (l) { return { label: l }; }), street_only: !!j.street_only, down: !!j.down };
     });
   }
-  function search(q) { return photon(q).catch(function () { return server(q); }); }
+  // Photon не нашёл дом (бывает с «16/23», «стр. 2») — спрашиваем второй источник (Nominatim через наш сервер) и берём лучшее
+  function search(q) {
+    return photon(q).then(function (d) {
+      if (d.items.length) return d;
+      return server(q).then(function (s) {
+        return s.items.length ? s : { items: [], street_only: d.street_only || s.street_only, down: s.down && !d.street_only };
+      }, function () { return d; });
+    }, function () { return server(q); });
+  }
 
   // Адрес по точке: сначала Photon, затем Nominatim. house=false — нашли только улицу
   function reverse(lat, lon) {

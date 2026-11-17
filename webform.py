@@ -22,7 +22,7 @@ import brand
 import talk
 import texts
 from config import config
-from utils import fmt_local, normalize_phone, now_utc, rub
+from utils import fmt_local, looks_fake_phone, normalize_phone, now_utc, rub
 
 log = logging.getLogger(__name__)
 
@@ -82,8 +82,8 @@ def validate(form: dict) -> tuple[dict, dict]:
         errors["bot"] = "spam"
     phone = normalize_phone(g("phone"))
     clean["phone"] = phone or g("phone")[:30]
-    if not phone:
-        errors["phone"] = "Проверьте номер: например, 8 900 123-45-67."
+    if not phone or looks_fake_phone(phone):
+        errors["phone"] = "Проверьте номер: он выглядит выдуманным. Нужен настоящий, например: 8 916 204-58-31."
     if not clean["name"]:
         errors["name"] = "Напишите, как к вам обращаться."
     if not clean["address"]:
@@ -146,7 +146,7 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
 <div class="field field-wide">{addr_field("address", "Адрес", "например, Химки, улица Победы, 3", values, errors)}</div>
 <div class="field"><label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="например, Рекс, собака, лабрадор, 3 года">{err("pet")}</div>
 <div class="field"><label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name" placeholder="например, Анна">{err("name")}</div>
-<div class="field"><label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 900 123-45-67">{err("phone")}</div>
+<div class="field"><label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 916 204-58-31">{err("phone")}</div>
 <div class="field field-wide"><label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500">{v("comment")}</textarea>{err("comment")}</div>
 </div>
 <div class="hp"><label>Не заполняйте <input name="site" tabindex="-1" autocomplete="off"></label></div>
@@ -196,14 +196,15 @@ if(run.length>=3&&hit(run.join('')))return true;run=[]}return false};
 
 LIVE_JS = """<script>(function(){
 var f=document.querySelector('main form');if(!f)return;f.noValidate=true;
-var M={phone:'Проверьте номер: например, 8 900 123-45-67.',name:'Напишите, как к вам обращаться.',
+var M={phone:'Проверьте номер: он выглядит выдуманным. Нужен настоящий, например: 8 916 204-58-31.',name:'Напишите, как к вам обращаться.',
 address:'Напишите адрес: улица и дом.',house:'Укажите номер дома: без него водитель не найдёт место. Например: Ленина улица, 5.',house2:'Укажите номер дома: без него мы не найдём место. Например: Ленина улица, 5.',
 dest:'Напишите, куда отвезти питомца.',same:'Адреса «Откуда» и «Куда» совпадают. Напишите, куда отвезти питомца.',
 past:'Дата уже прошла — выберите сегодня или позже.',to:'Дата «по» раньше даты «с».',
-consent:'Нужно согласие на обработку данных.',prof:'Уберите нецензурные слова: так мы не сможем принять заявку.',service_id:'Выберите услугу.'};
+consent:'Нужно согласие на обработку данных.',prof:'Уберите нецензурные и оскорбительные слова: так мы не сможем принять заявку.',service_id:'Выберите услугу.'};
 function val(n){var e=f.elements[n];return e?String(e.value||'').trim():''}
 function phoneOk(t){var d=t.replace(/\\D/g,''),n;if(d.length==11&&'78'.indexOf(d[0])>=0)n=d.slice(1);else if(d.length==10)n=d;else return false;
- if(/^(\\d)\\1+$/.test(n))return false;var a='01234567890123456789',b='98765432109876543210';return a.indexOf(n)<0&&b.indexOf(n)<0}
+ if('3489'.indexOf(n[0])<0||/(\\d)\\1{5}/.test(n))return false;var s={},k=0,i,a=1,b=1;for(i=0;i<10;i++){if(!s[n[i]]){s[n[i]]=1;k++}}if(k<=3)return false;
+ for(i=1;i<10;i++){a=(+n[i]-+n[i-1]==1)?a+1:1;b=(+n[i-1]-+n[i]==1)?b+1:1;if(a>=6||b>=6)return false}return true}
 function cat(){var c=val('service');if(c)return c;var s=f.elements.service_id;
  if(s&&s.tagName=='SELECT'&&s.selectedOptions&&s.selectedOptions[0])return s.selectedOptions[0].getAttribute('data-cat')||'';
  return ''}
@@ -327,7 +328,7 @@ def render_service_form(cat: str, variants: list[dict], values: dict, errors: di
 <h2 class="step">4. Питомец и контакты</h2>
 <label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="например, Рекс, собака, лабрадор, 3 года">{err("pet")}
 <div class="row2"><div><label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name" placeholder="например, Анна">{err("name")}</div>
-<div><label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 900 123-45-67">{err("phone")}</div></div>
+<div><label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 916 204-58-31">{err("phone")}</div></div>
 <label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500" placeholder="характер, привычки, что важно знать">{v("comment")}</textarea>{err("comment")}
 <div class="hp"><label>Не заполняйте <input name="site" tabindex="-1" autocomplete="off"></label></div>
 <label class="check"><input type="checkbox" name="consent"{checked}><span>Согласен(на) на обработку персональных данных, <a href="/policy">политика</a></span></label>{err("consent")}

@@ -41,6 +41,8 @@ def check(cond, name):
 
 
 async def fake_search(text):
+    if not any(ch.isdigit() for ch in text):          # без номера дома карта находит только улицу
+        return []
     return [geo.Place(label=l, district="Москва", lat=55.7, lon=37.6, outside_mkad=False, has_house=True) for l in LABELS]
 
 

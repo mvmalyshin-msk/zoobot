@@ -66,7 +66,9 @@ async def main():
                     status=200, content_type="application/json", headers={"access-control-allow-origin": "*"},
                     body=json.dumps({"name": "x", "address": {"road": "Ленина улица", "house_number": "5", "city": "Москва"}})))
                 await ctx.route("https://tile.openstreetmap.org/**", lambda r: r.abort())
-                await ctx.route("https://telegram.org/**", lambda r: r.abort())
+                async def hang(route):                                   # telegram.org не отвечает: карта в окне всё равно должна открыться
+                    await asyncio.sleep(3600)
+                await ctx.route("https://telegram.org/**", hang)
                 errors = []
 
                 for url, label in ((f"{base}/request?service=walk", "выгул"), (f"{base}/request?service=sitter", "зоонаня"),
@@ -104,6 +106,24 @@ async def main():
                 await page.wait_for_load_state()
                 check("Не нашёл такой адрес" in await page.content(), "адрес с цифрами, которого нет на карте, сервер не принимает")
                 check(await page.locator(".addr .err").count() == 1, "ошибка сервера стоит под строкой адреса")
+                await page.close()
+
+                # Photon нашёл только улицу, а второй источник (сервер) знает дом — клиент всё равно получает подсказку
+                page = await ctx.new_page()
+                await page.goto(f"{base}/request?service=walk")
+                state["search"] = STREET
+                await page.fill("#address", "Москва Тверская Ямская 16/23")
+                await page.wait_for_selector("#address-sug .sug", timeout=6000)
+                check(await page.locator("#address-sug .sug").first.get_attribute("data-pick") == LABEL, "второй источник подсказывает адрес, когда первый нашёл только улицу")
+                state["search"] = SEARCH
+                # оскорбление в комментарии и выдуманный номер: ошибка сразу под полем
+                await page.fill("#comment", "Жопа")
+                await page.fill("#phone", "8 987 123-45-67")
+                await page.fill("#name", "Анна")
+                await page.click("#name")
+                msgs = [await el.inner_text() for el in await page.locator("[data-live-for]").all()]
+                check(any("оскорбительные" in m for m in msgs), f"оскорбление в комментарии отмечено: {msgs}")
+                check(any("выдуманным" in m for m in msgs), "выдуманный номер отмечен")
                 await page.close()
 
                 # геопозиция: дом найден → строка заполнена; только улица → просит дописать дом
