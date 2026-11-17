@@ -124,3 +124,4 @@
 
 - Сколько стоит выгул собаки в Москве (17.11): https://telegra.ph/Skolko-stoit-vygul-sobaki-v-Moskve-orientiry-i-kak-ne-pereplatit-11-17
 - Сколько стоит передержка собаки и кошки (17.11): https://telegra.ph/Skolko-stoit-perederzhka-sobaki-i-koshki-v-Moskve-v-2026-godu-11-17
+- Сколько стоит зооняня в Москве (17.11): https://telegra.ph/Skolko-stoit-zoonyanya-v-Moskve-v-2026-godu-ceny-i-kak-vybrat-11-17
