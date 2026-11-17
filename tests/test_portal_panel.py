@@ -105,9 +105,12 @@ class RegistrationStamp(unittest.TestCase):
             html = await (await c.get("/portal?f=all")).text()
             self.assertLess(html.index(f'/portal/order/{f["c"]}"'), html.index(f'/portal/order/{f["a"]}"'))
             days = re.findall(r'<h3 class="day">(.*?)</h3>', html)
-            self.assertIn("8 ноября", " ".join(days))
-            self.assertIn("7 ноября", " ".join(days))
-            self.assertLess(" ".join(days).index("8 ноября"), " ".join(days).index("7 ноября"))
+            # ищем день целиком: «7 ноября» не должно совпасть с «17 ноября» (заказы других тестов — на сегодня)
+            def pos(day):
+                hits = [i for i, d in enumerate(days) if re.search(rf"(?<!\d){day}", d)]
+                self.assertTrue(hits, f"{day} нет в {days}")
+                return hits[0]
+            self.assertLess(pos("8 ноября"), pos("7 ноября"))
         run(t)
 
     def test_web_request_row_has_stamp_too(self):

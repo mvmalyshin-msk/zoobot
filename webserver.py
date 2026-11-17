@@ -36,11 +36,12 @@ async def _addr_js(request: web.Request) -> web.Response:
 
 async def _index(request: web.Request) -> web.Response:
     """Главная страница публичного сайта."""
+    import articles
     import homecards
     page = ((WEBAPP_DIR / "home.html").read_text(encoding="utf-8").replace("__BOT__", config.bot_username)
             .replace("__SERVICES__", await homecards.cards_html())
             .replace("__DESC__", seo.DESCRIPTION).replace("__SEO__", seo.head_tags(seo.base_url(request)))
-            .replace("__FAQ__", seo.faq_html()).replace("__HEADER__", brand.public_header(None))
+            .replace("__FAQ__", articles.home_block() + seo.faq_html()).replace("__HEADER__", brand.public_header(None))
             .replace("__FOOTER__", brand.public_footer()))
     return web.Response(text=page, content_type="text/html", headers={"Cache-Control": "no-cache"})
 
