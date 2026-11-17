@@ -123,3 +123,4 @@
 - Просмотры статей Telegraph снимаются через api.telegra.ph/getViews/<путь>; на 15.11 — единицы.
 
 - Сколько стоит выгул собаки в Москве (17.11): https://telegra.ph/Skolko-stoit-vygul-sobaki-v-Moskve-orientiry-i-kak-ne-pereplatit-11-17
+- Сколько стоит передержка собаки и кошки (17.11): https://telegra.ph/Skolko-stoit-perederzhka-sobaki-i-koshki-v-Moskve-v-2026-godu-11-17
