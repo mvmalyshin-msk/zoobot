@@ -7,6 +7,8 @@
   cal:h:2026-12-05:09        выбран час → показать минуты
   cal:t:2026-12-05:09:30     выбрано время целиком
   cal:x                      пустая кнопка (прошлое, заголовок)
+  xp:1:d:2026-12-05          «⚡ Экспресс» включить (0 — выключить) и перерисовать то же окно (m:/d:/h:)
+  xp:na                      «Экспресс» вне графика администраторов: объясняет, когда работает
 Правила времени те же, что у ввода текстом: запас до начала (min_ahead: для такси 40 минут,
 для остальных услуг сутки — нужно время найти исполнителя) и не дальше чем через 366 дней.
 """
@@ -16,6 +18,7 @@ from datetime import date, datetime, timedelta
 
 from aiogram.types import InlineKeyboardButton as Btn, InlineKeyboardMarkup
 
+import timerules
 from config import config
 
 # Заказы принимаем на время с 06:00 до 22:00 включительно (решение владельца) — и кнопками, и текстом.
@@ -28,6 +31,7 @@ MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май"
           "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 _NOOP = "cal:x"
+XP_NA = "xp:na"  # «Экспресс» ночью: серая кнопка, по нажатию объясняет график
 
 
 BLANK = "\u2800"  # невидимый символ: Telegram не принимает кнопку с пустым текстом
@@ -72,8 +76,26 @@ def _month_key(y: int, m: int) -> str:
     return f"{y:04d}-{m:02d}"
 
 
+def xp_row(ctx: str, express) -> list | None:
+    """Строка «⚡ Экспресс» под окном выбора. express: None — не показывать (передержка), False/True — галочка,
+    "na" — сейчас администраторы не на связи: кнопка серая и объясняет почему. ctx — окно, куда вернуться после нажатия."""
+    if express is None:
+        return None
+    if express == "na":
+        return [Btn(text=f"⚡ Экспресс: с {timerules.ADMIN_FROM:02d}:00 до {timerules.ADMIN_TO:02d}:00", callback_data=XP_NA)]
+    text = ("✅ ⚡ Экспресс включён (дороже)" if express else "☐ ⚡ Экспресс (дороже)")
+    return [Btn(text=text, callback_data=f"xp:{0 if express else 1}:{ctx}")]
+
+
+def _with_xp(markup: InlineKeyboardMarkup, ctx: str, express) -> InlineKeyboardMarkup:
+    row = xp_row(ctx, express)
+    if row:
+        markup.inline_keyboard.append(row)
+    return markup
+
+
 def month_markup(year: int, month: int, now: datetime,
-                 min_ahead: timedelta = MIN_AHEAD) -> InlineKeyboardMarkup:
+                 min_ahead: timedelta = MIN_AHEAD, express=None) -> InlineKeyboardMarkup:
     """Календарь месяца. Дни, на которые уже нельзя записаться, — неактивные точки."""
     today = now.date()
     last_day = (now + MAX_AHEAD).date()
@@ -101,30 +123,43 @@ def month_markup(year: int, month: int, now: datetime,
                 label = f"•{d}" if day == today else str(d)
                 row.append(Btn(text=label, callback_data=f"cal:d:{day.isoformat()}"))
         rows.append(row)
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    return _with_xp(InlineKeyboardMarkup(inline_keyboard=rows), f"m:{_month_key(year, month)}", express)
 
 
-def hours_markup(day: date, now: datetime, min_ahead: timedelta = MIN_AHEAD) -> InlineKeyboardMarkup:
+def hours_markup(day: date, now: datetime, min_ahead: timedelta = MIN_AHEAD, express=None) -> InlineKeyboardMarkup:
     """Часы выбранного дня (только те, где есть хоть один свободный слот)."""
     btns = [Btn(text=f"{h:02d}:00", callback_data=f"cal:h:{day.isoformat()}:{h:02d}")
             for h in range(24) if any(_slot_ok(_at(day, h, q), now, min_ahead) for q in QUARTERS)]
     rows = [btns[i:i + 4] for i in range(0, len(btns), 4)]
     rows.append([Btn(text="◀ Другая дата", callback_data=f"cal:m:{_month_key(day.year, day.month)}")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    return _with_xp(InlineKeyboardMarkup(inline_keyboard=rows), f"d:{day.isoformat()}", express)
 
 
 def minutes_markup(day: date, hour: int, now: datetime,
-                   min_ahead: timedelta = MIN_AHEAD) -> InlineKeyboardMarkup:
+                   min_ahead: timedelta = MIN_AHEAD, express=None) -> InlineKeyboardMarkup:
     btns = [Btn(text=f"{hour:02d}:{q:02d}", callback_data=f"cal:t:{day.isoformat()}:{hour:02d}:{q:02d}")
             for q in QUARTERS if _slot_ok(_at(day, hour, q), now, min_ahead)]
-    return InlineKeyboardMarkup(inline_keyboard=[
-        btns, [Btn(text="◀ Другой час", callback_data=f"cal:d:{day.isoformat()}")]])
+    return _with_xp(InlineKeyboardMarkup(inline_keyboard=[
+        btns, [Btn(text="◀ Другой час", callback_data=f"cal:d:{day.isoformat()}")]]),
+        f"h:{day.isoformat()}:{hour:02d}", express)
 
 
 _RE_M = re.compile(r"cal:m:(\d{4})-(\d{2})")
 _RE_D = re.compile(r"cal:d:(\d{4})-(\d{2})-(\d{2})")
 _RE_H = re.compile(r"cal:h:(\d{4})-(\d{2})-(\d{2}):(\d{2})")
 _RE_T = re.compile(r"cal:t:(\d{4})-(\d{2})-(\d{2}):(\d{2}):(\d{2})")
+
+
+_RE_XP = re.compile(r"xp:([01]):((?:m:\d{4}-\d{2})|(?:d:\d{4}-\d{2}-\d{2})|(?:h:\d{4}-\d{2}-\d{2}:\d{2}))")
+
+
+def parse_xp(data: str):
+    """Нажатие «⚡ Экспресс» → (включить?, вид окна, значение, час) или None. Окно разбирается тем же parse()."""
+    m = _RE_XP.fullmatch(data or "")
+    if not m:
+        return None
+    p = parse("cal:" + m[2])
+    return None if p is None else (m[1] == "1", *p)
 
 
 def parse(data: str):

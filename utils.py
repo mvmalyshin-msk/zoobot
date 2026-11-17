@@ -79,6 +79,12 @@ def min_age(birth_year: int) -> int:
     return now_utc().year - birth_year - 1
 
 
+def fmt_phone(raw) -> str | None:
+    """Номер для показа человеку: «+7 (977) 816-46-60», а если номер не российский или выдуманный — None."""
+    p = normalize_phone(str(raw or ""))
+    return f"+7 ({p[2:5]}) {p[5:8]}-{p[8:10]}-{p[10:12]}" if p else None
+
+
 def normalize_phone(raw: str) -> str | None:
     """Российский номер → '+7XXXXXXXXXX' или None. Очевидно выдуманный (одна цифра подряд, 0123456789…) — None."""
     digits = re.sub(r"\D", "", raw)

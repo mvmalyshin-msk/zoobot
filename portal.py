@@ -21,10 +21,12 @@ from aiohttp import web
 import brand
 import ribbons
 import db
+import executors_web
 import mailer
 import passkeys
 import orders
 import payinfo
+import repo
 import talk
 import texts
 import web_orders
@@ -136,13 +138,54 @@ def _html_resp(body: str, status: int = 200) -> web.Response:
                                  "X-Frame-Options": "DENY"})
 
 
+def call_link(phone, name: str = "", cls: str = "btn small ghost") -> str:
+    """Кнопка «Позвонить»: на кнопке написан тот самый номер клиента, который будет набран (iPhone покажет его же)."""
+    from utils import fmt_phone, normalize_phone
+    tel, shown = normalize_phone(str(phone or "")), fmt_phone(phone)
+    if not tel or not shown:
+        return ""
+    who = f" клиенту {name}" if name else ""
+    return f'<a class="{cls}" href="tel:{tel}" aria-label="Позвонить{_e(who)}: {shown}">📞 Позвонить: {shown}</a>'
+
+
+def sms_link(phone) -> str:
+    from utils import normalize_phone
+    tel = normalize_phone(str(phone or ""))
+    return f'<a class="btn small ghost" href="sms:{tel}">✉️ СМС</a>' if tel else ""
+
+
 def _redirect(path: str, msg: str | None = None) -> web.Response:
     if msg:
         path += ("&" if "?" in path else "?") + urlencode({"m": msg})
     return web.Response(status=303, headers={"Location": path})
 
 
+DEL_MODAL = """<dialog id="delmodal" class="modal"><form method="post" action="/portal/clients/delete">
+<h2>Вы уверены, что хотите удалить клиента?</h2><p id="delwho" class="who"></p>
+<p class="muted" id="delinfo"></p>
+<p class="muted">Заказы, заявки с сайта, питомцы и переписка этого клиента исчезнут безвозвратно. Если заказ уже оплачен, он останется для учёта, а личные данные клиента будут стёрты.</p>
+<input type="hidden" name="id" id="delid"><div class="actions"><button class="btn danger">Да, удалить</button>
+<button type="button" class="btn ghost" id="delno">Отмена</button></div></form></dialog>
+<script>(function(){var m=document.getElementById('delmodal');if(!m)return;
+document.addEventListener('click',function(e){var b=e.target.closest('[data-del]');
+if(b){document.getElementById('delid').value=b.getAttribute('data-del');document.getElementById('delwho').textContent=b.getAttribute('data-name');
+document.getElementById('delinfo').textContent='Заказов: '+b.getAttribute('data-orders')+' · заявок с сайта: '+b.getAttribute('data-reqs');
+if(m.showModal)m.showModal();else m.setAttribute('open','')}
+if(e.target.id==='delno'){e.preventDefault();m.close?m.close():m.removeAttribute('open')}});})();</script>"""
+
 CSS = """
+.hint{color:#6b6258;font-size:14px;margin:4px 0 0}.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.err{color:#b3261e;font-weight:700;font-size:14px;margin-top:4px}
+.opts{display:flex;flex-wrap:wrap;gap:8px}.opt{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;border:1.5px solid var(--line);border-radius:12px;background:#fff;font-weight:600}
+.exform textarea{width:100%;font:inherit;padding:10px;border:1.5px solid var(--line);border-radius:12px}
+.more{margin:12px 0}.more summary{font-weight:800;cursor:pointer;min-height:44px;display:flex;align-items:center}
+.links{margin:-4px 0 10px;display:flex;flex-wrap:wrap;gap:6px}
+.citem{position:relative}.citem .item{padding-right:56px}
+.trash{position:absolute;right:8px;top:8px;width:44px;height:44px;border-radius:12px;border:1.5px solid var(--line);background:#fff;font-size:20px;cursor:pointer}
+.trash:active{background:#f8eaee}
+dialog.modal{border:0;border-radius:18px;padding:20px;max-width:min(92vw,420px);box-shadow:0 20px 60px rgba(0,0,0,.35)}
+dialog.modal::backdrop{background:rgba(0,0,0,.45)}
+.btn.danger{background:#b3261e;color:#fff}
 body{min-height:100vh}
 .top{position:sticky;top:0;z-index:5;background:var(--cream);border-bottom:1.5px solid var(--line);padding:10px 14px;
   padding-top:max(10px,env(safe-area-inset-top));display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between}
@@ -558,7 +601,7 @@ async def all_requests(flt: str, src: str) -> list[dict]:
     rows = []
     if src in ("all", "tg", "web"):
         for o in await db.fetch_all(
-                f"""SELECT o.id, o.status, o.start_at, o.created_at, o.price_total, s.name AS service, s.category,
+                f"""SELECT o.id, o.status, o.start_at, o.created_at, o.price_total, o.express, s.name AS service, s.category,
                            u.name, u.phone, u.tg_id,
                            (SELECT actor FROM order_statuses_log l WHERE l.order_id=o.id AND l.to_status='cancelled'
                             ORDER BY l.id DESC LIMIT 1) AS cancel_actor
@@ -611,7 +654,10 @@ def _row_html(r: dict) -> str:
         if r["status"] == "completed":
             st = TICK + st
         fresh = r["status"] == "created"
-        return (f'<a class="item card ord {STATUS_CLASS[r["status"]]}" href="/portal/order/{r["id"]}">{stamp_html(r["created_at"], fresh)}<div class="main">'
+        hot = bool(r.get("express")) and r["status"] not in ("completed", "cancelled")  # экспресс: бургунди, пока заказ живой
+        if r.get("express"):
+            st = '<span class="xbadge">⚡ ЭКСПРЕСС</span> ' + st
+        return (f'<a class="item card ord {"express" if hot else STATUS_CLASS[r["status"]]}" href="/portal/order/{r["id"]}">{stamp_html(r["created_at"], fresh)}<div class="main">'
                 f'<div class="row"><span class="who">№{r["id"]} · {_e(r["name"] or "—")}</span><span class="stt">{st}</span></div>'
                 f'<div class="row" style="margin-top:6px">{chip}{src}</div>'
                 f'<div class="sub">На {_e(fmt_local(r["start_at"]))} · {_e(r["phone"] or "—")} · {rub(r["price_total"])}</div></div></a>')
@@ -738,16 +784,17 @@ async def order_page(request: web.Request, uid: int) -> web.Response:
                         + (f'<br><span class="muted">{_e(h["note"])}</span>' if h.get("note") else "")
                         + '</div>' for h in hist)
     links = [f'<a class="btn small ghost" href="/portal/chat/{o["client_tg_id"]}">💬 Написать клиенту</a>']
-    if o.get("client_phone"):
-        links.append(f'<a class="btn small ghost" href="tel:{_e(o["client_phone"])}">📞 Позвонить</a>')
+    if call := call_link(o.get("client_phone"), o.get("client_name") or ""):
+        links.append(call)
     if o.get("executor_tg_id"):
         links.append(f'<a class="btn small ghost" href="/portal/chat/{o["executor_tg_id"]}">💬 Написать исполнителю</a>')
     nav_html = await _order_nav(o)
-    reg = reg_html(o["created_at"], f"Заявка №{o['id']} зарегистрирована")
+    reg = reg_html(o["created_at"], f"Заявка №{o['id']} зарегистрирована" + (" · ⚡ ЭКСПРЕСС: свяжитесь сразу" if o.get("express") else ""),
+                   bool(o.get("express")))
     who_cancel = next((h["actor"] for h in reversed(hist) if h["to_status"] == "cancelled"), None)
     st_text = cancel_label(who_cancel) if o["status"] == "cancelled" else texts.STATUS_LABELS[o["status"]]
     stbar = f'<div class="stbar {STATUS_CLASS[o["status"]]}">{TICK if o["status"] == "completed" else ""}<span>{_e(st_text)}</span></div>'
-    body = (f'<h1>Заказ №{o["id"]} <span class="src">{SOURCES[_source(o["client_tg_id"])]}</span></h1>'
+    body = (f'<h1>Заказ №{o["id"]} <span class="src">{SOURCES[_source(o["client_tg_id"])]}</span>{' <span class="xbadge">⚡ ЭКСПРЕСС</span>' if o.get("express") else ""}</h1>'
             f'{stbar}{reg}{nav_html}'
             f'<div class="card pre">{_e(orders.order_card(o, for_staff=True))}</div>'
             f'{_actions(o, execs, room_open)}<div class="actions">{"".join(links)}</div>{room_html}'
@@ -848,8 +895,8 @@ async def request_page(request: web.Request, uid: int) -> web.Response:
                    f'<label for="note">Заметка</label><textarea id="note" name="note" maxlength="1000" style="width:100%;min-height:80px">{_e(r["admin_note"])}</textarea>'
                    f'<button class="btn primary">Сохранить</button></form>')
     body = (f'<h1>Заявка с сайта №{r["id"]} <span class="src">{_e(site)}</span>{' <span class="xbadge">⚡ ЭКСПРЕСС</span>' if r["express"] else ""}</h1>{reg}{pager}<div class="card pre">{_e(info)}\n{_e(chr(10).join(who))}</div>'
-            f'<div class="actions">{chat}<a class="btn small" href="tel:{_e(r["phone"])}">📞 Позвонить</a>'
-            f'<a class="btn small ghost" href="sms:{_e(r["phone"])}">✉️ СМС</a></div>' + status_form + mk + cancel + same_html)
+            f'<div class="actions">{chat}{call_link(r["phone"], r["name"] or "", "btn small")}'
+            f'{sms_link(r["phone"])}</div>' + status_form + mk + cancel + same_html)
     return _html_resp(page(f"Заявка №{r['id']}", body, "orders", request.query.get("m")))
 
 
@@ -908,13 +955,115 @@ async def clients_page(request: web.Request, uid: int) -> web.Response:
         last = f'<div class="sub">💬 {_e(str(u["last_text"] or "")[:80])}</div>' if u["last_text"] else ""
         if u["last_order"]:
             last = (f'<div class="sub">Последний заказ №{u["last_order"]} · <b>{_local_dt(u["last_order_at"]):%d.%m %H:%M}</b></div>' + last)
-        items.append(f'<a class="item card" href="/portal/chat/{u["tg_id"]}"><div class="row"><span class="who">{_e(u["name"] or "Без имени")}</span>{mark}</div>'
-                     f'<div class="row" style="margin-top:6px"><span class="src">{SOURCES[_source(u["tg_id"])]}</span></div>'
-                     f'<div class="sub">{_e(u["phone"] or "—")} · заказов: {u["n"]} · заявок с сайта: {u["nreq"]}</div>{last}</a>')
-    body = (f'<h1>Клиенты</h1><p><a class="btn small" href="/portal/export/database.xlsx">📥 Выгрузить базу в Excel</a></p>'
+        card = (f'<a class="item card" href="/portal/chat/{u["tg_id"]}"><div class="row"><span class="who">{_e(u["name"] or "Без имени")}</span>{mark}</div>'
+                f'<div class="row" style="margin-top:6px"><span class="src">{SOURCES[_source(u["tg_id"])]}</span></div>'
+                f'<div class="sub">{_e(u["phone"] or "—")} · заказов: {u["n"]} · заявок с сайта: {u["nreq"]}</div>{last}</a>')
+        trash = (f'<button type="button" class="trash" data-del="{u["id"]}" data-name="{_e(u["name"] or "Без имени")}" '
+                 f'data-orders="{u["n"]}" data-reqs="{u["nreq"]}" aria-label="Удалить клиента {_e(u["name"] or "")}">🗑</button>')
+        items.append(f'<div class="citem">{card}{trash}</div>')
+    body = (DEL_MODAL + f'<h1>Клиенты</h1><p><a class="btn small" href="/portal/export/database.xlsx">📥 Выгрузить базу в Excel</a></p>'
             f'<form class="send" method="get"><input name="q" value="{_e(q)}" placeholder="имя или телефон">'
             f'<button class="btn small">Найти</button></form><div class="list" style="margin-top:10px">{"".join(items) or "<p class=muted>Никого.</p>"}</div>')
-    return _html_resp(page("Клиенты", body, "clients"))
+    return _html_resp(page("Клиенты", body, "clients", request.query.get("m")))
+
+
+@admin_page
+async def client_delete(request: web.Request, uid: int) -> web.Response:
+    form = await request.post()
+    raw = str(form.get("id", "")).strip()
+    if not raw.isdigit():
+        return _redirect("/portal/clients", "Клиент не найден.")
+    _code, msg = await repo.delete_client(int(raw), admin_tg_id=uid)
+    return _redirect("/portal/clients", msg)
+
+
+def _exec_values(row=None, form=None) -> dict:
+    """Значения формы исполнителя: из строки таблицы (правка), из присланной формы (повторный показ с ошибками) или пустые."""
+    if form is not None:
+        g = lambda k: str(form.get(k, "") or "")  # noqa: E731
+        return {"kind": g("kind") or "person", "name": g("name"), "phone": g("phone"), "links": g("links"),
+                "status": g("status") or "1", "tax": g("tax") or "self_employed", "services": [str(x) for x in form.getall("services", [])],
+                "birth_year": g("birth_year"), "parent_consent": bool(g("parent_consent")), "rate_type": g("rate_type") or "percent",
+                "rate_value": g("rate_value") or "70", "districts": g("districts"), "tg_id": g("tg_id"), "payout": g("payout")}
+    if row is None:
+        return {"kind": "org", "name": "", "phone": "", "links": "", "status": "1", "tax": "self_employed", "services": [],
+                "birth_year": "", "parent_consent": False, "rate_type": "percent", "rate_value": "70", "districts": "", "tg_id": "", "payout": ""}
+    return {"kind": executors_web.kind_of(row), "name": row["name"], "phone": row["phone"] or "", "links": row["links"] or "",
+            "status": "1" if row["active"] else "0", "tax": row["legal_status"] if row["legal_status"] != "legal" else "self_employed",
+            "services": [x for x in (row["services"] or "").split(",") if x], "birth_year": str(row["birth_year"] or ""),
+            "parent_consent": bool(row["parent_consent"]), "rate_type": row["rate_type"], "rate_value": f"{row['rate_value']:g}",
+            "districts": row["districts"] or "", "tg_id": str(row["tg_id"] or ""), "payout": row["payout_details"] or ""}
+
+
+def _exec_form_html(v: dict, err: dict, action: str, eid: int | None = None) -> str:
+    def fld(key, label, inner, hint=""):
+        e = f'<div class="err">{_e(err[key])}</div>' if key in err else ""
+        return f'<div class="field"><label for="{key}">{label}</label>{inner}{e}{f"<p class=hint>{hint}</p>" if hint else ""}</div>'
+
+    kind = v["kind"] if v["kind"] in executors_web.KINDS else "person"
+    radios = "".join(
+        f'<label class="opt"><input type="radio" name="kind" value="{k}"{" checked" if k == kind else ""}> {_e(t)}</label>'
+        for k, t in executors_web.KINDS.items())
+    kind_err = f'<div class="err">{_e(err["kind"])}</div>' if "kind" in err else ""
+    name = (f'<div class="field"><label id="namelbl" for="name" data-label-org="{executors_web.name_label("org")}" '
+            f'data-label-person="{executors_web.name_label("person")}">{executors_web.name_label(kind)}</label>'
+            f'<input id="name" name="name" value="{_e(v["name"])}" maxlength="120" required autocomplete="off">'
+            f'{f"<div class=err>{_e(err["name"])}</div>" if "name" in err else ""}</div>')
+    tax_opts = "".join(f'<option value="{k}"{" selected" if k == v["tax"] else ""}>{_e(t)}</option>' for k, t in executors_web.TAX.items())
+    ind = v["tax"] == "individual"
+    person = (f'<div id="personbox"{"" if kind == "person" else " hidden"}>'
+              + fld("tax", "Налоговый статус", f'<select id="tax" name="tax">{tax_opts}</select>')
+              + f'<div id="indbox"{"" if ind else " hidden"}>'
+              + fld("birth_year", "Год рождения", f'<input id="birth_year" name="birth_year" inputmode="numeric" maxlength="4" value="{_e(v["birth_year"])}">')
+              + (f'<div class="field"><label class="opt"><input type="checkbox" name="parent_consent"{" checked" if v["parent_consent"] else ""}> '
+                 f'Есть согласие родителей (для 14–17 лет)</label>{f"<div class=err>{_e(err["parent_consent"])}</div>" if "parent_consent" in err else ""}</div>')
+              + '</div></div>')
+    svc = "".join(f'<label class="opt"><input type="checkbox" name="services" value="{k}"{" checked" if k in v["services"] else ""}> {_e(t)}</label>'
+                  for k, t in executors_web.SERVICES.items())
+    svc = f'<div class="field"><label>Какие услуги выполняет</label><div class="opts">{svc}</div>{f"<div class=err>{_e(err["services"])}</div>" if "services" in err else ""}</div>'
+    status = (f'<div class="field"><label for="status">Статус</label><select id="status" name="status">'
+              f'<option value="1"{" selected" if v["status"] != "0" else ""}>Активен</option>'
+              f'<option value="0"{" selected" if v["status"] == "0" else ""}>Неактивен</option></select>'
+              f'<p class="hint">Неактивного исполнителя нельзя назначить на заказ.</p></div>')
+    rt = "".join(f'<option value="{k}"{" selected" if k == v["rate_type"] else ""}>{t}</option>'
+                 for k, t in (("percent", "% от цены клиента"), ("fixed", "₽ за заказ")))
+    adv_open = any(k in err for k in ("rate", "tg_id"))
+    more = (f'<details class="card more"{" open" if adv_open else ""}><summary>Дополнительно</summary>'
+            + fld("districts", "Районы работы", f'<input id="districts" name="districts" value="{_e(v["districts"])}" maxlength="200" placeholder="например, Химки, Левобережный">')
+            + fld("rate", "Ставка исполнителя", f'<div class="row2"><input id="rate" name="rate_value" value="{_e(v["rate_value"])}" inputmode="decimal">'
+                  f'<select name="rate_type">{rt}</select></div>')
+            + fld("tg_id", "Telegram ID", f'<input id="tg_id" name="tg_id" inputmode="numeric" value="{_e(v["tg_id"])}">',
+                  "Нужен, чтобы бот писал исполнителю о заказах. Узнать можно у бота @userinfobot.")
+            + fld("payout", "Реквизиты для выплат", f'<input id="payout" name="payout" value="{_e(v["payout"])}" maxlength="300">')
+            + '</details>')
+    form = (f'<form method="post" action="{action}" class="card exform">'
+            f'<div class="field"><label>Тип</label><div class="opts">{radios}</div>{kind_err}</div>'
+            f'{name}{person}'
+            + fld("phone", "Контактный телефон", f'<input id="phone" name="phone" type="tel" inputmode="tel" value="{_e(v["phone"])}" required>')
+            + fld("links", "Ссылки на соцсети или Telegram", f'<textarea id="links" name="links" rows="3" placeholder="@username&#10;https://vk.com/…">{_e(v["links"])}</textarea>',
+                  "По одной ссылке в строке: https://… или @имя в Telegram.")
+            + f'{svc}{status}{more}<div class="actions"><button class="btn">💾 Сохранить</button></div></form>')
+    return form + EXEC_JS
+
+
+EXEC_JS = """<script>(function(){var f=document.querySelector('.exform');if(!f)return;
+var lbl=document.getElementById('namelbl'),pb=document.getElementById('personbox'),tax=document.getElementById('tax'),ib=document.getElementById('indbox');
+function kind(){var r=f.querySelector('input[name=kind]:checked');return r?r.value:'person'}
+function sync(){var k=kind();lbl.textContent=lbl.getAttribute('data-label-'+k);pb.hidden=(k!=='person');ib.hidden=(k!=='person'||tax.value!=='individual')}
+f.addEventListener('change',sync);sync();})();</script>"""
+
+EXEC_DEL_MODAL = """<dialog id="exdel" class="modal"><form method="post" action="/portal/executors/{eid}/delete">
+<h2>Вы уверены, что хотите удалить исполнителя?</h2><p class="who">{name}</p>
+<p class="muted">Карточка исчезнет безвозвратно. Если у исполнителя уже есть заказы, удалить не получится: поставьте статус «Неактивен».</p>
+<div class="actions"><button class="btn danger">Да, удалить</button><button type="button" class="btn ghost" id="exno">Отмена</button></div></form></dialog>
+<script>(function(){var m=document.getElementById('exdel');document.getElementById('exopen').onclick=function(){m.showModal?m.showModal():m.setAttribute('open','')};
+document.getElementById('exno').onclick=function(e){e.preventDefault();m.close?m.close():m.removeAttribute('open')}})();</script>"""
+
+
+def _link_anchors(links: str | None) -> str:
+    out = [f'<a class="src" href="{_e(u)}" target="_blank" rel="noopener noreferrer">{_e(re.sub(r"^https?://", "", u))}</a>'
+           for u in (links or "").split("\n") if u]
+    return " ".join(out)
 
 
 @admin_page
@@ -924,14 +1073,68 @@ async def executors_page(request: web.Request, uid: int) -> web.Response:
     for e in rows:
         cats = "".join(f'<span class="chip {CHIP.get(c, "walk")}">{_e(texts.CATEGORY_TITLES.get(c, c))}</span>'
                        for c in (e["services"] or "").split(",") if c)
-        link = f'/portal/chat/{e["tg_id"]}' if e["tg_id"] else "#"
-        items.append(f'<a class="item card" href="{link}"><div class="row"><span class="who">{_e(e["name"])}</span>'
-                     f'<span class="badge" style="background:{"var(--nanny)" if e["active"] else "#b9b0a6"}">{"активен" if e["active"] else "отключён"}</span></div>'
+        kind = executors_web.KINDS[executors_web.kind_of(e)]
+        on = bool(e["active"])
+        items.append(f'<a class="item card" href="/portal/executors/{e["id"]}"><div class="row"><span class="who">{_e(e["name"])}</span>'
+                     f'<span class="badge" style="background:{"var(--nanny)" if on else "#b9b0a6"}">{"активен" if on else "неактивен"}</span></div>'
+                     f'<div class="row" style="margin-top:6px"><span class="src">{_e(kind)}</span></div>'
                      f'<div class="chips" style="margin-top:6px">{cats}</div><div class="sub">{_e(e["phone"] or "—")}'
-                     f'{"" if e["tg_id"] else " · нет Telegram — писать некуда"}</div></a>')
-    body = (f'<h1>Исполнители</h1><p class="muted">Добавить исполнителя: команда /add_executor в боте. Отдельный бот для '
-            f'исполнителей подключится сюда же.</p><div class="list">{"".join(items) or "<p class=muted>Пока нет.</p>"}</div>')
-    return _html_resp(page("Исполнители", body, "executors"))
+                     f'{"" if e["tg_id"] else " · нет Telegram: бот не сможет написать"}</div></a>'
+                     + (f'<div class="links">{_link_anchors(e["links"])}</div>' if e["links"] else ""))
+    body = (f'<h1>Исполнители</h1><p><a class="btn" href="/portal/executors/new">➕ Добавить исполнителя</a></p>'
+            f'<div class="list">{"".join(items) or "<p class=muted>Пока нет. Нажмите «Добавить исполнителя».</p>"}</div>')
+    return _html_resp(page("Исполнители", body, "executors", request.query.get("m")))
+
+
+@admin_page
+async def executor_new(request: web.Request, uid: int) -> web.Response:
+    if request.method == "POST":
+        form = await request.post()
+        clean, err = executors_web.parse(form)
+        if not err:
+            try:
+                await executors_web.create(clean)
+                return _redirect("/portal/executors", f"Исполнитель «{clean['name']}» добавлен.")
+            except executors_web.Duplicate:
+                err["tg_id"] = "Исполнитель с таким Telegram ID уже есть."
+        body = f'<h1>Новый исполнитель</h1>{_exec_form_html(_exec_values(form=form), err, "/portal/executors/new")}'
+        return _html_resp(page("Новый исполнитель", body, "executors", "Проверьте поля, отмеченные красным.", "/portal/executors"))
+    body = f'<h1>Новый исполнитель</h1>{_exec_form_html(_exec_values(), {}, "/portal/executors/new")}'
+    return _html_resp(page("Новый исполнитель", body, "executors", back="/portal/executors"))
+
+
+@admin_page
+async def executor_edit(request: web.Request, uid: int) -> web.Response:
+    eid = int(request.match_info["eid"])
+    row = await db.fetch_one("SELECT * FROM executors WHERE id=?", (eid,))
+    if row is None:
+        return _html_resp(page("Не найдено", "<h1>Исполнитель не найден</h1>", "executors", back="/portal/executors"), 404)
+    action = f"/portal/executors/{eid}"
+    if request.method == "POST":
+        form = await request.post()
+        clean, err = executors_web.parse(form)
+        if not err:
+            try:
+                await executors_web.update(eid, clean)
+                return _redirect("/portal/executors", f"Изменения сохранены: {clean['name']}.")
+            except executors_web.Duplicate:
+                err["tg_id"] = "Исполнитель с таким Telegram ID уже есть."
+        values, flash = _exec_values(form=form), "Проверьте поля, отмеченные красным."
+    else:
+        values, err, flash = _exec_values(row), {}, request.query.get("m")
+    chat = f'<a class="btn small ghost" href="/portal/chat/{row["tg_id"]}">💬 Написать в Telegram</a> ' if row["tg_id"] else ""
+    anchors = _link_anchors(row["links"])
+    head = f'<h1>{_e(row["name"])}</h1>' + (f'<p class="links">{anchors}</p>' if anchors else "")
+    tail = (f'<div class="actions" style="margin-top:14px">{chat}<button type="button" id="exopen" class="btn small danger">🗑 Удалить исполнителя</button></div>'
+            + EXEC_DEL_MODAL.replace("{eid}", str(eid)).replace("{name}", _e(row["name"])))
+    return _html_resp(page(f"Исполнитель: {row['name']}", head + _exec_form_html(values, err, action, eid) + tail, "executors", flash, "/portal/executors"))
+
+
+@admin_page
+async def executor_delete(request: web.Request, uid: int) -> web.Response:
+    eid = int(request.match_info["eid"])
+    code, msg = await executors_web.delete(eid)
+    return _redirect("/portal/executors" if code != "blocked" else f"/portal/executors/{eid}", msg)
 
 
 CHAT_JS = """<script>(function(){
@@ -1314,6 +1517,12 @@ def setup(app: web.Application) -> None:
     app.router.add_post("/portal/verify", post_verify)
     app.router.add_get("/portal/face", face_page)
     app.router.add_get("/portal/logout", logout)
+    app.router.add_post("/portal/clients/delete", client_delete)
+    app.router.add_get("/portal/executors/new", executor_new)
+    app.router.add_post("/portal/executors/new", executor_new)
+    app.router.add_get(r"/portal/executors/{eid:\d+}", executor_edit)
+    app.router.add_post(r"/portal/executors/{eid:\d+}", executor_edit)
+    app.router.add_post(r"/portal/executors/{eid:\d+}/delete", executor_delete)
     app.router.add_get("/portal/order/{oid}", order_page)
     app.router.add_post("/portal/order/{oid}", order_action)
     app.router.add_get("/portal/request/{rid}", request_page)

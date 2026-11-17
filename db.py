@@ -246,6 +246,10 @@ CREATE TABLE IF NOT EXISTS pending_logins (
 CREATE INDEX IF NOT EXISTS idx_pending_logins_exp ON pending_logins(exp);
 """,
     # 31: цена «Экспресса»: по умолчанию +50% (размер выбран разработчиком, владелец меняет на странице «Тарифы»)
+    # 33: ссылки исполнителя (соцсети, Telegram), которые админ вносит в веб-форме
+    33: "ALTER TABLE executors ADD COLUMN links TEXT;",
+    # 32: «Экспресс» в заказе бота и веб-чата: срочная подача, бургунди у админа
+    32: "ALTER TABLE orders ADD COLUMN express INTEGER NOT NULL DEFAULT 0;",
     31: """
 INSERT INTO price_rules (service_id, name, condition_type, effect_type, value, sort_order)
 SELECT NULL, 'Экспресс (срочная подача)', 'express', 'percent', 50, 6
