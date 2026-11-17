@@ -18,7 +18,7 @@ import webform  # noqa: E402
 
 
 def form(**kw):
-    base = {"service_id": "1", "name": "Анна", "phone": "8 900 123-45-67", "address": "Химки, улица Победы, 3",
+    base = {"service_id": "1", "name": "Анна", "phone": "8 926 417-35-82", "address": "Химки, улица Победы, 3",
             "pet": "Рекс", "comment": "добрый пёс", "consent": "on", "service": "walk", "when_date": "2099-01-01", "when_time": "10:00"}
     base.update(kw)
     return base
