@@ -193,6 +193,19 @@ h3.day{margin:16px 4px 2px;font-size:13px;letter-spacing:.05em;text-transform:up
 .reg{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin:0 0 12px;padding:10px 14px;border-radius:16px;background:var(--peach)}
 .reg b{font-size:28px;font-variant-numeric:tabular-nums}.reg span{font-size:18px;font-weight:700}.reg em{font-style:normal;color:var(--mute);font-size:14px;flex-basis:100%}
 .pager{display:flex;gap:6px;margin:0 0 12px}
+.field{margin:0 0 10px}.field label{display:block;margin:0 0 4px;font-weight:700}
+form.card .btn.primary{width:100%;min-height:48px;margin-top:10px}
+@media(max-width:640px){
+main{padding:12px 12px 90px}
+form.card label{display:block;margin:10px 0 4px;font-weight:700}
+form.card input,form.card select,form.card textarea{display:block;width:100%;min-height:48px;font-size:16px;box-sizing:border-box;border-radius:12px}
+form.card textarea{min-height:96px}
+.btn,.actions .btn.small,.pager a,.pager .off{min-height:48px;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.actions .btn.small{padding:.6em .5em;text-align:center}
+.actions .btn:last-child:nth-child(odd){grid-column:1/-1}
+.actions form{display:grid;grid-template-columns:1fr;grid-column:1/-1}
+}
 .pager a,.pager .off{flex:1;text-align:center;padding:9px 6px;border-radius:999px;background:var(--card);border:1.5px solid var(--line);color:var(--ink);text-decoration:none;font-weight:700;font-size:15px}
 .pager .off{opacity:.4}
 .item.ord.st-new{background:#fff}
@@ -806,13 +819,16 @@ async def request_page(request: web.Request, uid: int) -> web.Response:
     elif r["status"] == "rejected":
         mk = ""
     else:
+        m = re.search(r"(\d\d)\.(\d\d)\.(\d{4}), (\d\d:\d\d)", str(r["when_text"] or ""))
+        start = f"{m.group(3)}-{m.group(2)}-{m.group(1)}T{m.group(4)}" if m else ""   # время из заявки подставляем: админу остаётся проверить и нажать
         mk = ('<form method="post" class="card" style="padding:14px"><h2 style="margin-top:0">Оформить заказ</h2>'
               '<p class="muted" style="font-size:14px">Цену посчитает бот по тем же правилам, что в Telegram. Клиент получит сообщение. '
               'Зоотакси оформляется в боте.</p>'
-              '<label for="start">Когда начать</label><input id="start" name="start" type="datetime-local" required>'
-              '<label for="qty">Сколько (часов или суток; выгул — 1)</label>'
-              '<input id="qty" name="qty" type="number" min="1" max="60" value="1" inputmode="numeric">'
-              '<button class="btn" name="make_order" value="1" style="margin-top:10px">Оформить заказ</button></form>')
+              '<div class="field"><label for="start">Когда начать</label>'
+              f'<input id="start" name="start" type="datetime-local" required value="{start}"></div>'
+              '<div class="field"><label for="qty">Сколько (часов или суток; выгул — 1)</label>'
+              '<input id="qty" name="qty" type="number" min="1" max="60" value="1" inputmode="numeric"></div>'
+              '<button class="btn primary" name="make_order" value="1">Оформить заказ</button></form>')
     who = [f"Устройство: {r['device'] or '—'}", f"IP: {r['ip'] or '—'}"]
     same = await db.fetch_all("SELECT id, device, ip, created_at FROM web_requests WHERE phone=? AND id<>? ORDER BY id DESC LIMIT 10",
                               (r["phone"], r["id"]))
@@ -828,12 +844,12 @@ async def request_page(request: web.Request, uid: int) -> web.Response:
                    f"/portal/chat/{r['web_uid']}" if r["web_uid"] else None, "👤 Клиент",
                    f"/portal/request/{nn}" if nn else None, f"№{nn} →" if nn else "→")
     reg = reg_html(r["created_at"], f"Заявка с сайта №{r['id']} зарегистрирована" + (" · ⚡ ЭКСПРЕСС: свяжитесь сразу" if r["express"] else ""), bool(r["express"]))
+    status_form = (f'<form method="post" class="card" style="padding:14px"><label for="status">Статус</label><select id="status" name="status">{opts}</select>'
+                   f'<label for="note">Заметка</label><textarea id="note" name="note" maxlength="1000" style="width:100%;min-height:80px">{_e(r["admin_note"])}</textarea>'
+                   f'<button class="btn primary">Сохранить</button></form>')
     body = (f'<h1>Заявка с сайта №{r["id"]} <span class="src">{_e(site)}</span>{' <span class="xbadge">⚡ ЭКСПРЕСС</span>' if r["express"] else ""}</h1>{reg}{pager}<div class="card pre">{_e(info)}\n{_e(chr(10).join(who))}</div>'
             f'<div class="actions">{chat}<a class="btn small" href="tel:{_e(r["phone"])}">📞 Позвонить</a>'
-            f'<a class="btn small ghost" href="sms:{_e(r["phone"])}">✉️ СМС</a></div>' + mk +
-            f'<form method="post" class="card" style="padding:14px"><label for="status">Статус</label><select id="status" name="status">{opts}</select>'
-            f'<label for="note">Заметка</label><textarea id="note" name="note" maxlength="1000" style="width:100%;min-height:80px">{_e(r["admin_note"])}</textarea>'
-            f'<button class="btn" style="margin-top:10px">Сохранить</button></form>' + cancel + same_html)
+            f'<a class="btn small ghost" href="sms:{_e(r["phone"])}">✉️ СМС</a></div>' + status_form + mk + cancel + same_html)
     return _html_resp(page(f"Заявка №{r['id']}", body, "orders", request.query.get("m")))
 
 
