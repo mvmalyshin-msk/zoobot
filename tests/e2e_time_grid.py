@@ -94,7 +94,7 @@ async def main():
             await page.wait_for_function("document.getElementById('when_time').value==='14:00'")
             check(await page.input_value("#when_time") == "14:00", "кнопка подставила ближайшее время")
 
-            await page.click(".help")
+            await page.click(".help[data-tip=time]")
             check(await page.locator("#tip-box").is_visible(), "«?» открывает подсказку")
             check("минимум 2 часа" in await page.inner_text("#tip-box"), "в подсказке сказано про 2 часа")
             overflow = await page.evaluate("document.documentElement.scrollWidth>window.innerWidth")

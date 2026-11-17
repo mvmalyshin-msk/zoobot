@@ -72,8 +72,8 @@ class DonePageSaysWhen(Base):
         async def case(c, sent):
             svc = await db.fetch_one("SELECT id FROM services WHERE active=1 LIMIT 1")
             t = await (await c.post("/request", data={**FORM, "service_id": str(svc["id"])})).text()
-            self.assertIn("в течение рабочего дня", t)
-            self.assertIn("обычно за 1–2 часа", t)
+            self.assertIn("с 09:00 до 20:00", t)
+            self.assertIn("в течение 1–2 часов", t)
         self.run_app(case)
 
 

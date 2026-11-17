@@ -33,6 +33,10 @@ async def _urgent_today(service: dict, p: dict) -> bool:
     return bool(p.get("is_urgent"))
 
 
+async def _express(service: dict, p: dict) -> bool:
+    return bool(p.get("is_express"))
+
+
 async def _outside_mkad(service: dict, p: dict) -> bool:
     return bool(p.get("outside_mkad"))
 
@@ -74,6 +78,7 @@ CONDITIONS = {
     "pet_size_l": _pet_size_l,
     "night": _night,
     "urgent_today": _urgent_today,
+    "express": _express,
     "outside_mkad": _outside_mkad,
     "holiday": _holiday,
 }
@@ -91,6 +96,7 @@ async def calculate_price(service_id: int, params: dict) -> tuple[int, list[tupl
       start_at     — aware-datetime начала слота
       pet_size     — 'S' / 'M' / 'L' (только для собак, иначе None)
       is_urgent    — заказ «на сегодня»
+      is_express   — клиент поставил галочку «Экспресс»
       outside_mkad — выезд за МКАД
       pet_traits / pet_notes / pet_species — повадки, особенности здоровья и вид питомца (сложность работы)
       route        — для такси: {"km", "minutes", "by_road"} от подачи до места назначения

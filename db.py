@@ -245,6 +245,12 @@ CREATE TABLE IF NOT EXISTS pending_logins (
 );
 CREATE INDEX IF NOT EXISTS idx_pending_logins_exp ON pending_logins(exp);
 """,
+    # 31: цена «Экспресса»: по умолчанию +50% (размер выбран разработчиком, владелец меняет на странице «Тарифы»)
+    31: """
+INSERT INTO price_rules (service_id, name, condition_type, effect_type, value, sort_order)
+SELECT NULL, 'Экспресс (срочная подача)', 'express', 'percent', 50, 6
+WHERE NOT EXISTS (SELECT 1 FROM price_rules WHERE condition_type='express' AND service_id IS NULL);
+""",
     # 30: «Экспресс» — галочка в заявке с сайта: заказ за считанные минуты, дороже, акцентный цвет у админа
     30: "ALTER TABLE web_requests ADD COLUMN express INTEGER NOT NULL DEFAULT 0;",
     # 29: вход клиента по почте и паролю (pwlogin.py): непроверенная почта и хеш пароля, отдельно от users.email

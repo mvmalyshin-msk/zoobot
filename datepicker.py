@@ -21,8 +21,7 @@ from config import config
 # Заказы принимаем на время с 06:00 до 22:00 включительно (решение владельца) — и кнопками, и текстом.
 WORK_FROM = 6
 WORK_TO = 22
-TAXI_AHEAD = timedelta(minutes=40)  # такси: не раньше чем через 40 минут (решение владельца)
-MIN_AHEAD = TAXI_AHEAD
+MIN_AHEAD = timedelta(hours=2)  # единый запас на подбор для всех услуг (см. timerules.py)
 MAX_AHEAD = timedelta(days=366)
 QUARTERS = (0, 15, 30, 45)
 MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
