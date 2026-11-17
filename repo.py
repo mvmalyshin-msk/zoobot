@@ -167,6 +167,54 @@ async def erase_user(user_id: int) -> None:
             (user_id, user["tg_id"], "pdn", 0, "erased"))
 
 
+_TRACES = (("messages", "party_tg_id"), ("web_sessions", "uid"), ("web_events", "uid"), ("web_files", "uid"),
+           ("push_subs", "uid"), ("passkeys", "uid"), ("web_login", "tg_id"), ("web_links", "web_uid"),
+           ("login_codes", "tg_id"), ("web_requests", "web_uid"), ("rooms", "client_tg_id"))
+
+
+async def delete_client(user_id: int, admin_tg_id: int | None = None) -> tuple[str, str]:
+    """Удаление клиента из админки. Возвращает (код, сообщение): deleted — стёрт целиком вместе с заказами, перепиской и
+    входами; erased — были оплаты, учёт сохранён, стёрты только личные данные; blocked — нельзя (админ, исполнитель,
+    незавершённые заказы); missing — такого клиента нет. Всё в одной транзакции, в журнал админа — без личных данных."""
+    from config import config
+    from orders import ACTIVE_STATUSES
+    user = await get_user(user_id)
+    if user is None:
+        return "missing", "Клиент не найден: возможно, его уже удалили."
+    tg = user["tg_id"]
+    if tg in config.admin_ids:
+        return "blocked", "Это администратор: удалить его нельзя."
+    if await db.fetch_one("SELECT 1 AS x FROM executors WHERE tg_id=?", (tg,)):
+        return "blocked", "Этот клиент ещё и исполнитель. Сначала удалите его в разделе «Исполнители»."
+    marks = ",".join("?" * len(ACTIVE_STATUSES))
+    live = await db.fetch_all(f"SELECT id FROM orders WHERE user_id=? AND status IN ({marks}) ORDER BY id", (user_id, *ACTIVE_STATUSES))
+    if live:
+        ids = ", ".join(f"№{o['id']}" for o in live)
+        return "blocked", f"У клиента есть незавершённые заказы: {ids}. Сначала завершите или отмените их."
+    paid = await db.fetch_one("SELECT 1 AS x FROM payments p JOIN orders o ON o.id=p.order_id "
+                              "WHERE o.user_id=? AND p.status IN ('paid','refunded')", (user_id,))
+    if paid:
+        await erase_user(user_id)  # оплаты нужны для учёта: заказы остаются, но без личных данных
+    async with db.transaction() as conn:
+        for table, col in _TRACES:
+            await conn.execute(f"DELETE FROM {table} WHERE {col}=?", (tg,))
+        if not paid:
+            mine = "SELECT id FROM orders WHERE user_id=?"
+            for table in ("order_statuses_log", "payments", "executor_payouts", "reviews", "reminders", "rooms"):
+                await conn.execute(f"DELETE FROM {table} WHERE order_id IN ({mine})", (user_id,))
+            await conn.execute("DELETE FROM orders WHERE user_id=?", (user_id,))
+            await conn.execute("DELETE FROM reviews WHERE user_id=?", (user_id,))
+            await conn.execute("DELETE FROM pets WHERE user_id=?", (user_id,))
+            await conn.execute("DELETE FROM consents WHERE user_id=?", (user_id,))
+            await conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+        if admin_tg_id is not None:
+            await conn.execute("INSERT INTO admin_log (admin_tg_id, command, args) VALUES (?,?,?)",
+                               (admin_tg_id, "client_delete", f"id={user_id} {'erased' if paid else 'deleted'}"))
+    if paid:
+        return "erased", "У клиента были оплаченные заказы: они сохранены для учёта, а личные данные и переписка стёрты."
+    return "deleted", "Клиент удалён вместе с заказами, заявками и перепиской."
+
+
 def _tokens(text: str) -> list[str]:
     return re.findall(r"[a-zа-я0-9]+", (text or "").lower().replace("ё", "е"))
 

@@ -1139,17 +1139,43 @@ def too_soon_text(service) -> str:
     return tpl.format(earliest=earliest.strftime("%d.%m.%Y %H:%M"))
 
 
+def xp_flag(data: dict, service):
+    """Состояние кнопки «⚡ Экспресс»: None — для передержки её нет, "na" — админы не на связи, иначе включена ли."""
+    if service["category"] == "boarding":
+        return None
+    if not timerules.express_available(to_local(now_utc())):
+        return "na"
+    return bool(data.get("express"))
+
+
+def _window(kind, value, hour, service, express: bool):
+    """Окно выбора (текст, кнопки) для вида m/d/h; запас до начала и кнопка «Экспресс» зависят от express."""
+    now = to_local(now_utc())
+    eff = express and timerules.express_available(now)
+    ahead = min_ahead(service, eff)
+    flag = xp_flag({"express": express}, service)
+    if kind == "m":
+        return texts.PICK_DATE, datepicker.month_markup(value.year, value.month, now, ahead, flag)
+    if kind == "d":
+        return texts.PICK_HOUR.format(day=value.strftime("%d.%m.%Y")), datepicker.hours_markup(value, now, ahead, flag)
+    return (texts.PICK_MINUTES.format(day=value.strftime("%d.%m.%Y")),
+            datepicker.minutes_markup(value, hour, now, ahead, flag))
+
+
 async def ask_when(msg: Message, service, prefix: str = "", express: bool = False) -> None:
-    """Спрашивает дату и время: окно с календарём, а текстом тоже можно."""
+    """Спрашивает дату и время: окно с календарём, а текстом тоже можно. Под календарём — «⚡ Экспресс» (всегда виден)."""
     if service["category"] == "taxi":
         text = texts.ASK_WHEN_TAXI
     elif service["unit"] == "сутки":
         text = texts.ASK_WHEN_START
     else:
         text = texts.ASK_WHEN
-    text = prefix + text
     now = to_local(now_utc())
-    await msg.answer(text, reply_markup=datepicker.month_markup(now.year, now.month, now, min_ahead(service, express)))
+    flag = xp_flag({"express": express}, service)
+    hint = texts.XP_HINT if flag is False or flag is True else texts.XP_HINT_NA if flag == "na" else ""
+    text = prefix + text + hint
+    await msg.answer(text, reply_markup=datepicker.month_markup(
+        now.year, now.month, now, min_ahead(service, express and flag is True), flag))
 
 
 async def _accept_when(msg: Message, state: FSMContext, tg_user, dt) -> bool:
@@ -1157,7 +1183,7 @@ async def _accept_when(msg: Message, state: FSMContext, tg_user, dt) -> bool:
     now = to_local(now_utc())
     data = await state.get_data()
     service = await db.fetch_one("SELECT * FROM services WHERE id=?", (data["service_id"],))
-    express = bool(data.get("express"))
+    express = bool(data.get("express"))  # вне графика админов min_ahead сам не даёт короткий запас
     if dt < now + min_ahead(service, express):  # сначала «слишком рано»: ответ называет самое раннее время в рабочие часы
         await msg.answer(too_soon_text(service), reply_markup=None if express else express_markup())
         return False
@@ -1194,12 +1220,33 @@ async def _accept_when(msg: Message, state: FSMContext, tg_user, dt) -> bool:
 async def cb_express(cb: CallbackQuery, state: FSMContext) -> None:
     """Клиент включил «Экспресс»: сетка времени пересчитывается, ожидание 2 часов снимается (график админов остаётся)."""
     if not timerules.express_available(to_local(now_utc())):
-        await cb.answer("Экспресс работает с 09:00 до 20:00, пока на связи администраторы.", show_alert=True)
+        await cb.answer(texts.XP_OFF_NOW, show_alert=True)
         return
     await state.update_data(express=True)
     await cb.answer("⚡ Экспресс включён")
     service = await _service_of(state)
     await ask_when(cb.message, service, "⚡ Экспресс: подаём за считанные минуты, стоит дороже. ", express=True)
+
+
+@router.callback_query(Order.when, F.data.startswith("xp:"))
+async def cb_xp(cb: CallbackQuery, state: FSMContext) -> None:
+    """Галочка «⚡ Экспресс» под окном выбора времени: включает/выключает и перерисовывает то же окно."""
+    if cb.data == datepicker.XP_NA:
+        await cb.answer(texts.XP_OFF_NOW, show_alert=True)
+        return
+    parsed = datepicker.parse_xp(cb.data)
+    if parsed is None:
+        await cb.answer("Не получилось, выберите ещё раз")
+        return
+    want, kind, value, hour = parsed
+    if want and not timerules.express_available(to_local(now_utc())):
+        await cb.answer(texts.XP_OFF_NOW, show_alert=True)
+        return
+    await state.update_data(express=want)
+    await cb.answer("⚡ Экспресс включён: можно за 15 минут" if want else "Экспресс выключен")
+    service = await _service_of(state)
+    text, markup = _window(kind, value, hour, service, want)
+    await _edit(cb.message, text, markup)
 
 
 @router.message(Order.when, F.text)
@@ -1229,29 +1276,27 @@ async def cb_calendar(cb: CallbackQuery, state: FSMContext) -> None:
     kind, value, hour = parsed
     now = to_local(now_utc())
     service = await _service_of(state)
-    ahead = min_ahead(service, bool((await state.get_data()).get("express")))
+    express = bool((await state.get_data()).get("express"))
+    ahead = min_ahead(service, express and timerules.express_available(now))
     if kind == "x":
         await cb.answer()
-    elif kind == "m":
+    elif kind in ("m", "d", "h"):
         await cb.answer()
-        await _edit(cb.message, texts.PICK_DATE, datepicker.month_markup(value.year, value.month, now, ahead))
-    elif kind == "d":
-        await cb.answer()
-        await _edit(cb.message, texts.PICK_HOUR.format(day=value.strftime("%d.%m.%Y")),
-                    datepicker.hours_markup(value, now, ahead))
-    elif kind == "h":
-        await cb.answer()
-        await _edit(cb.message, texts.PICK_MINUTES.format(day=value.strftime("%d.%m.%Y")),
-                    datepicker.minutes_markup(value, hour, now, ahead))
+        await _edit(cb.message, *_window(kind, value, hour, service, express))
     else:  # "t": время выбрано целиком
         if not datepicker.allowed(value, now, ahead):
             why = texts.OUT_OF_HOURS if not datepicker.in_work_hours(value) else too_soon_text(service)
             await cb.answer(why, show_alert=True)  # пока выбирали, время ушло (или кнопка подделана)
-            await _edit(cb.message, texts.PICK_DATE, datepicker.month_markup(now.year, now.month, now, ahead))
+            await _edit(cb.message, *_window("m", value, None, service, express))
             return
         await cb.answer()
-        await _edit(cb.message, f"🗓 Когда: {fmt_local(value)}")
+        await _edit(cb.message, f"🗓 Когда: {fmt_local(value)}" + (" · ⚡ Экспресс" if express and timerules.express_available(now) else ""))
         await _accept_when(cb.message, state, cb.from_user, value)
+
+
+@router.callback_query(F.data.startswith("xp:"))
+async def cb_xp_stale(cb: CallbackQuery) -> None:
+    await cb.answer("Это окно уже не нужно. Начните заказ заново: /menu", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("cal:"))
@@ -1523,6 +1568,12 @@ async def cb_order_ok(cb: CallbackQuery, state: FSMContext) -> None:
     user = await repo.get_or_create_user(cb.from_user)
     start = from_db(data["start_at"])
     svc = await _service_of(state)
+    if data.get("express") and not timerules.express_available(to_local(now_utc())):  # пока думали, админы ушли
+        await state.update_data(express=False)
+        await state.set_state(Order.when)
+        await state.update_data(prefilled=True)
+        await ask_when(cb.message, svc, texts.XP_STALE)
+        return
     grace = timedelta(minutes=15) if data.get("express") else timedelta(hours=1)  # запас на раздумья: 2 часа правила минус час
     if start < to_local(now_utc()) + grace:  # пока клиент думал, время ушло
         await state.set_state(Order.when)
@@ -1537,6 +1588,7 @@ async def cb_order_ok(cb: CallbackQuery, state: FSMContext) -> None:
          "address_to": data.get("address_to"), "is_urgent": params["is_urgent"],
          "outside_mkad": params["outside_mkad"],
          "address_unverified": bool(data.get("unv_a") or data.get("unv_b")),
+         "express": bool(data.get("express")),
          "comment": ("⚡ ЭКСПРЕСС. " if data.get("express") else "") + (data.get("comment") or "") or None,
          "rider_name": data.get("rider_name"), "rider_phone": data.get("rider_phone")},
         total, breakdown, actor=f"client:{cb.from_user.id}",

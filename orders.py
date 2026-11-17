@@ -80,6 +80,8 @@ def order_card(o: dict, *, for_staff: bool = False) -> str:
     if for_staff and o.get("created_at"):  # когда заказ появился: сверху, чтобы было видно сразу
         lines.append(f"Зарегистрирован: {fmt_local(o['created_at'])}")
     lines.append(f"Услуга: {o['service_name']}")
+    if o.get("express"):
+        lines.append("⚡ Экспресс: срочная подача, цена выше")
     when = fmt_local(o["start_at"])
     if o["end_at"] and o["unit"] in ("час", "сутки"):
         when += f" → {fmt_local(o['end_at'])}"
@@ -249,14 +251,15 @@ async def create_order(data: dict, total: int, breakdown: list, actor: str) -> i
         cur = await conn.execute(
             """INSERT INTO orders (user_id, pet_id, service_id, status, start_at, end_at, quantity,
                                    address, address_to, is_urgent, outside_mkad, params_json,
-                                   price_total, price_breakdown, address_unverified, comment, rider_name, rider_phone)
-               VALUES (?,?,?,'created',?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                   price_total, price_breakdown, address_unverified, comment, rider_name, rider_phone, express)
+               VALUES (?,?,?,'created',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (data["user_id"], data["pet_id"], data["service_id"], to_db(data["start_at"]),
              to_db(data["end_at"]) if data.get("end_at") else None, data["quantity"],
              data["address"], data.get("address_to"), int(data["is_urgent"]),
              int(data["outside_mkad"]), json.dumps(params, ensure_ascii=False), total,
              json.dumps(breakdown, ensure_ascii=False), int(data.get("address_unverified", False)),
-             (data.get("comment") or None), data.get("rider_name"), data.get("rider_phone")),
+             (data.get("comment") or None), data.get("rider_name"), data.get("rider_phone"),
+             int(bool(data.get("express")))),
         )
         order_id = cur.lastrowid
         await conn.execute(
