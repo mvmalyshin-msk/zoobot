@@ -11,6 +11,7 @@ from datetime import date, datetime, timedelta
 
 SERVICE_FROM, SERVICE_TO = 6, 22          # часы оказания услуги
 ADMIN_FROM, ADMIN_TO = 9, 20              # часы работы администраторов
+PHONE_FROM, PHONE_TO = 9, 22              # номер телефона показываем только в эти часы
 BUFFER = timedelta(hours=2)               # время на подбор трёх исполнителей
 EXPRESS_AHEAD = timedelta(minutes=15)     # минимум до начала при «Экспресс»
 MAX_AHEAD = timedelta(days=366)
@@ -25,6 +26,11 @@ def _minutes(dt: datetime) -> int:
 
 def admin_open(dt: datetime) -> bool:
     return ADMIN_FROM * 60 <= _minutes(dt) < ADMIN_TO * 60
+
+
+def phone_open(now: datetime) -> bool:
+    """Номер администратора можно показывать: с 09:00 до 22:00 (в 22:00 уже нельзя)."""
+    return PHONE_FROM * 60 <= _minutes(now) < PHONE_TO * 60
 
 
 def express_available(now: datetime) -> bool:

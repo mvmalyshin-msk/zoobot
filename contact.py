@@ -7,12 +7,14 @@
 import html as _html
 import logging
 import os
+from datetime import datetime
 
 from aiohttp import web
 
 import brand
 import db
 import orders
+import timerules
 import webchat
 import webform
 from config import config
@@ -28,11 +30,16 @@ CSS = webform.CSS + """
 text-decoration:none;font-weight:700;min-height:56px}.way small{display:block;font-weight:400;opacity:.85}
 .way.tg{background:var(--coral);color:#fff}.way.tel{background:#fff;color:var(--coral);border:2px solid var(--coral)}
 .or{text-align:center;color:var(--mute);margin:18px 0 0}
+.night{margin:14px 0 0;padding:12px 14px;border-radius:12px;background:var(--peach,#fdf1ea)}
 """
 
 
 def _e(v) -> str:
     return _html.escape(str(v or ""), quote=True)
+
+
+def _now() -> datetime:
+    return datetime.now(config.tz)
 
 
 def _tel() -> str:
@@ -43,18 +50,23 @@ def render_form(values: dict, errors: dict) -> str:
     v = lambda k: _e(values.get(k, ""))  # noqa: E731
     err = lambda k: f'<div class="err">{_e(errors[k])}</div>' if k in errors else ""  # noqa: E731
     checked = " checked" if values.get("consent") else ""
+    day = timerules.phone_open(_now())
     call = ('<a class="way tel" href="/contact/call" rel="nofollow"><span>📞</span><span>Позвонить администратору'
-            '<small>обычный звонок по сотовой сети</small></span></a>') if _tel() else ""   # номера на странице нет: он отдаётся только при нажатии
+            f'<small>с {timerules.PHONE_FROM:02d}:00 до {timerules.PHONE_TO:02d}:00, обычный звонок</small></span></a>') if _tel() and day else ""   # номера на странице нет: он отдаётся только при нажатии
+    night = ('' if day else f'<div class="night" role="note"><b>🌙 Сейчас ночь</b><br>Телефон работает с {timerules.PHONE_FROM:02d}:00 до {timerules.PHONE_TO:02d}:00. '
+             'Оставьте сообщение ниже: администратор ответит утром, как только начнёт работу.</div>')
+    lead = "Оставьте сообщение — ответим утром" if not day else "или оставьте номер — перезвоним"
+    btn = "Оставьте сообщение" if not day else "Перезвоните мне"
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — связаться с администратором</title><meta name="description" content="Свяжитесь с администратором Зооконсьержа: поможем с выгулом, зооняней, передержкой и зоотакси в Москве и Московской области.">
 {brand.HEAD}<style>{CSS}</style></head><body>{brand.public_header()}<main class="public-main public-form">
 <p class="eyebrow">СВЯЗАТЬСЯ</p><h1>Напишите нам</h1>
 <p class="hint form-intro">Выберите удобный способ. Поможем сориентироваться по услуге и заявке.</p>
-<div class="ways">
+{night}<div class="ways">
 <a class="way tg" href="https://t.me/{_e(config.bot_username)}"><span>✈️</span><span>Написать в Telegram<small>ответ придёт туда же</small></span></a>
 {call}
 </div>
-<p class="or">или оставьте номер — перезвоним</p>
+<p class="or">{lead}</p>
 <form method="post" action="/contact">
 <div class="form-grid">
 <div class="field"><label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name">{err("name")}</div>
@@ -63,7 +75,7 @@ def render_form(values: dict, errors: dict) -> str:
 </div>
 <div class="hp"><label>Не заполняйте <input name="site" tabindex="-1" autocomplete="off"></label></div>
 <label class="check"><input type="checkbox" name="consent"{checked}><span>Согласен(на) на обработку персональных данных, <a href="/policy">политика</a></span></label>{err("consent")}
-<button class="btn" type="submit">Перезвоните мне</button><p class="form-note">Используем данные только, чтобы ответить на ваше обращение.</p></form></main>{brand.public_footer()}</body></html>"""
+<button class="btn" type="submit">{btn}</button><p class="form-note">Используем данные только, чтобы ответить на ваше обращение.</p></form></main>{brand.public_footer()}</body></html>"""
 
 
 def render_done() -> str:
@@ -83,6 +95,8 @@ async def call(request: web.Request) -> web.Response:
     tel = _tel()
     if not tel:
         return web.Response(status=404, text="Номер не задан.")
+    if not timerules.phone_open(_now()):   # ночью номер не отдаём: ведём на окно обратной связи
+        return web.Response(status=302, headers={"Location": "/contact", "Cache-Control": "no-store", "X-Robots-Tag": "noindex"})
     return web.Response(status=302, headers={"Location": f"tel:{tel}", "Cache-Control": "no-store", "X-Robots-Tag": "noindex"})
 
 

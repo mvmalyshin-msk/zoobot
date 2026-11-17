@@ -88,7 +88,8 @@ async def _requests_html(uid: int, tg: int) -> str:
         label = ("Отменена" if r["status"] == "rejected" else {"new": "Принята", "work": "В работе", "done": "Выполнена"}.get(r["status"], r["status"]))
         btn = (f"<form method=post action='/request/cancel/{r['id']}' onsubmit=\"return confirm('Отменить заявку №{r['id']}?')\">"
                "<button class='btn small ghost'>Отменить заявку</button></form>") if r["status"] in ("new", "work") else ""
-        items.append(f"<li>№{_e(r['id'])} · {_e(r['service'] or 'услуга')} · {_e(r['when_text'] or 'время не указано')}"
+        x = " <b style='color:#7a1f3d'>⚡ Экспресс</b>" if r["express"] else ""
+        items.append(f"<li>№{_e(r['id'])} · {_e(r['service'] or 'услуга')} · {_e(r['when_text'] or 'время не указано')}{x}"
                      f"<br><b>{_e(label)}</b>{btn}</li>")
     return "<h3>Заявки с сайта</h3><ul>" + "".join(items) + "</ul>"
 

@@ -427,10 +427,11 @@ def cancel_form(request_id: int) -> str:
             '<button class="btn ghost" type="submit">Отменить заявку</button></form>')
 
 
-def render_done(request_id: int) -> str:
+def render_done(request_id: int, express: bool = False) -> str:
+    x = '<p style="padding:10px 12px;border-radius:12px;background:#f8eaee;color:#7a1f3d;font-weight:700">⚡ Экспресс: ваша заявка в приоритете, администратор свяжется с вами в первую очередь.</p>' if express else ""
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Зооконсьерж — заявка принята</title>
-{brand.HEAD}<style>{CSS}</style></head><body>{brand.public_header()}<main class="public-main public-form"><h1>Заявка принята</h1>
+{brand.HEAD}<style>{CSS}</style></head><body>{brand.public_header()}<main class="public-main public-form"><h1>Заявка принята</h1>{x}
 <p>Номер заявки: <b>№{request_id}</b>. Администратор свяжется с вами в течение рабочего дня, обычно за 1–2 часа: уточнит детали и назовёт точную цену.</p>
 <p class="hint">Данные используются только для выполнения заявки. Удалить их можно, написав нам.</p>
 <p><a class="btn" href="/chat">💬 Открыть чат с администратором</a></p>
@@ -615,7 +616,7 @@ async def post_form(request: web.Request) -> web.Response:
         await orders.notify_admins(request.app["bot"], text)
     except Exception:
         log.exception("Не удалось уведомить админа о заявке с сайта №%s", rid)
-    resp = web.Response(text=render_done(rid), content_type="text/html", headers={"Cache-Control": "no-cache"})
+    resp = web.Response(text=render_done(rid, bool(clean.get("express"))), content_type="text/html", headers={"Cache-Control": "no-cache"})
     if new_token:
         webchat._set_cookie(request, resp, new_token)
     return resp
