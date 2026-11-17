@@ -77,7 +77,10 @@ async def main():
             check(await page.evaluate("document.activeElement && document.activeElement.id") != "", "фокус на первом проблемном поле")
             await page.goto(base + "/request?service=taxi")
             sent.clear()
-            await page.fill("#when_date", "2099-01-01")
+            from datetime import date, timedelta
+            await page.fill("#when_date", (date.today() + timedelta(days=2)).isoformat())
+            await page.wait_for_function("document.querySelectorAll('.slot:not([disabled])').length>3")
+            await page.locator(".slot:not([disabled])").last.click()
             await page.fill("#address", "Москва, Ленина 5")
             await page.fill("#dest", "Москва, Тверская 1")
             await page.fill("#name", "[TEST] Иван")

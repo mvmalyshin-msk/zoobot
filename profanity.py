@@ -29,6 +29,7 @@ CYR = [
     r"^дроч(и|у|е|к|ил|ит|ун)[а-я]*$",
     r"^манд(а|ы|е|у|ой)$",
     r"^жоп[а-я]*$",
+    r"^член(а|у|ом|е|ы|ов|ам|ами|ах)?$",
     # оскорбления
     r"^(идиот|идиотк|дебил|кретин|придур|имбецил|тупиц|тупорыл|ублюд|выродок|мраз|сволоч|падл|паскуд|гнид|шалав|проститутк)[а-я]*$",
     r"^урод(а|у|ом|ы|ов|ина|ка|ки)?$",
@@ -44,6 +45,9 @@ LAT = [
     r"^(h|x)uy[a-z]*$", r"^eb(a|u)(t|l|n)[a-z]*$", r"^mudak[a-z]*$", r"^pid(o|a)r[a-z]*$", r"^zalup[a-z]*$",
     r"^g(a|o)ndon[a-z]*$",
 ]
+# Безобидные словосочетания: «член семьи», «член клуба» убираются из текста до проверки слова «член»
+ALLOW = r"член[а-я]*\s+(семь|клуб|команд|экипаж|совет|комисси|парти|правительств|групп|жюри|сообществ|организаци|коллектив|общин)[а-я]*"
+_ALLOW = re.compile(ALLOW)
 _CYR = [re.compile(p) for p in CYR]
 _LAT = [re.compile(p) for p in LAT]
 _TOKEN = re.compile(r"[a-zа-яё*]+")
@@ -72,7 +76,8 @@ def _hit(tok: str) -> bool:
 
 
 def _tokens(text: str) -> list[str]:
-    return _TOKEN.findall(text.lower().replace("ё", "е").replace("Ё", "е"))
+    low = text.lower().replace("ё", "е").replace("Ё", "е")
+    return _TOKEN.findall(_ALLOW.sub(" ", low))
 
 
 def has_profanity(text) -> bool:
@@ -92,4 +97,4 @@ def has_profanity(text) -> bool:
 
 def js_spec() -> dict:
     """Те же правила для браузера: шаблоны как строки (синтаксис общий у Python и JavaScript)."""
-    return {"patterns": CYR, "latin": LAT, "look": "aceomphxytkb->асеомрнхутка"}
+    return {"patterns": CYR, "latin": LAT, "look": "aceomphxytkb->асеомрнхутка", "allow": ALLOW}

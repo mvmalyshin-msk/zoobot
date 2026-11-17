@@ -15,6 +15,7 @@ from aiohttp import web
 import db
 import geo
 import profanity
+import timerules
 import orders
 import pricing
 import webchat
@@ -40,8 +41,12 @@ SERVICE_HINT = {
 }
 
 
+def _now() -> datetime:
+    return datetime.now(config.tz)
+
+
 def _today() -> date:
-    return datetime.now(config.tz).date()
+    return _now().date()
 
 
 def _iso(v: str):
@@ -51,8 +56,9 @@ def _iso(v: str):
         return None
 
 
-def _when(cat: str, form: dict, errors: dict) -> str:
-    """Дата из календаря → текст для админа: «16.11.2026, 10:00» или «с 16.11.2026 по 20.11.2026»."""
+def _when(cat: str, form: dict, errors: dict, express: bool = False) -> str:
+    """Дата и время из календаря → текст для админа: «16.11.2026, 10:00» или «с 16.11.2026 по 20.11.2026».
+    Время проверяется по общим правилам (timerules): 06:00–22:00, 2 часа на подбор, «Экспресс», график админов."""
     g = lambda k: str(form.get(k) or "").strip()  # noqa: E731
     d = _iso(g("when_date"))
     if not d:
@@ -68,7 +74,15 @@ def _when(cat: str, form: dict, errors: dict) -> str:
             return ""
         return f"с {d:%d.%m.%Y}" + (f" по {to:%d.%m.%Y}" if to else "")
     t = g("when_time")[:5]
-    return f"{d:%d.%m.%Y}" + (f", {t}" if len(t) == 5 and t[2] == ":" and t.replace(":", "").isdigit() else "")
+    if not (len(t) == 5 and t[2] == ":" and t.replace(":", "").isdigit()):
+        errors["when_time"] = "Выберите время начала."
+        return f"{d:%d.%m.%Y}"
+    now = _now()
+    dt = datetime(d.year, d.month, d.day, int(t[:2]), int(t[3:]), tzinfo=now.tzinfo)
+    verdict = timerules.check(dt, now, cat, express)
+    if not verdict.ok:
+        errors["when_time"] = verdict.message
+    return f"{d:%d.%m.%Y}, {t}" + (" · ⚡ Экспресс" if express and not verdict.express_blocked else "")
 
 
 def validate(form: dict) -> tuple[dict, dict]:
@@ -100,7 +114,8 @@ def validate(form: dict) -> tuple[dict, dict]:
     for k in ("when_date", "when_to", "when_time"):
         clean[k] = g(k)[:10]
     if clean["service"]:
-        clean["when"] = _when(cat, form, errors)
+        clean["express"] = bool(form.get("express")) and cat != "boarding" and timerules.express_available(_now())
+        clean["when"] = _when(cat, form, errors, bool(form.get("express")) and cat != "boarding")
         if cat == "taxi" and not clean["dest"]:
             errors["dest"] = "Напишите, куда отвезти питомца."
         elif cat == "taxi" and geo.same_place(clean["address"], clean["dest"]):
@@ -154,7 +169,23 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
 <button class="btn" type="submit">Отправить заявку</button><p class="form-note">Нажимая кнопку, вы отправляете заявку на подбор услуги. Это не обязывает вас подтверждать заказ.</p></form>{PROF_JS}{LIVE_JS}{ADDR_JS}</main>{brand.public_footer()}</body></html>"""
 
 
+HELP = '<button type="button" class="help" data-tip="{tip}" aria-label="Подсказка">?</button>'
+TIPS = {
+    "time": f"Услуга оказывается с {timerules.SERVICE_FROM:02d}:00 до {timerules.SERVICE_TO:02d}:00. Нам нужно минимум 2 часа, чтобы подобрать трёх исполнителей; "
+            f"администраторы принимают заявки с {timerules.ADMIN_FROM:02d}:00 до {timerules.ADMIN_TO:02d}:00. Недоступное время затемнено. Нужно раньше? Поставьте галочку «Экспресс».",
+}
+BURGUNDY = "#7a1f3d"
 SERVICE_CSS = """
+.help{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;margin:0 0 0 6px;padding:0;border-radius:50%;border:1.5px solid var(--line,#bbb);background:#fff;color:inherit;font:700 .85rem/1 inherit;cursor:pointer;vertical-align:middle;min-height:0;width:26px}
+.tip{margin:8px 0 0;padding:10px 12px;border-radius:12px;background:var(--peach,#fdf1ea);font-size:.95rem}
+.slots{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:8px 0 0}
+.slot{margin:0;padding:11px 0;min-height:44px;border-radius:12px;border:1.5px solid var(--line,#ddd);background:#fff;color:inherit;font:600 1rem inherit;cursor:pointer}
+.slot[disabled]{opacity:.35;cursor:not-allowed}.slot.on{background:var(--coral,#e8704a);border-color:var(--coral,#e8704a);color:#fff}
+.slot-note{margin:8px 0 0;font-size:.95rem;color:var(--mute,#666)}.slot-note[hidden]{display:none}
+.slot-note button{margin:8px 0 0;width:auto;padding:9px 14px;font-size:.95rem}
+.express{margin-top:14px;padding:12px 14px;border:1.5px solid var(--line,#ddd);border-radius:12px;align-items:flex-start}
+.express:has(input:checked){border-color:#7a1f3d;background:#f8eaee}.express input{accent-color:#7a1f3d}.express b{color:#7a1f3d}
+.express.off{opacity:.5}
 .variants{display:grid;gap:8px;margin:6px 0 0}.variant{display:flex;align-items:center;gap:10px;font-weight:400;margin:0;
 padding:12px 14px;border:1.5px solid var(--line,#ddd);border-radius:12px;cursor:pointer}.variant input{width:auto;margin:0}
 .variant b{margin-left:auto;white-space:nowrap}.variant input{accent-color:var(--coral)}.variant:has(input:checked){border-color:var(--coral);background:var(--peach)}
@@ -187,7 +218,7 @@ for(var i=0;i<vs.length;i++){var t=vs[i],hl=/[a-z]/.test(t),hc=/[а-я]/.test(t)
 if(hl&&!hc){if(any(PL,col(t)))return true;continue}
 if(hl)t=t.replace(/[a-z]/g,function(ch){return LOOK[ch]||ch});
 if(any(PC,col(t)))return true}return false}
-window.zcProf=function(text){var toks=String(text||'').toLowerCase().replace(/ё/g,'е').match(/[a-zа-я*]+/g)||[],run=[];
+var AL=new RegExp(PF.allow,'g');window.zcProf=function(text){var toks=String(text||'').toLowerCase().replace(/ё/g,'е').replace(AL,' ').match(/[a-zа-я*]+/g)||[],run=[];
 for(var i=0;i<toks.length;i++)if(hit(toks[i]))return true;
 toks.push('');for(var j=0;j<toks.length;j++){var t=toks[j];if(t.length===1&&t!=='*'){run.push(t);continue}
 if(run.length>=3&&hit(run.join('')))return true;run=[]}return false};
@@ -199,7 +230,7 @@ var f=document.querySelector('main form');if(!f)return;f.noValidate=true;
 var M={phone:'Проверьте номер: он выглядит выдуманным. Нужен настоящий, например: 8 916 204-58-31.',name:'Напишите, как к вам обращаться.',
 address:'Напишите адрес: улица и дом.',house:'Укажите номер дома: без него водитель не найдёт место. Например: Ленина улица, 5.',house2:'Укажите номер дома: без него мы не найдём место. Например: Ленина улица, 5.',
 dest:'Напишите, куда отвезти питомца.',same:'Адреса «Откуда» и «Куда» совпадают. Напишите, куда отвезти питомца.',
-past:'Дата уже прошла — выберите сегодня или позже.',to:'Дата «по» раньше даты «с».',
+past:'Дата уже прошла — выберите сегодня или позже.',time:'Выберите время начала.',to:'Дата «по» раньше даты «с».',
 consent:'Нужно согласие на обработку данных.',prof:'Уберите нецензурные и оскорбительные слова: так мы не сможем принять заявку.',service_id:'Выберите услугу.'};
 function val(n){var e=f.elements[n];return e?String(e.value||'').trim():''}
 function phoneOk(t){var d=t.replace(/\\D/g,''),n;if(d.length==11&&'78'.indexOf(d[0])>=0)n=d.slice(1);else if(d.length==10)n=d;else return false;
@@ -220,6 +251,7 @@ address:function(){var a=val('address');if(!a)return M.address;if(pf('address'))
 dest:function(){if(!taxi())return '';var d=val('dest');if(!d)return M.dest;if(pf('dest'))return M.prof;if(d.toLowerCase()==val('address').toLowerCase())return M.same;
  if(!/\\d/.test(d))return M.house;return ''},
 when_date:function(){var e=f.elements.when_date;if(!e||!e.value)return '';return e.min&&e.value<e.min?M.past:''},
+when_time:function(){var e=f.elements.when_time;if(!e||!f.querySelector('.timebox'))return '';if(!e.value)return M.time;return window.zcTime?window.zcTime.bad():''},
 when_to:function(){var e=f.elements.when_to,a=f.elements.when_date;return e&&a&&e.value&&a.value&&e.value<a.value?M.to:''},
 service_id:function(){var e=f.elements.service_id;return e&&e.tagName=='SELECT'&&!e.value?M.service_id:''},
 consent:function(){var e=f.elements.consent;return e&&!e.checked?M.consent:''}};
@@ -238,6 +270,44 @@ f.addEventListener('submit',function(ev){var first=null;
  Object.keys(R).forEach(function(n){if(!f.elements[n])return;touched[n]=1;if(show(n)&&!first)first=f.elements[n]});
  if(first){ev.preventDefault();ev.stopImmediatePropagation();first.scrollIntoView({block:'center'});first.focus()}},true);
 })();</script>"""
+
+TIME_JS = r"""<script>(function(){
+var f=document.querySelector('main form'),box=document.getElementById('slots');if(!f||!box)return;
+var tb=f.querySelector('.timebox'),cat=tb.getAttribute('data-cat'),t=f.elements.when_time,d=f.elements.when_date,x=f.elements.express,
+note=document.getElementById('slot-note'),row=document.getElementById('express-row'),tip=document.getElementById('tip-box'),
+TIPS=__TIPS__,last=null,seq=0,idle=null;
+f.classList.add('js-slots');t.style.display='none';
+function say(html,fix){note.hidden=!html;note.textContent=html||'';
+ if(fix){var b=document.createElement('button');b.type='button';b.className='btn';b.textContent='Подставить ближайшее время: '+fix.label;
+  b.addEventListener('click',function(){d.value=fix.date;t.value=fix.time;touch();load()});note.appendChild(document.createElement('br'));note.appendChild(b)}}
+function touch(){t.dispatchEvent(new Event('change',{bubbles:true}))}
+function draw(r){last=r;box.innerHTML='';
+ (r.slots||[]).forEach(function(s){var b=document.createElement('button');b.type='button';b.className='slot'+(t.value===s.t?' on':'');b.textContent=s.t;
+  if(!s.ok){b.disabled=true;b.setAttribute('aria-disabled','true')}
+  else b.addEventListener('click',function(){t.value=s.t;touch();draw(last);hint()});box.appendChild(b)});
+ if(row){row.classList.toggle('off',!r.express_available);if(!r.express_available&&x)x.disabled=true;else if(x)x.disabled=false}
+ hint()}
+function hint(){var bad=badNow();
+ if(bad&&last){var fix=last.earliest_time?{date:last.earliest_date,time:last.earliest_time,label:last.earliest}:null;say(bad,fix);arm()}
+ else if(last&&!t.value&&last.note){say(last.note,null);arm()}
+ else{say('',null);clearTimeout(idle)}}
+function badNow(){if(!last||!t.value)return '';var s=(last.slots||[]).filter(function(q){return q.t===t.value})[0];
+ if(s)return s.ok?'':(last.note||'Это время недоступно. Выберите другое.');
+ return ''}
+function arm(){clearTimeout(idle);idle=setTimeout(function(){if(!t.value||badNow())say((note.textContent||'')+' Почти готово: выберите любое доступное время, остальное займёт минуту.',null)},12000)}
+function load(){var my=++seq;if(!d.value){box.innerHTML='';say('Сначала выберите дату.',null);return}
+ fetch('/api/slots?cat='+encodeURIComponent(cat)+'&date='+encodeURIComponent(d.value)+'&express='+(x&&x.checked?'1':'0'),{cache:'no-store'})
+ .then(function(r){return r.json()}).then(function(r){if(my!==seq)return;draw(r)}).catch(function(){t.style.display='';box.innerHTML=''})}
+d.addEventListener('change',load);d.addEventListener('input',load);if(x)x.addEventListener('change',load);
+t.addEventListener('input',function(){if(last)draw(last)});
+Array.prototype.forEach.call(f.querySelectorAll('.help'),function(b){b.addEventListener('click',function(){var k=b.getAttribute('data-tip');
+ if(!tip.hidden&&tip.getAttribute('data-k')===k){tip.hidden=true;return}tip.textContent=TIPS[k]||'';tip.setAttribute('data-k',k);tip.hidden=false;
+ b.closest('label').insertAdjacentElement('afterend',tip)})});
+window.zcTime={bad:function(){return badNow()}};
+if(!d.value){var n=new Date(),p=function(v){return String(v).padStart(2,'0')};d.value=n.getFullYear()+'-'+p(n.getMonth()+1)+'-'+p(n.getDate())}
+load();
+})();</script>""".replace("__TIPS__", json.dumps(TIPS, ensure_ascii=False))
+
 
 ADDR_JS = r"""<script src="/addr.js"></script><script>(function(){
 var Z=window.zcAddr;if(!Z)return;
@@ -302,8 +372,14 @@ def render_service_form(cat: str, variants: list[dict], values: dict, errors: di
         when = (f'<div class="row2"><div><label for="when_date">С</label><input id="when_date" name="when_date" type="date" min="{today}" value="{v("when_date")}">{err("when_date")}</div>'
                 f'<div><label for="when_to">По</label><input id="when_to" name="when_to" type="date" min="{today}" value="{v("when_to")}">{err("when_to")}</div></div>')
     else:
-        when = (f'<div class="row2"><div><label for="when_date">Дата</label><input id="when_date" name="when_date" type="date" min="{today}" value="{v("when_date")}">{err("when_date")}</div>'
-                f'<div><label for="when_time">Время</label><input id="when_time" name="when_time" type="time" step="900" value="{v("when_time")}"></div></div>')
+        when = (f'<label for="when_date">Дата</label><input id="when_date" name="when_date" type="date" min="{today}" value="{v("when_date")}">{err("when_date")}'
+                f'<div class="timebox" data-cat="{cat}"><label for="when_time">Время начала {HELP.format(tip="time")}</label>'
+                f'<input id="when_time" name="when_time" type="time" step="900" value="{v("when_time")}">{err("when_time")}'
+                '<div id="slots" class="slots" role="group" aria-label="Время начала"></div><div id="slot-note" class="slot-note" role="status" aria-live="polite"></div></div>'
+                f'<label class="check express" id="express-row"><input type="checkbox" name="express" value="on"{" checked" if values.get("express") else ""}>'
+                '<span><b>⚡ Экспресс</b> — заявка за считанные минуты до начала, без ожидания 2 часов. Услуга стоит дороже. '
+                f'Работает с {timerules.ADMIN_FROM:02d}:00 до {timerules.ADMIN_TO:02d}:00, пока на связи администраторы.</span></label>'
+                '<div class="tip" id="tip-box" role="note" hidden></div>')
     if cat == "taxi":
         where = (addr_field("address", "Откуда", "например, Москва, Тверская улица, 12", values, errors, pt="a")
                  + addr_field("dest", "Куда", "например, Москва, Ленинский проспект, 10", values, errors, pt="b")
@@ -332,7 +408,7 @@ def render_service_form(cat: str, variants: list[dict], values: dict, errors: di
 <label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500" placeholder="характер, привычки, что важно знать">{v("comment")}</textarea>{err("comment")}
 <div class="hp"><label>Не заполняйте <input name="site" tabindex="-1" autocomplete="off"></label></div>
 <label class="check"><input type="checkbox" name="consent"{checked}><span>Согласен(на) на обработку персональных данных, <a href="/policy">политика</a></span></label>{err("consent")}
-<button class="btn" type="submit">Отправить заявку</button><p class="form-note">Это не заказ: администратор сначала подтвердит цену и исполнителя.</p></form>{PROF_JS}{LIVE_JS}{ADDR_JS}</main>{brand.public_footer()}</body></html>"""
+<button class="btn" type="submit">Отправить заявку</button><p class="form-note">Это не заказ: администратор сначала подтвердит цену и исполнителя.</p></form>{PROF_JS}{TIME_JS}{LIVE_JS}{ADDR_JS}</main>{brand.public_footer()}</body></html>"""
 
 
 def _page(services: list[dict], values: dict, errors: dict) -> str:
@@ -438,6 +514,35 @@ async def get_addr(request: web.Request) -> web.Response:
     return web.json_response({"items": houses, "street_only": bool(places) and not houses})
 
 
+async def api_slots(request: web.Request) -> web.Response:
+    """Сетка времени выбранного дня для страницы заявки: какие слоты доступны и почему остальные нет.
+    Единый источник правды — timerules; браузер только рисует ответ. Параметры: cat, date (ГГГГ-ММ-ДД), express (1/0)."""
+    q = request.query
+    cat, d, express = q.get("cat", ""), _iso(q.get("date", "")), q.get("express") in ("1", "true", "on")
+    now = _now()
+    out = {"slots": [], "earliest": "", "express_available": timerules.express_available(now), "note": "",
+           "service_from": timerules.SERVICE_FROM, "service_to": timerules.SERVICE_TO}
+    if d and cat in SERVICE_TITLE and cat != "boarding":
+        eff = express and out["express_available"]
+        e = timerules.earliest(now, eff)
+        out["earliest"] = e.strftime("%H:%M") if e.date() == d else timerules.fmt_earliest(e, now)
+        out["earliest_date"], out["earliest_time"] = e.date().isoformat(), e.strftime("%H:%M")
+        past = ""
+        for m in range(timerules.SERVICE_FROM * 60, timerules.SERVICE_TO * 60 + 1, timerules.STEP * 2):
+            dt = datetime(d.year, d.month, d.day, m // 60, m % 60, tzinfo=now.tzinfo)
+            v = timerules.check(dt, now, cat, express)
+            out["slots"].append({"t": f"{m // 60:02d}:{m % 60:02d}", "ok": v.ok})
+            if not v.ok and not out["note"] and v.code in ("too_soon", "admin_closed"):
+                out["note"] = v.message
+            elif not v.ok and v.code == "past" and not past:
+                past = v.message
+        out["note"] = out["note"] or past
+        if express and not out["express_available"]:
+            out["note"] = out["note"] or ("Экспресс доступен только с "
+                                          f"{timerules.ADMIN_FROM:02d}:00 до {timerules.ADMIN_TO:02d}:00, пока работают администраторы.")
+    return web.json_response(out, headers={"Cache-Control": "no-store"})
+
+
 async def get_form(request: web.Request) -> web.Response:
     """Форма заявки. С главной приходят с ?service=walk — тогда эта услуга (самый доступный вариант) уже выбрана."""
     services = await _services()
@@ -486,15 +591,15 @@ async def post_form(request: web.Request) -> web.Response:
         await conn.execute("UPDATE users SET phone=COALESCE(phone, ?), name=COALESCE(name, ?) WHERE tg_id=?",
                            (clean["phone"], clean["name"], web_uid))
         cur = await conn.execute(
-            """INSERT INTO web_requests (service_id, name, phone, address, when_text, pet, comment, web_uid, ip, device)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO web_requests (service_id, name, phone, address, when_text, pet, comment, web_uid, ip, device, express)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (svc["id"], clean["name"], clean["phone"], clean["address"], clean["when"],
-             clean["pet"], clean["comment"], web_uid, ip, device))
+             clean["pet"], clean["comment"], web_uid, ip, device, 1 if clean.get("express") else 0))
         rid = cur.lastrowid
     if clean["nonce"]:
         SEEN[clean["nonce"]] = (now, rid)
     text = "\n".join(filter(None, [
-        f"🌐 Заявка с сайта №{rid}",
+        f"🌐 Заявка с сайта №{rid}" + (" · ⚡ ЭКСПРЕСС: срочно, свяжитесь с клиентом сразу" if clean.get("express") else ""),
         f"Услуга: {svc['name']} (от {rub(svc.get('from_price', svc['base_price']))} для клиента)",
         f"Имя: {clean['name']}", f"Телефон: {clean['phone']}",
         f"Зарегистрирована: {fmt_local(now_utc())}",
