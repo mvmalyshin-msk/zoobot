@@ -12,6 +12,7 @@ from datetime import datetime
 from aiohttp import web
 
 import brand
+import seo
 import db
 import orders
 import timerules
@@ -87,7 +88,8 @@ def render_done() -> str:
 
 
 async def get_page(request: web.Request) -> web.Response:
-    return web.Response(text=render_form({}, {}), content_type="text/html", headers={"Cache-Control": "no-cache"})
+    page = seo.inject_head(render_form({}, {}), seo.base_url(request), "/contact")
+    return web.Response(text=page, content_type="text/html", headers={"Cache-Control": "no-cache"})
 
 
 async def call(request: web.Request) -> web.Response:

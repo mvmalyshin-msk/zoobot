@@ -20,6 +20,7 @@ import orders
 import pricing
 import webchat
 import brand
+import seo
 import talk
 import texts
 from config import config
@@ -552,8 +553,9 @@ async def get_form(request: web.Request) -> web.Response:
     services = await _services()
     cat = request.query.get("service", "")
     values = {"service": cat, "nonce": secrets.token_urlsafe(12)} if cat in SERVICE_TITLE else {}
-    return web.Response(text=_page(services, values, {}), content_type="text/html",
-                        headers={"Cache-Control": "no-cache"})
+    page = _page(services, values, {})
+    page = seo.inject_head(page, seo.base_url(request), "/request")
+    return web.Response(text=page, content_type="text/html", headers={"Cache-Control": "no-cache"})
 
 
 async def post_form(request: web.Request) -> web.Response:

@@ -52,6 +52,8 @@ async def _health(request: web.Request) -> web.Response:
 
 async def _policy(request: web.Request) -> web.Response:
     html = policy.render_html(policy.operator_from_env(os.environ))
+    html = seo.inject_head(html, seo.base_url(request), "/policy",
+                           "Политика обработки персональных данных сервиса «Зооконсьерж»: какие данные собираем, зачем и как храним.")
     return web.Response(text=html, content_type="text/html", headers={"Cache-Control": "no-cache"})
 
 
