@@ -178,7 +178,7 @@ def render(path: str, base: str) -> str:
     faq = "".join(f"<details><summary>{_e(q)}</summary><p>{_e(a)}</p></details>" for q, a in p["faq"])
     points = "".join(f"<li>{_e(x)}</li>" for x in p["points"])
     import articles  # здесь, а не наверху: articles сам импортирует servicepages
-    links = "".join(f'<a href="{_e(k)}">{_e(h)}</a>' for k, h in articles.for_service(p.get("parent", path)))
+    links = "".join(f'<a href="{_e(k)}">{_e(h)}</a>' for k, h in articles.for_service(path) + ([] if not p.get("parent") else articles.for_service(p["parent"])))
     reading = f'<h2>Полезно почитать</h2><p class="also">{links}</p>' if links else ""
     import citypages  # здесь: citypages сам импортирует servicepages
     cities = citypages.city_links_html(path) if not p.get("parent") else ""
