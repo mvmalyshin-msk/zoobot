@@ -14,7 +14,7 @@ import articles  # noqa: E402
 import seo  # noqa: E402
 import webserver  # noqa: E402
 
-SLUGS = ("/stati/kak-podgotovit-sobaku-k-perederzhke", "/stati/sobaka-boitsya-salyuta", "/stati/sobaka-zimoj-reagenty-lapy", "/stati/skolko-stoit-zoonyanya", "/stati/skolko-stoit-vygul-sobaki", "/stati/mozhno-li-ostavit-koshku-odnu-doma", "/stati/sobaka-ne-ostaetsya-doma-odna", "/stati/zoogostinica-ili-perederzhka-doma", "/stati/zootaksi-dlya-sobak-i-koshek", "/stati/skolko-stoit-perederzhka-sobaki-i-koshki", "/stati/s-kem-ostavit-pitomca-na-novogodnie-prazdniki", "/stati/kak-vybrat-peredergku", "/stati/skolko-gulyat-s-sobakoi", "/stati/kak-podgotovit-koshku-k-otezdu")
+SLUGS = ("/stati/kak-perevezti-koshku", "/stati/kak-podgotovit-sobaku-k-perederzhke", "/stati/sobaka-boitsya-salyuta", "/stati/sobaka-zimoj-reagenty-lapy", "/stati/skolko-stoit-zoonyanya", "/stati/skolko-stoit-vygul-sobaki", "/stati/mozhno-li-ostavit-koshku-odnu-doma", "/stati/sobaka-ne-ostaetsya-doma-odna", "/stati/zoogostinica-ili-perederzhka-doma", "/stati/zootaksi-dlya-sobak-i-koshek", "/stati/skolko-stoit-perederzhka-sobaki-i-koshki", "/stati/s-kem-ostavit-pitomca-na-novogodnie-prazdniki", "/stati/kak-vybrat-peredergku", "/stati/skolko-gulyat-s-sobakoi", "/stati/kak-podgotovit-koshku-k-otezdu")
 
 
 class Articles(unittest.IsolatedAsyncioTestCase):
