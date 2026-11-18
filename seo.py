@@ -7,7 +7,7 @@ import html
 import json
 import logging
 import os
-from datetime import date
+import re
 from urllib.parse import urlparse
 
 from aiohttp import ClientSession, ClientTimeout, web
@@ -27,7 +27,7 @@ PUBLIC_PAGES = ("/", "/o-nas", "/request", "/contact", "/policy", "/vygul-sobak"
 CLOSED_PREFIXES = ("/portal", "/chat", "/map", "/cabinet", "/api/", "/export/", "/verify/", "/contact/call")
 DISALLOW = ("/portal", "/cabinet", "/api/", "/export/", "/verify/", "/chat/", "/contact/call")
 
-TITLE = "Зооконсьерж — выгул, зооняня, передержка и зоотакси в Москве и Московской области"
+TITLE = "Зооконсьерж — выгул, зооняня, передержка в Москве и Московской области"
 DESCRIPTION = ("Подберём специалиста под вашего питомца: выгул собак, зооняня на дому, передержка, зоотакси "
                "в Москве и Московской области. Несколько вариантов по цене и уровню сервиса, заявка за минуту.")
 
@@ -50,16 +50,24 @@ def base_url(request: web.Request) -> str:
     return f"{request.scheme}://{request.host}"
 
 
+# Поисковые и «по запросу» ИИ-роботы: явно допускаем, чтобы сайт попадал в ответы ИИ-поиска.
+# Обучающих роботов (GPTBot, ClaudeBot, Google-Extended, CCBot) не упоминаем: решение владельца, по умолчанию действует общая группа.
+AI_SEARCH_BOTS = ("OAI-SearchBot", "ChatGPT-User", "Claude-SearchBot", "Claude-User", "PerplexityBot", "Perplexity-User")
+
+
 def robots_txt(base: str) -> str:
-    lines = ["User-agent: *"] + [f"Disallow: {p}" for p in DISALLOW] + ["Allow: /", "", f"Sitemap: {base}/sitemap.xml", ""]
+    closed = [f"Disallow: {p}" for p in DISALLOW]
+    # Отдельная группа робота заменяет общую, поэтому закрытые разделы повторяем в каждой.
+    lines = ["User-agent: *"] + closed + ["Allow: /", ""]
+    for bot in AI_SEARCH_BOTS:
+        lines += [f"User-agent: {bot}"] + closed + ["Allow: /", ""]
+    lines += [f"Sitemap: {base}/sitemap.xml", ""]
     return "\n".join(lines)
 
 
 def sitemap_xml(base: str) -> str:
-    today = date.today().isoformat()
-    rows = "".join(f"<url><loc>{html.escape(base + p)}</loc><lastmod>{today}</lastmod>"
-                   f"<changefreq>{'weekly' if p == '/' else 'monthly'}</changefreq>"
-                   f"<priority>{'1.0' if p == '/' else '0.6'}</priority></url>" for p in PUBLIC_PAGES)
+    """Только адреса: lastmod с датой деплоя поисковики отбрасывают, а priority и changefreq игнорируют."""
+    rows = "".join(f"<url><loc>{html.escape(base + p)}</loc></url>" for p in PUBLIC_PAGES)
     return f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{rows}</urlset>'
 
 
@@ -172,3 +180,25 @@ async def indexnow_ping(base: str, version, post=_post) -> None:
                              (key, "1"))
     except Exception:
         log.exception("IndexNow: ошибка")
+
+
+def inject_head(page: str, base: str, path: str, description: str = "") -> str:
+    """Добавляет в готовую страницу канонический адрес и превью для соцсетей, если их ещё нет."""
+    if 'rel="canonical"' in page or "</head>" not in page:
+        return page
+    m = re.search(r"<title>(.*?)</title>", page, flags=re.S)
+    title = m.group(1).strip() if m else brand.NAME
+    if not description:
+        d = re.search(r'<meta name="description" content="([^"]*)"', page)
+        description = html.unescape(d.group(1)) if d else DESCRIPTION
+    url = f"{base}{path}"
+    t = title if "&" in title else html.escape(title, quote=True)
+    d = html.escape(description, quote=True)
+    tags = (f'<link rel="canonical" href="{html.escape(url, quote=True)}">'
+            f'<meta property="og:type" content="website"><meta property="og:locale" content="ru_RU">'
+            f'<meta property="og:site_name" content="{brand.NAME}"><meta property="og:title" content="{t}">'
+            f'<meta property="og:description" content="{d}"><meta property="og:url" content="{html.escape(url, quote=True)}">'
+            f'<meta property="og:image" content="{html.escape(base + "/icons/icon-512.png", quote=True)}">')
+    if 'name="description"' not in page:
+        tags = f'<meta name="description" content="{d}">' + tags
+    return page.replace("</head>", tags + "</head>", 1)

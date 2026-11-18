@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -77,7 +78,8 @@ class BrandTest(unittest.TestCase):
             for path in ("/chat", "/request", "/brand.css"):
                 body = await (await c.get(path)).text()
                 self.assertNotIn("fonts.googleapis", body, path)
-                self.assertNotIn("http://", body.replace("http://www.w3.org", ""), path)
+                own = re.sub(r"http://127\.0\.0\.1:\d+", "", body)  # свой адрес в canonical и og: в проде он https
+                self.assertNotIn("http://", own.replace("http://www.w3.org", ""), path)
         run(t)
 
 

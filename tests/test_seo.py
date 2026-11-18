@@ -102,6 +102,31 @@ class SeoTest(unittest.IsolatedAsyncioTestCase):
             t = await (await self.client.get(path)).text()
             self.assertIn('name="description"', t, path)
 
+    async def test_service_pages_have_canonical_and_social_preview(self):
+        for path in ("/request", "/contact", "/policy"):
+            t = await (await self.client.get(path)).text()
+            self.assertRegex(t, r'rel="canonical" href="[^"]*' + re.escape(path) + '"', path)
+            self.assertIn('property="og:title"', t, path)
+            self.assertIn('property="og:image"', t, path)
+            self.assertEqual(t.count('rel="canonical"'), 1, path)
+            self.assertIn('name="description"', t, path)
+
+    async def test_sitemap_has_no_ignored_fields(self):
+        t = await (await self.client.get("/sitemap.xml")).text()
+        for bad in ("<priority>", "<changefreq>", "<lastmod>"):
+            self.assertNotIn(bad, t)
+
+    async def test_robots_states_ai_search_position_and_keeps_closed_sections(self):
+        t = await (await self.client.get("/robots.txt")).text()
+        for bot in ("OAI-SearchBot", "Claude-SearchBot", "PerplexityBot"):
+            group = t.split(f"User-agent: {bot}")[1].split("User-agent:")[0]
+            self.assertIn("Disallow: /portal", group, bot)
+            self.assertIn("Disallow: /cabinet", group, bot)
+            self.assertIn("Allow: /", group, bot)
+
+    def test_home_title_fits_search_snippet(self):
+        self.assertLessEqual(len(seo.TITLE), 72)  # было 81, поисковик режет около 60: в начале стоят услуги
+
 
 class IndexNow(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
