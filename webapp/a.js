@@ -73,3 +73,14 @@
     if (document.visibilityState === "hidden") { left = false; leave(); left = false; }
   });
 })();
+
+/* Яндекс Метрика «Зооконсьерж — сайт» (счётчик 114364023): вебвизор, карта скроллинга, аналитика форм.
+   Подключается здесь, а не встроенным скриптом в страницах. В портале админа a.js не подключён. */
+(function (m, e, t, r, i) {
+  m[i] = m[i] || function () { (m[i].a = m[i].a || []).push(arguments); };
+  m[i].l = 1 * new Date();
+  for (var j = 0; j < e.scripts.length; j++) { if (e.scripts[j].src === r) return; }
+  var k = e.createElement(t); k.async = 1; k.src = r;
+  var a = e.getElementsByTagName(t)[0]; a.parentNode.insertBefore(k, a);
+})(window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
+ym(114364023, "init", { clickmap: true, trackLinks: true, accurateTrackBounce: true, webvisor: true });
