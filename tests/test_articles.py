@@ -27,7 +27,7 @@ class Articles(unittest.IsolatedAsyncioTestCase):
         await self.client.close()
 
     async def test_every_article_opens_and_is_indexable(self):
-        for path in SLUGS:
+        for path in articles.ARTICLES:
             r = await self.client.get(path)
             t = await r.text()
             self.assertEqual(r.status, 200, path)
@@ -43,7 +43,7 @@ class Articles(unittest.IsolatedAsyncioTestCase):
             self.assertIn('class="site-footer"', t, path)
 
     async def test_articles_link_to_a_service_page_and_name_the_region(self):
-        for path in SLUGS:
+        for path in articles.ARTICLES:
             t = (await (await self.client.get(path)).text())
             self.assertRegex(t, r'href="/(vygul-sobak|zoonyanya|peredergka|zootaksi)"', path)
             self.assertIn("Московской области", t, path)
@@ -53,10 +53,10 @@ class Articles(unittest.IsolatedAsyncioTestCase):
         r = await self.client.get("/stati")
         t = await r.text()
         self.assertEqual(r.status, 200)
-        for path in SLUGS:
+        for path in articles.ARTICLES:
             self.assertIn(f'href="{path}"', t)
         x = await (await self.client.get("/sitemap.xml")).text()
-        for path in ("/stati",) + SLUGS:
+        for path in ("/stati", *articles.ARTICLES):
             self.assertIn(path, seo.PUBLIC_PAGES)
             self.assertIn(path + "</loc>", x)
 
@@ -71,6 +71,17 @@ class Articles(unittest.IsolatedAsyncioTestCase):
 
     async def test_home_links_to_articles(self):
         self.assertIn('href="/stati"', await (await self.client.get("/")).text())
+
+    async def test_care_guides_have_specific_links_and_no_empty_faq(self):
+        self.assertEqual(len(articles.CARE_GUIDES), 40)
+        for path, article in articles.CARE_GUIDES.items():
+            with self.subTest(path=path):
+                t = await (await self.client.get(path + "?utm_source=telegraph&utm_content=e01")).text()
+                self.assertIn(f'<a class="way site" href="/request">{articles._e(article["cta_text"])}</a>', t)
+                self.assertNotIn('"@type": "FAQPage"', t)
+                self.assertNotIn("utm_source=", t)
+                for related in article["related"]:
+                    self.assertIn(f'href="{related}"', t)
 
     async def test_unknown_article_404_and_no_false_promises_or_medical_claims(self):
         self.assertEqual((await self.client.get("/stati/net-takoi")).status, 404)
