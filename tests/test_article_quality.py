@@ -22,7 +22,7 @@ def text_of(a: dict) -> str:
     parts = [a["lead"]]
     for s in a["sections"]:
         parts.append(s.get("body", ""))
-    for q, ans in a["faq"]:
+    for q, ans in a.get("faq", []):
         parts.append(ans)
     t = "\n".join(parts)
     t = re.sub(r"\{\{[^}]+\}\}", "1000", t)
@@ -74,8 +74,13 @@ class ArticleQuality(unittest.TestCase):
         new = [p for p, a in articles.ARTICLES.items() if a.get("published", "") >= "2026-11-19"]
         for path in new:
             with self.subTest(path=path):
-                self.assertGreaterEqual(len(LINKS.findall(text_of(articles.ARTICLES[path]))), 2,
-                                        "сошлитесь хотя бы на 2 другие статьи")
+                article = articles.ARTICLES[path]
+                if "related" in article:
+                    self.assertEqual(len(set(article["related"])), 2)
+                    self.assertTrue(set(article["related"]) <= articles.ARTICLES.keys() - {path})
+                else:
+                    self.assertGreaterEqual(len(LINKS.findall(text_of(article))), 2,
+                                            "сошлитесь хотя бы на 2 другие статьи")
 
 
 if __name__ == "__main__":

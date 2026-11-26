@@ -11,6 +11,7 @@ from aiohttp import web
 import brand
 import seo
 import servicepages
+from care_guides import CARE_GUIDES
 from config import config
 from utils import rub
 
@@ -4584,6 +4585,9 @@ ARTICLES = {
 }
 
 
+ARTICLES.update(CARE_GUIDES)
+
+
 def _e(v) -> str:
     return _html.escape(str(v or ""), quote=True)
 
@@ -4642,9 +4646,9 @@ def _head(title: str, desc: str, url: str, ld: str) -> str:
 {seo.verification_tags()}{ld}{brand.HEAD}<style>{CSS}</style></head>"""
 
 
-def _ways(extra: str = "") -> str:
+def _ways(extra: str = "", site_label: str = "Оставить заявку на сайте") -> str:
     return (f'<div class="ways{extra}"><a class="way tg" href="https://t.me/{_e(config.bot_username)}">Оставить заявку в Telegram</a>'
-            '<a class="way site" href="/request">Оставить заявку на сайте</a></div>')
+            f'<a class="way site" href="/request">{_e(site_label)}</a></div>')
 
 
 def _para(p: str) -> str:
@@ -4697,12 +4701,22 @@ def render_article(path: str, base: str, prices: dict | None = None) -> str:
             "publisher": {"@type": "Organization", "name": brand.NAME, "url": f"{base}/"}}
     if a.get("images"):
         data["image"] = [f"{base}{src}" for src in a["images"]]
-    faq_ld = {"@context": "https://schema.org", "@type": "FAQPage",
-              "mainEntity": [{"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": t}} for q, t in a["faq"]]}
+    structured = [data]
+    faq = ""
+    questions = a.get("faq", [])
+    if questions:
+        structured.append({"@context": "https://schema.org", "@type": "FAQPage",
+                           "mainEntity": [{"@type": "Question", "name": q,
+                                           "acceptedAnswer": {"@type": "Answer", "text": t}} for q, t in questions]})
+        answers = "".join(f"<details><summary>{_e(q)}</summary><p>{_e(t)}</p></details>" for q, t in questions)
+        faq = f'<h2>Частые вопросы</h2><div class="faq">{answers}</div>'
     ld = "".join('<script type="application/ld+json">' + json.dumps(d, ensure_ascii=False).replace("</", "<\\/") + "</script>"
-                 for d in (data, faq_ld))
-    faq = "".join(f"<details><summary>{_e(q)}</summary><p>{_e(t)}</p></details>" for q, t in a["faq"])
-    also = "".join(f'<a href="{_e(k)}">{_e(v["h1"])}</a>' for k, v in ARTICLES.items() if k != path)
+                 for d in structured)
+    related = a.get("related")
+    if related is None:
+        related = [k for k, v in ARTICLES.items() if k != path and (k not in CARE_GUIDES or path in v["related"])]
+    also = "".join(f'<a href="{_e(k)}">{_e(ARTICLES[k]["h1"])}</a>' for k in related)
+    site_label = a["cta_text"] if path in CARE_GUIDES else "Оставить заявку на сайте"
     cta_after = a.get("cta_after")
     body = ""
     for n, sec in enumerate(a["sections"], 1):
@@ -4721,10 +4735,10 @@ def render_article(path: str, base: str, prices: dict | None = None) -> str:
 <p class="dates">Опубликовано {_ru_date(published)} · Обновлено {_ru_date(modified)}</p>
 <p class="lead">{_e(a["lead"])}</p>
 {body}
-<h2>Частые вопросы</h2><div class="faq">{faq}</div>
+{faq}
 <div class="help"><h2>Как мы можем помочь</h2><p>{_e(a["help"])}</p>
 <p><a class="svc" href="{_e(a["service"])}">{_e(a["service_name"])} →</a></p></div>
-{_ways()}
+{_ways(site_label=site_label)}
 <p class="hint"><a href="{_e(a["service"])}">{_e(a["service_name"])}</a> · <a href="{BASE}">Все статьи</a> ·
 <a href="/contact">Связаться с администратором</a></p>
 {about}
@@ -4749,7 +4763,7 @@ def render_index(base: str) -> str:
     desc = ("Полезные статьи для владельцев кошек и собак: как выбрать передержку, сколько гулять с собакой, "
             "как подготовить питомца к отъезду. Москва и Московская область.")
     items = ""
-    for path, article in ARTICLES.items():
+    for path, article in (CARE_GUIDES | ARTICLES).items():
         teaser = article["lead"].split(". ", 1)[0].strip()
         if not teaser.endswith("."):
             teaser += "."
