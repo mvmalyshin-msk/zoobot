@@ -76,7 +76,7 @@ async def start_bot(bot, session):
         f'<a href="{html.escape(b.url)}">{html.escape(b.text)}</a>' if b.url else
         f'<span>{html.escape(b.text)}</span>' for b in buttons
     )
-    return web.Response(text=f"""<!doctype html><meta charset="utf-8">
+    return f"""<!doctype html><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Тест Telegram — Зооконсьерж</title><style>
 body{{margin:0;background:#e8f0f6;color:#17212b;font:16px/1.5 system-ui}}
@@ -85,7 +85,7 @@ main{{margin:16px;max-width:420px}}small{{color:#485c6b}}
 p{{background:white;border-radius:14px;padding:14px;white-space:pre-line}}
 a,span{{display:block;padding:10px 12px;margin-top:5px;text-align:center;border-radius:8px;background:#fff;color:#075885}}
 </style><header>Зооконсьерж</header><main><small>Локальный тест Telegram · /start</small>
-<p>{html.escape(greeting.text)}</p>{keyboard}</main>""", content_type="text/html")
+<p>{html.escape(greeting.text)}</p>{keyboard}</main>"""
 
 
 async def main():
@@ -102,7 +102,7 @@ async def main():
     app["bot"], app["dp"] = bot, None
 
     async def greeting_page(request):
-        return greeting
+        return web.Response(text=greeting, content_type="text/html")
 
     app.router.add_get("/__preview/telegram", greeting_page)
     runner = web.AppRunner(app)
