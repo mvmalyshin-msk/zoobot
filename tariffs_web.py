@@ -64,7 +64,7 @@ async def _body() -> str:
             "rule", f'<input type="hidden" name="id" value="{r["id"]}"><span class="tl">{e(r["name"])}'
                     f'<small class="muted"> · {e(CONDITION_TITLES.get(r["condition_type"], r["condition_type"]))} · {e(where)}</small></span>'
                     f'<span class="tin"><input name="value" inputmode="decimal" value="{r["value"]:g}" aria-label="Размер, {unit}"> {unit}</span>'
-                    f'<label class="on"><input type="checkbox" name="active" value="1"{" checked" if r["active"] else ""}> действует</label>')
+            f'<label class="on"><input type="checkbox" name="active" value="1"{" checked" if r["active"] else ""}> действует</label>')
     return (f'<h1>Тарифы</h1>'
             f'<p class="muted">Меняйте цифры и нажимайте «Сохранить» у нужной строки. Новые цены сразу видят клиенты; '
             f'уже оформленные заказы не пересчитываются.</p>'
@@ -131,11 +131,17 @@ async def _service_body(s) -> str:
     rules = {r["condition_type"]: r for r in await db.fetch_all("SELECT * FROM price_rules WHERE service_id=?", (s["id"],))}
     glob = {r["condition_type"]: r for r in await db.fetch_all("SELECT * FROM price_rules WHERE service_id IS NULL")}
     sid = s["id"]
+    dog_field = ""
+    if s["code"] == "boarding_home":
+        dog_field = ('<label class="tin">Собака, в сутки '
+                     f'<input name="dog_price" inputmode="numeric" value="{s["dog_base_price"] or ""}" '
+                     'aria-label="Начальная цена передержки собаки, ₽"> ₽</label>')
     head = (f'<h1>{e(s["name"])}</h1><p class="muted">Здесь всё только для этой услуги. Своя надбавка заменяет общую с тем же '
             f'условием; «Как у всех» возвращает общую.</p>'
             f'<h2>Цена и доступность</h2><div class="card tcard"><form method="post" action="/portal/tariffs/{sid}" class="trow">'
             f'<input type="hidden" name="step" value="svc"><span class="tl">Начальная стоимость за {e(s["unit"])}</span>'
             f'<span class="tin"><input name="price" inputmode="numeric" value="{s["base_price"]}" aria-label="Цена, ₽"> ₽</span>'
+            f'{dog_field}'
             f'<label class="on"><input type="checkbox" name="active" value="1"{" checked" if s["active"] else ""}> услуга включена</label>'
             f'<button class="btn small">Сохранить</button></form></div>')
     body = ""
@@ -189,7 +195,14 @@ async def service_action(request: web.Request, uid: int) -> web.Response:
         if price is None or price != int(price):
             return portal._redirect(back, f"Цена: целое число рублей от 1 до {MAX_PRICE:,}.".replace(",", " "))
         active = 1 if form.get("active") else 0
-        await db.execute(f"UPDATE services SET base_price=?, active=?, {db.touch()} WHERE id=?", (int(price), active, sid))
+        dog_price = s["dog_base_price"]
+        if s["code"] == "boarding_home" and "dog_price" in form:
+            raw = str(form["dog_price"]).strip()
+            dog_price = _num(raw, 1, MAX_PRICE) if raw else None
+            if raw and (dog_price is None or dog_price != int(dog_price)):
+                return portal._redirect(back, "Укажите начальную цену передержки собаки целым числом рублей.")
+        await db.execute(f"UPDATE services SET base_price=?, dog_base_price=?, active=?, {db.touch()} WHERE id=?",
+                         (int(price), int(dog_price) if dog_price is not None else None, active, sid))
         log.info("Тариф: админ %s услуга «%s»: %s ₽, включена=%s", uid, s["name"], int(price), active)
         return portal._redirect(back, f"✅ {s['name']}: {int(price)} ₽" + ("" if active else ", услуга выключена"))
     cond = str(form.get("condition", ""))

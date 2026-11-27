@@ -7,7 +7,7 @@
 import logging
 
 import db
-from utils import to_local
+from utils import rub, to_local
 
 log = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ CONDITIONS = {
 VALID_CONDITIONS = tuple(CONDITIONS)
 
 
-TAXI_MIN_FARE = 450  # ₽: дешевле короткую поездку с животным клиенту не считаем (владелец: «зоотакси от 450 ₽»)
+TAXI_MIN_FARE = 1900
 
 
 async def calculate_price(service_id: int, params: dict) -> tuple[int, list[tuple[str, int]]]:
@@ -111,9 +111,12 @@ async def calculate_price(service_id: int, params: dict) -> tuple[int, list[tupl
         breakdown: list[tuple[str, int]] = taxi.fare(taxi.Route.of(params.get("route")), await taxi.get_tariff(),
                                                      service["base_price"], service["name"])
     else:
-        base_total = round(service["base_price"] * qty)
+        base = service["base_price"]
+        if service["dog_base_price"] is not None and params.get("pet_species") == "собака":
+            base = service["dog_base_price"]
+        base_total = round(base * qty)
         if service["unit"] in UNIT_SHORT:
-            label = f"{service['name']}: {qty:g} {UNIT_SHORT[service['unit']]} × {service['base_price']} ₽"
+            label = f"{service['name']}: {qty:g} {UNIT_SHORT[service['unit']]} × {base} ₽"
         else:
             label = service["name"]
         breakdown = [(label, base_total)]
@@ -128,6 +131,21 @@ async def calculate_price(service_id: int, params: dict) -> tuple[int, list[tupl
     # своё правило услуги ЗАМЕНЯЕТ общее с тем же условием (выключенное своё отключает общее для этой услуги)
     own = {r["condition_type"] for r in all_rules if r["service_id"] is not None}
     rules = [r for r in all_rules if r["active"] and (r["service_id"] is not None or r["condition_type"] not in own)]
+    if service["category"] == "taxi":
+        for rule in rules:
+            if rule["condition_type"] == "always":
+                add = round(rule["value"] if rule["effect_type"] == "fixed" else total * rule["value"] / 100)
+                if add:
+                    name = rule["name"]
+                    if rule["effect_type"] == "percent":
+                        name += f" (+{rule['value']:g}%)"
+                    breakdown.append((name, add))
+                    total += add
+        if total < TAXI_MIN_FARE:
+            breakdown.append(("До минимальной стоимости поездки", TAXI_MIN_FARE - total))
+            total = TAXI_MIN_FARE
+        rules = [r for r in rules if r["condition_type"] != "always"]
+
     for rule in rules:
         check = CONDITIONS.get(rule["condition_type"])
         if check is None:
@@ -145,10 +163,6 @@ async def calculate_price(service_id: int, params: dict) -> tuple[int, list[tupl
             total += add
             breakdown.append((name, add))
 
-    if service["category"] == "taxi" and total < TAXI_MIN_FARE:  # минимальная стоимость поездки
-        breakdown.append(("До минимальной стоимости поездки", TAXI_MIN_FARE - total))
-        total = TAXI_MIN_FARE
-
     log.info("Расчёт цены: услуга=%s кол-во=%s итог=%s разбивка=%s",
              service_id, qty, int(total), "; ".join(f"{n} = {a}" for n, a in breakdown))
     return int(total), breakdown
@@ -156,16 +170,12 @@ async def calculate_price(service_id: int, params: dict) -> tuple[int, list[tupl
 
 def format_breakdown_lines(breakdown: list[tuple[str, int]]) -> str:
     """Построчная разбивка без итога (на экране заказа итог показываем диапазоном)."""
-    from utils import rub
-
     return "\n".join(f"• {name}: {rub(amount) if i == 0 else '+' + rub(amount)}"
                      for i, (name, amount) in enumerate(breakdown))
 
 
 def format_breakdown(breakdown: list[tuple[str, int]], total: int) -> str:
     """Построчная разбивка для клиента."""
-    from utils import rub
-
     return format_breakdown_lines(breakdown) + f"\n\nИтого: {rub(total)}"
 
 
@@ -180,8 +190,6 @@ def price_range(total: int) -> tuple[int, int]:
 
 def format_range_short(total: int) -> str:
     """«от 896 ₽ до 1 040 ₽» — то, что видит клиент вместо цены и расчёта."""
-    from utils import rub
-
     low, high = price_range(total)
     return f"от {rub(low)} до {rub(high)}"
 
@@ -201,8 +209,17 @@ async def markup_percent() -> float:
 async def with_client_price(items: list[dict]) -> list[dict]:
     """Добавляет каждой услуге from_price — цена «от» для клиента: база + наценка сервиса (в каталоге, в форме)."""
     pct = await markup_percent()
-    out = [{**dict(s), "from_price": round(s["base_price"] * (100 + pct) / 100)} for s in items]
+    out = [{**dict(s), "from_price": s["base_price"] + round(s["base_price"] * pct / 100)} for s in items]
     for s in out:
+        if s.get("dog_base_price") is not None:
+            s["dog_from_price"] = s["dog_base_price"] + round(s["dog_base_price"] * pct / 100)
         if s.get("category") == "taxi":
             s["from_price"] = TAXI_MIN_FARE
     return out
+
+
+def catalog_price(service: dict) -> str:
+    current = rub(service.get("from_price", service["base_price"]))
+    if service.get("dog_from_price") is not None:
+        return f"кошка от {current}/сутки, собака от {rub(service['dog_from_price'])}/сутки"
+    return f"от {current}"

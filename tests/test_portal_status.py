@@ -131,22 +131,22 @@ class CancelIsVisible(unittest.TestCase):
 
 
 class TaxiMinimum(unittest.TestCase):
-    def test_taxi_never_cheaper_than_450(self):
+    def test_taxi_never_cheaper_than_1900(self):
         async def t():
             await db.init_db()
             sid = (await db.fetch_one("SELECT id FROM services WHERE code='taxi'"))["id"]
             total, bd = await pricing.calculate_price(sid, {"quantity": 1})
             return total, bd
         total, bd = LOOP.run_until_complete(t())
-        self.assertEqual(total, 450)
-        self.assertEqual(sum(a for _, a in bd), 450)
+        self.assertEqual(total, 1900)
+        self.assertEqual(sum(a for _, a in bd), 1900)
 
-    def test_taxi_catalog_from_450(self):
+    def test_taxi_catalog_from_1900(self):
         async def t():
             await db.init_db()
             items = await db.fetch_all("SELECT * FROM services WHERE code='taxi'")
             return (await pricing.with_client_price(items))[0]["from_price"]
-        self.assertEqual(LOOP.run_until_complete(t()), 450)
+        self.assertEqual(LOOP.run_until_complete(t()), 1900)
 
 
 if __name__ == "__main__":

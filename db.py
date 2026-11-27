@@ -247,6 +247,16 @@ CREATE INDEX IF NOT EXISTS idx_pending_logins_exp ON pending_logins(exp);
 """,
     # 31: цена «Экспресса»: по умолчанию +50% (размер выбран разработчиком, владелец меняет на странице «Тарифы»)
     # 33: ссылки исполнителя (соцсети, Telegram), которые админ вносит в веб-форме
+    # Новые исходные ставки для прежних стандартных и проверенных публичных цен.
+    35: """
+    ALTER TABLE services ADD COLUMN dog_base_price INTEGER;
+    UPDATE services SET base_price=500 WHERE code='walk30' AND base_price IN (450,700);
+    UPDATE services SET base_price=615 WHERE code='walk60' AND base_price IN (700,1000);
+    UPDATE services SET base_price=692 WHERE code='sitter_visit' AND base_price=800;
+    UPDATE services SET base_price=2769 WHERE code='sitter_live' AND base_price=3000;
+    UPDATE services SET base_price=654, dog_base_price=923 WHERE code='boarding_home' AND base_price IN (910,1500);
+    UPDATE services SET base_price=1231 WHERE code='boarding_hotel' AND base_price IN (910,1600);
+    """,
     34: """
     ALTER TABLE web_requests ADD COLUMN match_tier TEXT;
     ALTER TABLE orders ADD COLUMN match_tier TEXT;

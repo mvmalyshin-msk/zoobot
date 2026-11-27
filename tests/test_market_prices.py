@@ -20,10 +20,10 @@ import db  # noqa: E402
 import keyboards as kb  # noqa: E402
 import pricing  # noqa: E402
 
-BASE = {"walk30": 700, "walk60": 1000, "sitter_visit": 800, "sitter_live": 3000,
-        "boarding_home": 1500, "boarding_hotel": 1600, "taxi": 189}
-FROM = {"walk30": 910, "walk60": 1300, "sitter_visit": 1040, "sitter_live": 3900,
-        "boarding_home": 1950, "boarding_hotel": 2080, "taxi": 450}
+BASE = {"walk30": 500, "walk60": 615, "sitter_visit": 692, "sitter_live": 2769,
+        "boarding_home": 654, "boarding_hotel": 1231, "taxi": 189}
+FROM = {"walk30": 650, "walk60": 799, "sitter_visit": 900, "sitter_live": 3600,
+        "boarding_home": 850, "boarding_hotel": 1600, "taxi": 1900}
 
 
 def run(coro):
@@ -65,13 +65,24 @@ class Prices(unittest.TestCase):
             return {s["code"]: s["from_price"] for s in await pricing.with_client_price(items)}
         self.assertEqual(run(t()), FROM)
 
+    def test_home_boarding_takes_pet_species_into_account(self):
+        async def t():
+            await _setup()
+            service = await db.fetch_one("SELECT * FROM services WHERE code='boarding_home'")
+            prices = []
+            for species in ("кошка", "собака"):
+                total, _ = await pricing.calculate_price(service["id"], {"pet_species": species})
+                prices.append(total)
+            return prices
+        self.assertEqual(run(t()), [850, 1200])
+
     def test_admin_price_is_not_overwritten_by_migration(self):
         async def t():
             await _setup()
             await db.execute("UPDATE services SET base_price=777 WHERE code='walk30'")
             await db.init_db()
             got = (await db.fetch_one("SELECT base_price FROM services WHERE code='walk30'"))["base_price"]
-            await db.execute("UPDATE services SET base_price=700 WHERE code='walk30'")  # вернуть для соседних тестов
+            await db.execute("UPDATE services SET base_price=? WHERE code='walk30'", (BASE["walk30"],))
             return got
         self.assertEqual(run(t()), 777)
 

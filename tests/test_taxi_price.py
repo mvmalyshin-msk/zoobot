@@ -187,9 +187,9 @@ class PricingTest(unittest.TestCase):
 
         async def go():
             return await pricing.calculate_price(sid, {
-                "quantity": 1, "start_at": NOW + timedelta(days=1), "route": {"km": 12.4, "minutes": 35, "by_road": True}})
+                "quantity": 1, "start_at": NOW + timedelta(days=1), "route": {"km": 55.0, "minutes": 80, "by_road": True}})
         total, breakdown = run(go)
-        fare = 189 + 148 + 416 + 150
+        fare = 189 + 702 + 1001 + 150
         self.assertEqual(total, fare + round(fare * 0.30))
         self.assertIn("Наценка сервиса (+30%)", [name for name, _ in breakdown])
         self.assertNotIn(1200, [a for _, a in breakdown])
@@ -203,8 +203,7 @@ class PricingTest(unittest.TestCase):
                 "route": {"km": 30.0, "minutes": 50, "by_road": True}})
         total, breakdown = run(go)
         self.assertIn("Выезд за МКАД", [n for n, _ in breakdown])
-        fare = 189 + 377 + 611 + 150 + 150
-        self.assertEqual(total, fare + round(fare * 0.30))
+        self.assertEqual(total, 2050)
         self.assertIn("Наценка сервиса (+30%)", [name for name, _ in breakdown])
 
 
@@ -279,7 +278,7 @@ class FlowKeepsCoordinatesTest(unittest.TestCase):
         self.assertIn("Маршрут: ≈ 17 км", shown)
         self.assertIn("36 мин", shown)
         self.assertNotIn("1 200 ₽", shown)
-        self.assertIn("от 1 269 ₽ до 1 460 ₽", " ".join(shown.split()))
+        self.assertIn("от 1 900 ₽ до 2 190 ₽", " ".join(shown.split()))
 
     def test_saved_address_without_coordinates_is_geocoded(self):
         async def go():

@@ -169,7 +169,7 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
             continue
         rows = "".join(
             f'<option value="{s["id"]}" data-cat="{cat}"{" selected" if str(s["id"]) == str(values.get("service_id")) else ""}>'
-            f'{_e(texts.variant_label(cat, s["name"]))} — от {rub(s.get("from_price", s["base_price"]))}</option>' for s in opts)
+            f'{_e(texts.variant_label(cat, s["name"]))} — {_e(pricing.catalog_price(s))}</option>' for s in opts)
         groups.append(f'<optgroup label="{_e(texts.CATEGORY_TITLES[cat])}">{rows}</optgroup>')
     checked = " checked" if values.get("consent") else ""
     return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8">
@@ -399,7 +399,7 @@ def render_service_form(cat: str, variants: list[dict], values: dict, errors: di
     cards = "".join(
         f'<label class="variant"><input type="radio" name="service_id" value="{s["id"]}"'
         f'{" checked" if str(s["id"]) == chosen else ""}>'
-        f'<span>{_e(texts.variant_label(cat, s["name"]))}</span><b>от {rub(s["from_price"])}</b></label>'
+        f'<span>{_e(texts.variant_label(cat, s["name"]))}</span><b>{_e(pricing.catalog_price(s))}</b></label>'
         for s in sorted(variants, key=lambda s: s["from_price"]))
     today = _today().isoformat()
     if cat == "boarding":
