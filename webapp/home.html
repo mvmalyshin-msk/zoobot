@@ -29,7 +29,12 @@ a:focus-visible,.btn:focus-visible{outline:3px solid var(--boarding);outline-off
 .first-pick strong{display:block;color:#733c2d;font-size:1.2rem}
 .first-pick p{margin:2px 0 0;font-size:.95rem;line-height:1.4}
 .first-pick:hover,.hero-art:hover img{background:#ffede4}
-.survey-note{display:block;margin:6px 0 0;color:#733c2d;font-size:.9rem}
+.survey-note{display:inline-flex;align-items:center;gap:8px;margin-top:8px;padding:6px 9px;border-radius:8px;background:#fce6db;color:#733c2d;font-size:.9rem;font-weight:700;line-height:1.35}
+.survey-note::after{content:"";width:6px;height:6px;flex:none;border:solid currentColor;border-width:0 2px 2px 0;transform:rotate(-45deg)}
+@media(prefers-reduced-motion:no-preference){
+  .survey-note{animation:survey-pulse 1.5s ease-in-out 3}
+}
+@keyframes survey-pulse{50%{background:#f5bda9}}
 .first-pick-terms-link{display:inline-block;margin-top:4px;color:#733c2d;font-size:.9rem;text-underline-offset:3px}
 .pick-terms p{max-width:65ch;margin:8px 0}
 .pick-terms{margin-bottom:26px}
@@ -103,11 +108,11 @@ __HEADER__
       </div>
       <a class="hero-art" href="https://forms.yandex.ru/u/6afa34231f1eb57dec4266f0/" aria-label="Открыть анкету о питомце"><picture><source type="image/webp" srcset="/images/hero-mascot.webp"><img src="/images/hero-mascot.png" alt="Персонаж Зооконсьержа с собакой" width="640" height="640" decoding="async" fetchpriority="low"></picture></a>
       <div class="first-pick-group">
-        <a class="first-pick" href="https://forms.yandex.ru/u/6afa34231f1eb57dec4266f0/" aria-describedby="survey-note">
+        <a class="first-pick" href="https://forms.yandex.ru/u/6afa34231f1eb57dec4266f0/">
           <strong>Первый подбор — 0 ₽</strong>
           <p>По тарифу «Эконом». Вы оплачиваете работу исполнителя. Полную стоимость покажем до подтверждения заказа.</p>
+          <span class="survey-note">Пройди анкету — это сделает нас лучше</span>
         </a>
-        <small class="survey-note" id="survey-note">Пройди анкету — это сделает нас лучше</small>
         <a class="first-pick-terms-link" href="#first-pick-terms">Условия и тарифы</a>
       </div>
     </div>
