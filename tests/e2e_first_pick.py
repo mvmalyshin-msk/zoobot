@@ -23,6 +23,7 @@ from playwright.async_api import async_playwright, expect
 
 import db
 import geo
+import matching
 import orders
 import webchat
 import webserver
@@ -116,6 +117,10 @@ async def main():
             mobile = await browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
             await mobile.route("**/*", lambda route: route.continue_() if route.request.url.startswith(BASE) else route.abort())
             page = await mobile.new_page()
+            await page.goto(f"{BASE}/request?service=sitter")
+            await expect(page.locator("#matching-description")).to_have_text(matching.DESCRIPTIONS["economy"])
+            await page.locator("#match_tier").select_option("comfort")
+            await expect(page.locator("#matching-description")).to_have_text(matching.DESCRIPTIONS["comfort"])
             await page.goto(BASE)
             await page.evaluate("document.fonts.ready")
             offer = page.get_by_text("Первый подбор — 0 ₽", exact=True)
@@ -145,6 +150,9 @@ async def main():
             await expect(action).to_be_in_viewport()
             await page.screenshot(path=output / "zoobot-home-mobile.png")
             await action.click()
+            await page.locator("#match_tier").select_option("professional")
+            await expect(page.locator("#matching-description")).to_have_text(matching.DESCRIPTIONS["professional"])
+            await page.locator("#match_tier").select_option("economy")
             await expect(page.get_by_text("Создайте профиль", exact=False)).to_be_visible()
             await page.locator("#service_id").select_option(value=await page.locator('option[data-cat="boarding"]').first.get_attribute("value"))
             assert await db.fetch_one("SELECT 1 FROM web_requests") is None
@@ -178,6 +186,7 @@ async def main():
             when = datetime.now(config.tz) + timedelta(days=4)
             for index, item in enumerate((later, req)):
                 await panel.goto(f"{BASE}/portal/request/{item['id']}")
+                await expect(panel.get_by_text(matching.DESCRIPTIONS["economy"], exact=False)).to_be_visible()
                 await panel.locator("#start").fill(when.strftime("%Y-%m-%dT10:00"))
                 await panel.locator("#qty").fill("4")
                 await panel.locator("#executor_quote").fill("3200")

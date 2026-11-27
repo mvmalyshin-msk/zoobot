@@ -150,13 +150,23 @@ PROFILE_BENEFIT = "Создайте профиль, чтобы получить 
 
 
 def matching_fields(chosen: str = "") -> str:
+    chosen = chosen if chosen in matching.TIERS else "economy"
     options = "".join(
-        f'<option value="{key}"{" selected" if key == chosen else ""}>{label} — {fee} ₽</option>'
+        f'<option value="{key}" data-description="{_e(matching.DESCRIPTIONS[key])}"'
+        f'{" selected" if key == chosen and chosen != "economy" else ""}>{label} — {fee} ₽</option>'
         for key, (label, fee) in matching.TIERS.items())
     return ('<div class="field field-wide"><label for="match_tier">Тариф подбора (обычный сбор)</label>'
-            f'<select id="match_tier" name="match_tier" aria-describedby="matching-note">{options}</select>'
+            f'<select id="match_tier" name="match_tier" aria-describedby="matching-description matching-note">{options}</select>'
+            f'<p id="matching-description" class="hint" aria-live="polite">{_e(matching.DESCRIPTIONS[chosen])}</p>'
             '<p id="matching-note" class="hint">Первый подтверждённый Эконом — 0 ₽ за подбор. '
-            'Согласованная цена исполнителя оплачивается отдельно от сбора.</p></div>')
+            'Согласованная цена исполнителя оплачивается отдельно от сбора.</p></div>'
+            '<script>(() => {'
+            'const tier = document.getElementById("match_tier");'
+            'const description = document.getElementById("matching-description");'
+            'const update = () => { description.textContent = tier.selectedOptions[0].dataset.description; };'
+            'tier.addEventListener("change", update);'
+            'window.addEventListener("pageshow", update);'
+            '})();</script>')
 
 
 def render_form(services: list[dict], values: dict, errors: dict) -> str:
