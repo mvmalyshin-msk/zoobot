@@ -23,6 +23,7 @@ import ribbons
 import db
 import executors_web
 import mailer
+import matching
 import passkeys
 import orders
 import payinfo
@@ -850,6 +851,9 @@ async def request_page(request: web.Request, uid: int) -> web.Response:
     info = "\n".join([f"Услуга: {r['service'] or '—'}", f"Когда: {r['when_text'] or '—'}", f"Адрес: {r['address']}",
                       f"Питомец: {r['pet'] or '—'}", f"Комментарий: {r['comment'] or '—'}", f"Имя: {r['name']}",
                       f"Телефон: {r['phone']}", f"Зарегистрирована: {fmt_local(r['created_at'])}"])
+    tier = r["match_tier"]
+    if tier in matching.TIERS:
+        info += f"\nПодбор: {matching.TIERS[tier][0]}. {matching.DESCRIPTIONS[tier]}"
     opts = "".join(f'<option value="{k}"{" selected" if k == r["status"] else ""}>{v}</option>' for k, v in REQ_STATUSES.items())
     site = r["address"] if str(r["address"]).startswith("Сайт ") else "Форма на сайте"
     if r["status"] == "rejected":
