@@ -135,7 +135,7 @@ class RequestChatTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_home_promotes_request_and_keeps_contact_path(self):
         t = await (await self.client.get("/")).text()
-        self.assertIn('<a class="btn" href="/request">Подобрать специалиста</a>', t)
+        self.assertIn('<a class="btn" href="/request">Подобрать исполнителя</a>', t)
         self.assertIn('href="/contact"', t)
 
 

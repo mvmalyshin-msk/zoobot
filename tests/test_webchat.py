@@ -121,8 +121,8 @@ class GuestTest(unittest.TestCase):
             await c.get("/chat")
             await c.post("/chat/api/send", json={"text": "/start"}, headers=H)
             h = await history(c)
-            btn = next(b for m in h["messages"] for row in m.get("inline", []) for b in row)
-            mid = next(m["mid"] for m in h["messages"] if m.get("inline"))
+            mid, btn = next((m["mid"], b) for m in h["messages"]
+                            for row in m.get("inline", []) for b in row if "cb" in b)
             before = h["last"]
             r = await c.post("/chat/api/send", json={"cb": btn["cb"], "mid": mid}, headers=H)
             self.assertEqual(r.status, 200)

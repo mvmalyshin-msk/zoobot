@@ -27,8 +27,9 @@ def consent(policy_url: str) -> InlineKeyboardMarkup:
     ])
 
 
-def main_menu(has_orders: bool, last_name: str | None = None) -> InlineKeyboardMarkup:
-    rows = [[Btn(text="🐾 Заказать услугу", callback_data="menu:order")]]
+def main_menu(has_orders: bool, last_name: str | None = None, *, survey: bool = False) -> InlineKeyboardMarkup:
+    rows = [[Btn(text="Заполнить анкету", url="https://forms.yandex.ru/u/6afa34231f1eb57dec4266f0/")]] if survey else []
+    rows.append([Btn(text="🐾 Заказать услугу", callback_data="menu:order")])
     if has_orders:
         label = f"🔁 Повторить: {last_name}" if last_name else "🔁 Повторить последний заказ"
         rows.append([Btn(text=label[:60], callback_data="menu:repeat")])

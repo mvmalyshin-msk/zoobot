@@ -111,7 +111,7 @@ async def last_order(user_id: int) -> dict | None:
 async def user_orders(user_id: int, limit: int = 8) -> list[dict]:
     """Заказы для экрана «Мои заказы»: услуга, статус, питомец; только после удаления данных (если оно было)."""
     return await db.fetch_all(
-        f"""SELECT o.id, o.status, o.start_at, o.price_total, o.created_at, s.name, p.name AS pet_name
+        f"""SELECT o.id, o.status, o.start_at, o.price_total, o.match_tier, o.created_at, s.name, p.name AS pet_name
             FROM orders o JOIN services s ON s.id=o.service_id LEFT JOIN pets p ON p.id=o.pet_id
             WHERE {_VISIBLE} ORDER BY o.id DESC LIMIT ?""", (user_id, limit))
 

@@ -36,14 +36,14 @@ def future(days=2, hour=10):
     return d.replace(hour=hour, minute=0, second=0, microsecond=0)
 
 
-async def make_request(cat="walk", pet="Дымок, кот"):
+async def make_request(cat="walk", pet="Дымок, кот", uid=UID):
     await db.init_db()
     await db.execute("DELETE FROM web_requests")
-    await db.execute("INSERT OR IGNORE INTO users (tg_id, name, phone) VALUES (?, 'Анна', '+79007778899')", (UID,))
+    await db.execute("INSERT OR IGNORE INTO users (tg_id, name, phone) VALUES (?, 'Анна', '+79007778899')", (uid,))
     svc = await db.fetch_one("SELECT * FROM services WHERE category=? AND active=1 ORDER BY base_price LIMIT 1", (cat,))
     rid = await db.execute(
         "INSERT INTO web_requests (service_id, name, phone, address, when_text, pet, web_uid) VALUES (?,?,?,?,?,?,?)",
-        (svc["id"], "Анна", "+79007778899", "Москва, Ленина 1", "завтра", pet, UID))
+        (svc["id"], "Анна", "+79007778899", "Москва, Ленина 1", "завтра", pet, uid))
     return rid, svc
 
 
@@ -65,6 +65,23 @@ def run(coro):
 
 
 class MakeOrder(unittest.TestCase):
+
+    def test_first_matching_fee_is_consumed_only_on_confirmation(self):
+        async def case(sent):
+            rid, _ = await make_request("boarding", uid=-4243)
+            await db.execute("UPDATE web_requests SET match_tier='economy' WHERE id=?", (rid,))
+            _, _, first = await web_orders.make_order(None, rid, future(), 4, "admin:1", executor_quote=3200)
+            rid, _ = await make_request("boarding", uid=-4243)
+            await db.execute("UPDATE web_requests SET match_tier='economy' WHERE id=?", (rid,))
+            _, _, second = await web_orders.make_order(None, rid, future(), 4, "admin:1", executor_quote=3200)
+            self.assertEqual((await orders.get_order_full(second))["price_total"], 3200)
+            self.assertTrue((await orders.change_status(None, first, "confirmed", "admin:1"))[0])
+            self.assertFalse((await orders.change_status(None, second, "confirmed", "admin:1"))[0])
+            order = await orders.get_order_full(second)
+            self.assertEqual((order["status"], order["price_total"], order["match_fee"]), ("created", 3299, 99))
+            self.assertTrue((await orders.change_status(None, second, "confirmed", "admin:1"))[0])
+            self.assertEqual((await db.fetch_one("SELECT amount FROM payments WHERE order_id=?", (second,)))["amount"], 3299)
+        run(case)
 
     def test_express_request_is_priced_higher(self):
         async def case(sent):

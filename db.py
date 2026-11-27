@@ -247,6 +247,12 @@ CREATE INDEX IF NOT EXISTS idx_pending_logins_exp ON pending_logins(exp);
 """,
     # 31: цена «Экспресса»: по умолчанию +50% (размер выбран разработчиком, владелец меняет на странице «Тарифы»)
     # 33: ссылки исполнителя (соцсети, Telegram), которые админ вносит в веб-форме
+    34: """
+    ALTER TABLE web_requests ADD COLUMN match_tier TEXT;
+    ALTER TABLE orders ADD COLUMN match_tier TEXT;
+    ALTER TABLE orders ADD COLUMN match_fee INTEGER;
+    """,
+    # 33: ссылки исполнителя (соцсети, Telegram), которые админ вносит в веб-форму
     33: "ALTER TABLE executors ADD COLUMN links TEXT;",
     # 32: «Экспресс» в заказе бота и веб-чата: срочная подача, бургунди у админа
     32: "ALTER TABLE orders ADD COLUMN express INTEGER NOT NULL DEFAULT 0;",
@@ -451,12 +457,12 @@ async def execute(sql: str, params: tuple = ()) -> int:
 
 
 @asynccontextmanager
-async def transaction():
+async def transaction(*, immediate=False):
     """Несколько запросов как одно целое: либо все применились, либо ни один.
     Использование:  async with db.transaction() as conn:  await conn.execute(...)"""
     conn = await get_conn()
     try:
-        await conn.execute("BEGIN")
+        await conn.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
         yield conn
         await conn.commit()
     except BaseException:

@@ -868,9 +868,12 @@ async def request_page(request: web.Request, uid: int) -> web.Response:
     else:
         m = re.search(r"(\d\d)\.(\d\d)\.(\d{4}), (\d\d:\d\d)", str(r["when_text"] or ""))
         start = f"{m.group(3)}-{m.group(2)}-{m.group(1)}T{m.group(4)}" if m else ""   # время из заявки подставляем: админу остаётся проверить и нажать
+        quote = ('<label for="executor_quote">Согласованная ставка исполнителя за весь заказ, ₽</label>'
+                 '<input id="executor_quote" name="executor_quote" type="number" min="1" max="10000000" required>'
+                 '<p class="muted">Сбор добавится один раз. Согласуйте итог с клиентом перед подтверждением.</p>') if r["match_tier"] else (
+                 '<p class="muted">Цену посчитает бот по тем же правилам, что и в Telegram. Зоотакси оформляется в боте.</p>')
         mk = ('<form method="post" class="card" style="padding:14px"><h2 style="margin-top:0">Оформить заказ</h2>'
-              '<p class="muted" style="font-size:14px">Цену посчитает бот по тем же правилам, что в Telegram. Клиент получит сообщение. '
-              'Зоотакси оформляется в боте.</p>'
+              + quote +
               '<div class="field"><label for="start">Когда начать</label>'
               f'<input id="start" name="start" type="datetime-local" required value="{start}"></div>'
               '<div class="field"><label for="qty">Сколько (часов или суток; выгул — 1)</label>'
@@ -910,9 +913,10 @@ async def request_action(request: web.Request, uid: int) -> web.Response:
         try:
             start = datetime.strptime(str(form.get("start", "")), "%Y-%m-%dT%H:%M").replace(tzinfo=config.tz)
             qty = int(str(form.get("qty") or "1"))
+            executor_quote = int(form["executor_quote"]) if form.get("executor_quote") else None
         except ValueError:
             return _redirect(f"/portal/request/{rid}", "Укажите время и количество числом.")
-        ok, msg, _ = await web_orders.make_order(request.app["bot"], int(rid), start, qty, actor=f"admin:{uid}")
+        ok, msg, _ = await web_orders.make_order(request.app["bot"], int(rid), start, qty, actor=f"admin:{uid}", executor_quote=executor_quote)
         return _redirect(f"/portal/request/{rid}", msg)
     if form.get("cancel") or form.get("restore"):  # отмена и возврат одной кнопкой
         if form.get("cancel"):

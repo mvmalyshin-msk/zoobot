@@ -14,6 +14,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError
 
 import db
+import matching
 import payinfo
 import pricing
 import keyboards as kb
@@ -113,7 +114,12 @@ def order_card(o: dict, *, for_staff: bool = False) -> str:
                 lines.append(f"Здоровье и особенности: {o['pet_notes']}")
     if for_staff:
         lines.append(f"Клиент: {o['client_name']}, {o['client_phone']}")
-    if for_staff:
+    if o.get("match_tier"):
+        fee = o["match_fee"]
+        lines.append(f"Работа исполнителя: {rub(o['price_total'] - fee)}")
+        lines.append(f"Подбор · {matching.TIERS[o['match_tier']][0]}: {rub(fee)}")
+        lines.append(f"Итого: {rub(o['price_total'])}")
+    elif for_staff:
         lines.append(f"Вилка для клиента: {pricing.format_range_short(o['price_total'])}")
         lines.append(f"Сумма (расчёт): {rub(o['price_total'])}")
     else:
@@ -127,13 +133,17 @@ def order_card(o: dict, *, for_staff: bool = False) -> str:
     return "\n".join(lines)
 
 
+def customer_price(o: dict) -> str:
+    return rub(o["price_total"]) if o.get("match_tier") else pricing.format_range_short(o["price_total"])
+
+
 def format_my_orders(rows: list[dict]) -> str:
     """Экран «Мои заказы»: сверху заказы в работе (подсвечены 🟢), ниже отдельным блоком завершённые и отменённые."""
     active = [r for r in rows if r["status"] in ACTIVE_STATUSES]
     done = [r for r in rows if r["status"] not in ACTIVE_STATUSES]
 
     def line(r, mark):
-        return (f"{mark} №{r['id']} · {r['name']} · {fmt_local(r['start_at'])} · {pricing.format_range_short(r['price_total'])}\n"
+        return (f"{mark} №{r['id']} · {r['name']} · {fmt_local(r['start_at'])} · {customer_price(r)}\n"
                 f"      {texts.STATUS_LABELS[r['status']]}")
     out = ["📋 Ваши заказы"]
     if active:
@@ -251,15 +261,15 @@ async def create_order(data: dict, total: int, breakdown: list, actor: str) -> i
         cur = await conn.execute(
             """INSERT INTO orders (user_id, pet_id, service_id, status, start_at, end_at, quantity,
                                    address, address_to, is_urgent, outside_mkad, params_json,
-                                   price_total, price_breakdown, address_unverified, comment, rider_name, rider_phone, express)
-               VALUES (?,?,?,'created',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                   price_total, price_breakdown, address_unverified, comment, rider_name, rider_phone, express, match_tier, match_fee)
+               VALUES (?,?,?,'created',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (data["user_id"], data["pet_id"], data["service_id"], to_db(data["start_at"]),
              to_db(data["end_at"]) if data.get("end_at") else None, data["quantity"],
              data["address"], data.get("address_to"), int(data["is_urgent"]),
              int(data["outside_mkad"]), json.dumps(params, ensure_ascii=False), total,
              json.dumps(breakdown, ensure_ascii=False), int(data.get("address_unverified", False)),
              (data.get("comment") or None), data.get("rider_name"), data.get("rider_phone"),
-             int(bool(data.get("express")))),
+             int(bool(data.get("express"))), data.get("match_tier"), data.get("match_fee")),
         )
         order_id = cur.lastrowid
         await conn.execute(
@@ -308,12 +318,33 @@ async def change_status(bot: Bot, order_id: int, new: str, actor: str,
     if new not in TRANSITIONS.get(old, set()):
         return False, (f"Нельзя перевести заказ №{order_id} из «{texts.STATUS_LABELS[old]}» "
                        f"в «{texts.STATUS_LABELS[new]}».")
+    revised_quote = None
     try:
-        async with db.transaction() as conn:
-            extra, params = ("cancel_reason=?", (reason,)) if new == "cancelled" else ("", ())
-            await _transition(conn, order_id, old, new, actor, extra, params)
+        async with db.transaction(immediate=new == "confirmed") as conn:
+            if new == "confirmed" and o.get("match_tier"):
+                async with conn.execute("SELECT status, price_total, match_fee FROM orders WHERE id=?", (order_id,)) as cur:
+                    current = await cur.fetchone()
+                if not current or current["status"] != old:
+                    raise StatusConflict
+                fee = await matching.fee(conn, o["user_id"], o["match_tier"], excluding=order_id)
+                if fee != current["match_fee"]:
+                    executor_quote = current["price_total"] - current["match_fee"]
+                    total = executor_quote + fee
+                    breakdown = matching.breakdown(o["match_tier"], executor_quote, fee)
+                    await conn.execute(
+                        "UPDATE orders SET price_total=?, price_breakdown=?, match_fee=?, updated_at=datetime('now') WHERE id=?",
+                        (total, json.dumps(breakdown, ensure_ascii=False), fee, order_id))
+                    await conn.execute("UPDATE payments SET amount=? WHERE order_id=?", (total, order_id))
+                    revised_quote = f"Цена изменилась: {rub(total)} (подбор {rub(fee)})."
+            if revised_quote is None:
+                extra, params = ("cancel_reason=?", (reason,)) if new == "cancelled" else ("", ())
+                await _transition(conn, order_id, old, new, actor, extra, params)
     except StatusConflict:
         return False, f"Статус заказа №{order_id} уже изменился, проверьте /orders."
+    if revised_quote:
+        await notify(bot, o["client_tg_id"], f"Заказ №{order_id}. {revised_quote} Согласуем сумму с вами до подтверждения.")
+        return False, f"{revised_quote} Согласуйте итог и подтвердите снова."
+
     delivered = await _after_transition(bot, order_id, old, new, actor)
 
     note = ""
@@ -336,6 +367,8 @@ async def _after_transition(bot: Bot, order_id: int, old: str, new: str, actor: 
 
     # --- клиенту: при каждом переходе ---
     text = texts.STATUS_CLIENT[new].format(id=order_id, executor=o["executor_name"] or "")
+    if new == "confirmed" and o.get("match_tier"):
+        text += f"\nРабота исполнителя: {rub(o['price_total'] - o['match_fee'])}. Подбор: {rub(o['match_fee'])}. Итого: {rub(o['price_total'])}."
     markup = None
     if new == "completed":
         await notify(bot, o["client_tg_id"], text)
@@ -418,7 +451,7 @@ async def assign_executor(bot: Bot, order_id: int, executor_id: int, actor: str)
         if min_age(ex["birth_year"]) < 18 and not ex["parent_consent"]:
             return False, f"{ex['name']} несовершеннолетний, нет согласия родителей."
 
-    pay = calc_executor_pay(o["price_total"], ex)
+    pay = o["price_total"] - o["match_fee"] if o.get("match_tier") else calc_executor_pay(o["price_total"], ex)
     margin = o["price_total"] - pay
     try:
         async with db.transaction() as conn:

@@ -233,8 +233,9 @@ async def main():
 
     print("1. Согласие на ПДн")
     r = await say(CLIENT, "/start")
-    ok("Согласен на обработку ПДн" in str(_buttons(r[-1])), "экран согласия с отдельной кнопкой")
+    ok("Заполнить анкету" in str(_buttons(r[-1])), "в приветствии есть анкета")
     r = await say(CLIENT, "/menu")
+    ok("Согласен на обработку ПДн" in str(_buttons(r[-1])), "экран согласия с отдельной кнопкой")
     ok("согласие" in last_text(r).lower(), "без согласия дальше не пускает")
     r = await click(CLIENT, "Согласен")
     c = await db.fetch_one("SELECT * FROM consents WHERE type='pdn'")
@@ -730,6 +731,7 @@ async def main():
     LEAD = 3000
     n0 = len(SENT)
     await say(LEAD, "/start")
+    await click(LEAD, "Профиль")
     await click(LEAD, "Согласен")
     await click(LEAD, "Заказать")
     await say(LEAD, "Ольга Петрова")
@@ -750,7 +752,8 @@ async def main():
 
     print("18. Политика обработки ПДн")
     POL = 3100
-    r = await say(POL, "/start")
+    await say(POL, "/start")
+    r = await click(POL, "Профиль")
     ok("Политика" in str(_buttons(r[0])) or "Политика" in str([_buttons(m) for m in r]), "на экране согласия есть кнопка политики")
     r = await say(POL, "/policy")
     t = "".join(m["text"] for m in r)
@@ -763,6 +766,7 @@ async def main():
     import repo as _repo
     GONE = 3000
     await say(GONE, "/start")
+    await click(GONE, "Профиль")
     await click(GONE, "Согласен")
     gu = await db.fetch_one("SELECT * FROM users WHERE tg_id=?", (GONE,))
     await _repo.update_user(gu["id"], name="Глеб", phone="79005556677", address="Мира 3")
@@ -823,6 +827,7 @@ async def main():
     await db.execute("UPDATE orders SET status='cancelled' WHERE status IN ('created','confirmed')")  # чистый лист
     NEW = 4000
     await say(NEW, "/start")
+    await click(NEW, "Профиль")
     await click(NEW, "Согласен")
     nu = await db.fetch_one("SELECT * FROM users WHERE tg_id=?", (NEW,))
     await _repo2.update_user(nu["id"], name="Анна", phone=_np("79007778899"), address="ул. Ленина, 1, Москва",
@@ -977,6 +982,7 @@ async def main():
     print("25. Удаление данных не тупик + узнавание по телефону")
     ERA = 4100
     await say(ERA, "/start")
+    await click(ERA, "Профиль")
     await click(ERA, "Согласен")
     eu = await db.fetch_one("SELECT * FROM users WHERE tg_id=?", (ERA,))
     await _repo2.update_user(eu["id"], name="Эра", phone=_np("79001110000"), address="Мира 3")
@@ -993,6 +999,7 @@ async def main():
     ok("Да, удалить" in str(_buttons(r[-1])), "после отмены удаление данных доступно")
     await click(ERA, "Да, удалить")
     r = await say(ERA, "/start")
+    await click(ERA, "Профиль")
     r = await click(ERA, "Согласен")
     ok("Последний заказ" not in last_text(r), "после удаления прошлый заказ в меню не подсказывается")
     r = await raw_callback(ERA, "menu:orders")
@@ -1000,6 +1007,7 @@ async def main():
     # оплаченный заказ: кнопка «попросить администратора»
     PAID = 4150
     await say(PAID, "/start")
+    await click(PAID, "Профиль")
     await click(PAID, "Согласен")
     pu = await db.fetch_one("SELECT * FROM users WHERE tg_id=?", (PAID,))
     await _repo2.update_user(pu["id"], name="Паша", phone=_np("79002220000"), address="Мира 4")
@@ -1013,6 +1021,7 @@ async def main():
     # узнавание: тот же номер, другой Telegram-аккаунт
     REC = 4200
     await say(REC, "/start")
+    await click(REC, "Профиль")
     await click(REC, "Согласен")
     await click(REC, "Заказать")
     await say(REC, "Анна")
@@ -1030,6 +1039,7 @@ async def main():
     # по адресу
     REC2 = 4210
     await say(REC2, "/start")
+    await click(REC2, "Профиль")
     await click(REC2, "Согласен")
     await click(REC2, "Заказать")
     await say(REC2, "Анна")
@@ -1039,6 +1049,7 @@ async def main():
     # пропуск
     REC3 = 4220
     await say(REC3, "/start")
+    await click(REC3, "Профиль")
     await click(REC3, "Согласен")
     await click(REC3, "Заказать")
     await say(REC3, "Анна")
@@ -1049,6 +1060,7 @@ async def main():
     # две ошибки подряд
     REC4 = 4230
     await say(REC4, "/start")
+    await click(REC4, "Профиль")
     await click(REC4, "Согласен")
     await click(REC4, "Заказать")
     await say(REC4, "Анна")
@@ -1059,6 +1071,7 @@ async def main():
     # напечатанный номер не даёт узнавания
     REC5 = 4240
     await say(REC5, "/start")
+    await click(REC5, "Профиль")
     await click(REC5, "Согласен")
     await click(REC5, "Заказать")
     await say(REC5, "Анна")
@@ -1087,6 +1100,7 @@ async def main():
     print("26. Питомцы в профиле: список, изменить, убрать, добавить")
     PET = 4300
     await say(PET, "/start")
+    await click(PET, "Профиль")
     await click(PET, "Согласен")
     pu = await db.fetch_one("SELECT * FROM users WHERE tg_id=?", (PET,))
     await _repo2.update_user(pu["id"], name="Петя", phone=_np("79003330000"), address="Мира 5")
@@ -1130,6 +1144,7 @@ async def main():
     print("27. Зоотакси: какой питомец, обязательное предупреждение, для кого заказ")
     TX = 4400
     await say(TX, "/start")
+    await click(TX, "Профиль")
     await click(TX, "Согласен")
     tu = await db.fetch_one("SELECT * FROM users WHERE tg_id=?", (TX,))
     await _repo2.update_user(tu["id"], name="Таня", phone=_np("79004440000"), address="ул. Ленина, 1, Москва", address_verified=1)
@@ -1221,6 +1236,7 @@ async def main():
     ok("Портал администратора" in last_text(r), "/portal — ссылка на портал")
     REG = 4500
     await say(REG, "/start")
+    await click(REG, "Профиль")
     await click(REG, "Согласен")
     await click(REG, "Заказать")
     await say(REG, "Рита")

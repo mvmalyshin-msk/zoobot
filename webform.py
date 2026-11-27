@@ -13,6 +13,7 @@ from datetime import date, datetime
 from aiohttp import web
 
 import db
+import matching
 import geo
 import profanity
 import timerules
@@ -91,8 +92,11 @@ def validate(form: dict) -> tuple[dict, dict]:
     g = lambda k: str(form.get(k) or "").strip()  # noqa: E731
     clean = {k: g(k)[:n] for k, n in MAX.items()}
     clean["service_id"] = g("service_id")
+    clean["match_tier"] = g("match_tier")
     clean["address_ok"], clean["dest_ok"] = g("address_ok")[:200], g("dest_ok")[:200]  # адрес, выбранный из подсказок
     errors: dict[str, str] = {}
+    if clean["match_tier"] and clean["match_tier"] not in matching.TIERS:
+        errors["match_tier"] = "Выберите тариф подбора."
     if g("site"):  # ловушка для ботов: настоящий человек это поле не видит
         errors["bot"] = "spam"
     phone = normalize_phone(g("phone"))
@@ -121,6 +125,11 @@ def validate(form: dict) -> tuple[dict, dict]:
             errors["dest"] = "Напишите, куда отвезти питомца."
         elif cat == "taxi" and geo.same_place(clean["address"], clean["dest"]):
             errors["dest"] = "Адреса «Откуда» и «Куда» совпадают. Напишите, куда отвезти питомца."
+    if clean["match_tier"]:
+        if not clean["pet"]:
+            errors["pet"] = "Расскажите, для какого питомца нужен подбор."
+        if not clean["when"] and "when_date" not in errors:
+            errors["when"] = "Укажите дату или период, когда нужна услуга."
     return clean, errors
 
 
@@ -135,6 +144,19 @@ label{display:block;margin:14px 0 4px;font-weight:700}input,select,textarea{widt
 .check{display:flex;gap:10px;align-items:flex-start;font-weight:400}.check input{width:auto;margin-top:5px}
 button{margin-top:22px;width:100%}.hp{position:absolute;left:-9999px}.top{display:flex;justify-content:center;font-size:1.6rem;margin:8px 0 6px}
 """
+
+
+PROFILE_BENEFIT = "Создайте профиль, чтобы получить ответ по заявке и сохранить данные питомца для следующего заказа."
+
+
+def matching_fields(chosen: str = "") -> str:
+    options = "".join(
+        f'<option value="{key}"{" selected" if key == chosen else ""}>{label} — {fee} ₽</option>'
+        for key, (label, fee) in matching.TIERS.items())
+    return ('<div class="field field-wide"><label for="match_tier">Тариф подбора (обычный сбор)</label>'
+            f'<select id="match_tier" name="match_tier" aria-describedby="matching-note">{options}</select>'
+            '<p id="matching-note" class="hint">Первый подтверждённый Эконом — 0 ₽ за подбор. '
+            'Согласованная цена исполнителя оплачивается отдельно от сбора.</p></div>')
 
 
 def render_form(services: list[dict], values: dict, errors: dict) -> str:
@@ -158,9 +180,12 @@ def render_form(services: list[dict], values: dict, errors: dict) -> str:
 <form method="post" action="/request">
 <div class="form-grid">
 <div class="field"><label for="service_id">Услуга</label><select id="service_id" name="service_id"><option value="">Выберите…</option>{"".join(groups)}</select>{err("service_id")}</div>
-<div class="field"><label for="when">Когда нужно</label><input id="when" name="when" maxlength="100" value="{v("when")}" placeholder="например, завтра в 10:00"></div>
+{matching_fields(values.get("match_tier"))}{err("match_tier")}
+<div class="field"><label for="when">Когда нужно</label><input id="when" name="when" maxlength="100" value="{v("when")}" placeholder="например, завтра в 10:00">{err("when")}</div>
 <div class="field field-wide">{addr_field("address", "Адрес", "например, Химки, улица Победы, 3", values, errors)}</div>
+<div id="generic-dest" class="field field-wide">{addr_field("dest", "Куда отвезти питомца (для зоотакси)", "например, Москва, Тверская улица, 12", values, errors, pt="to")}</div>
 <div class="field"><label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="например, Рекс, собака, лабрадор, 3 года">{err("pet")}</div>
+<p class="hint field-wide">{PROFILE_BENEFIT}</p>
 <div class="field"><label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name" placeholder="например, Анна">{err("name")}</div>
 <div class="field"><label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 916 204-58-31">{err("phone")}</div>
 <div class="field field-wide"><label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500">{v("comment")}</textarea>{err("comment")}</div>
@@ -244,6 +269,11 @@ function cat(){var c=val('service');if(c)return c;var s=f.elements.service_id;
  if(s&&s.tagName=='SELECT'&&s.selectedOptions&&s.selectedOptions[0])return s.selectedOptions[0].getAttribute('data-cat')||'';
  return ''}
 function taxi(){return cat()=='taxi'}
+var destination=f.querySelector('#generic-dest');
+if(destination){
+ function showDestination(){destination.hidden=!taxi();f.elements.dest.disabled=!taxi()}
+ f.elements.service_id.addEventListener('change',showDestination);showDestination()
+}
 function needHouse(){return cat()!='boarding'}
 function pf(n){return window.zcProf&&window.zcProf(val(n))?M.prof:''}
 var R={
@@ -403,10 +433,12 @@ def render_service_form(cat: str, variants: list[dict], values: dict, errors: di
 <form method="post" action="/request"><input type="hidden" name="service" value="{cat}"><input type="hidden" name="nonce" value="{_e(nonce)}">
 <h2 class="step">1. Вариант {HELP.format(tip="variant")}</h2><div class="variants">{cards}</div>{err("service_id")}
 <p class="other"><a href="/request">Другая услуга</a></p>
+{matching_fields(values.get("match_tier"))}{err("match_tier")}
 <h2 class="step">2. Когда</h2>{when}
 <h2 class="step">3. Где {HELP.format(tip="where")}</h2>{where}
 <h2 class="step">4. Питомец и контакты {HELP.format(tip="contacts")}</h2>
 <label for="pet">Питомец</label><input id="pet" name="pet" maxlength="120" value="{v("pet")}" placeholder="например, Рекс, собака, лабрадор, 3 года">{err("pet")}
+<p class="hint">{PROFILE_BENEFIT}</p>
 <div class="row2"><div><label for="name">Ваше имя</label><input id="name" name="name" maxlength="80" value="{v("name")}" autocomplete="name" placeholder="например, Анна">{err("name")}</div>
 <div><label for="phone">Телефон</label><input id="phone" name="phone" type="tel" maxlength="30" value="{v("phone")}" autocomplete="tel" placeholder="8 916 204-58-31">{err("phone")}</div></div>
 <label for="comment">Комментарий</label><textarea id="comment" name="comment" maxlength="500" placeholder="характер, привычки, что важно знать">{v("comment")}</textarea>{err("comment")}
@@ -578,6 +610,11 @@ async def post_form(request: web.Request) -> web.Response:
         return web.Response(text=render_done(0), content_type="text/html")  # боту делаем вид, что приняли
     chosen = next((x for x in services if str(x["id"]) == clean["service_id"]), None)
     if chosen and "bot" not in errors:
+        if chosen["category"] == "taxi" and clean["match_tier"] and "dest" not in errors:
+            if not clean["dest"]:
+                errors["dest"] = "Напишите, куда отвезти питомца."
+            elif geo.same_place(clean["address"], clean["dest"]):
+                errors["dest"] = "Адреса «Откуда» и «Куда» совпадают. Напишите, куда отвезти питомца."
         await check_addresses(clean, errors, chosen["category"])
     if errors:
         return web.Response(status=400, text=_page(services, clean, errors), content_type="text/html")
@@ -597,10 +634,10 @@ async def post_form(request: web.Request) -> web.Response:
         await conn.execute("UPDATE users SET phone=COALESCE(phone, ?), name=COALESCE(name, ?) WHERE tg_id=?",
                            (clean["phone"], clean["name"], web_uid))
         cur = await conn.execute(
-            """INSERT INTO web_requests (service_id, name, phone, address, when_text, pet, comment, web_uid, ip, device, express)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO web_requests (service_id, name, phone, address, when_text, pet, comment, web_uid, ip, device, express, match_tier)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (svc["id"], clean["name"], clean["phone"], clean["address"], clean["when"],
-             clean["pet"], clean["comment"], web_uid, ip, device, 1 if clean.get("express") else 0))
+             clean["pet"], clean["comment"], web_uid, ip, device, 1 if clean.get("express") else 0, clean["match_tier"] or None))
         rid = cur.lastrowid
     if clean["nonce"]:
         SEEN[clean["nonce"]] = (now, rid)

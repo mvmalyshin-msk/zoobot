@@ -40,7 +40,7 @@ class HomeTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_home_has_one_primary_action_and_clear_secondary_path(self):
         t = await self.home()
-        self.assertIn('<a class="btn" href="/request">Подобрать специалиста</a>', t)
+        self.assertIn('<a class="btn" href="/request">Подобрать исполнителя</a>', t)
         self.assertIn('href="https://t.me/zooconcierge_bot"', t)
         self.assertIn('href="/contact"', t)
         self.assertEqual(t.count('class="hero-actions"'), 1)
