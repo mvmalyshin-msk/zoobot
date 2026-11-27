@@ -129,6 +129,8 @@ async def main():
             illustration_box = await survey.locator("img").bounding_box()
             assert (await note.bounding_box())["y"] >= illustration_box["y"] + illustration_box["height"]
             await expect(note).to_have_css("animation-name", "survey-pulse")
+            await expect(note).to_have_css("animation-iteration-count", "infinite")
+            await expect(note).to_have_css("font-weight", "400")
             await page.emulate_media(reduced_motion="reduce")
             await expect(note).to_have_css("animation-name", "none")
             await page.emulate_media(reduced_motion="no-preference")
