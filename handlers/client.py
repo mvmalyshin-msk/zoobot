@@ -248,6 +248,12 @@ async def cmd_start(m: Message, state: FSMContext) -> None:
     if is_admin(m.from_user):
         await repo.get_or_create_user(m.from_user)
         await show_menu(m, m.from_user)
+    elif _from_web():
+        user = await repo.get_or_create_user(m.from_user)
+        if not user["pdn_consent"]:
+            await show_consent(m)
+            return
+        await show_menu(m, m.from_user)
     else:
         await show_menu(m, m.from_user, texts.START_SURVEY, survey=True)
 
