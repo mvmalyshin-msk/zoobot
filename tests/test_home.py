@@ -60,7 +60,7 @@ class HomeTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('<a href="/chat/login">Войти как клиент</a>', t)
         self.assertIn('<a href="/portal">Войти как администратор</a>', t)
         self.assertIn('src="/images/hero-mascot.png"', t)
-        self.assertIn('alt="Персонаж Зооконсьержа с собакой"', t)
+        self.assertIn('class="survey-note">Пройди анкету — это сделает нас лучше</span>', t)
 
     async def test_original_mascot_image_is_served_locally(self):
         response = await self.client.get("/images/hero-mascot.png")
@@ -70,7 +70,7 @@ class HomeTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_home_presents_services_and_process(self):
         t = await self.home()
-        self.assertIn("Забота о питомце — без суеты", t)
+        self.assertIn('<h1>Первый подбор <span class="hero-price">— 0 ₽</span></h1>', t)
         self.assertIn('id="services"', t)
         self.assertIn('id="how-it-works"', t)
         for path in ("/vygul-sobak", "/zoonyanya", "/peredergka", "/zootaksi"):
