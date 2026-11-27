@@ -70,7 +70,7 @@ class HomeTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_home_presents_services_and_process(self):
         t = await self.home()
-        self.assertIn('<h1>Первый подбор <span class="hero-price">— 0 ₽</span></h1>', t)
+        self.assertIn("<h1>Забота о питомце — без суеты</h1>", t)
         self.assertIn('id="services"', t)
         self.assertIn('id="how-it-works"', t)
         for path in ("/vygul-sobak", "/zoonyanya", "/peredergka", "/zootaksi"):

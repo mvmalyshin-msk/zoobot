@@ -118,9 +118,15 @@ async def main():
             page = await mobile.new_page()
             await page.goto(BASE)
             await page.evaluate("document.fonts.ready")
-            offer = page.get_by_role("heading", name="Первый подбор — 0 ₽", exact=True, level=1)
-            await expect(offer).to_be_in_viewport()
-            assert await page.evaluate("document.documentElement.scrollWidth === innerWidth")
+            offer = page.get_by_text("Первый подбор — 0 ₽", exact=True)
+            heading = page.get_by_role("heading", name="Забота о питомце — без суеты", level=1)
+            for width in (320, 390, 1280):
+                await page.set_viewport_size({"width": width, "height": 844})
+                await expect(offer).to_be_in_viewport()
+                await expect(heading).to_be_in_viewport()
+                assert (await offer.bounding_box())["y"] < (await heading.bounding_box())["y"]
+                assert await page.evaluate("document.documentElement.scrollWidth === innerWidth")
+            await page.set_viewport_size({"width": 390, "height": 844})
             assert await page.locator(".hero-art img").evaluate("(img) => img.complete && img.naturalWidth > 0")
             survey = page.get_by_role("link", name="Пройди анкету — это сделает нас лучше", exact=True)
             await expect(survey).to_have_attribute("href", SURVEY_URL)
