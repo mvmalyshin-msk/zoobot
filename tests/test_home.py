@@ -40,7 +40,7 @@ class HomeTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_home_has_one_primary_action_and_clear_secondary_path(self):
         t = await self.home()
-        self.assertIn('<a class="btn" href="/request">Подобрать специалиста</a>', t)
+        self.assertIn('<a class="btn" href="/request">Подобрать исполнителя</a>', t)
         self.assertIn('href="https://t.me/zooconcierge_bot"', t)
         self.assertIn('href="/contact"', t)
         self.assertEqual(t.count('class="hero-actions"'), 1)
@@ -60,7 +60,7 @@ class HomeTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('<a href="/chat/login">Войти как клиент</a>', t)
         self.assertIn('<a href="/portal">Войти как администратор</a>', t)
         self.assertIn('src="/images/hero-mascot.png"', t)
-        self.assertIn('alt="Персонаж Зооконсьержа с собакой"', t)
+        self.assertIn('class="survey-note">Пройди анкету — это сделает нас лучше</span>', t)
 
     async def test_original_mascot_image_is_served_locally(self):
         response = await self.client.get("/images/hero-mascot.png")
@@ -70,7 +70,7 @@ class HomeTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_home_presents_services_and_process(self):
         t = await self.home()
-        self.assertIn("Забота о питомце — без суеты", t)
+        self.assertIn("<h1>Забота о питомце — без суеты</h1>", t)
         self.assertIn('id="services"', t)
         self.assertIn('id="how-it-works"', t)
         for path in ("/vygul-sobak", "/zoonyanya", "/peredergka", "/zootaksi"):

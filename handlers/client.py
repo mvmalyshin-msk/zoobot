@@ -170,14 +170,15 @@ def is_admin(tg_user) -> bool:
     return tg_user.id in config.admin_ids
 
 
-async def show_menu(msg: Message, tg_user, text: str | None = None) -> None:
+async def show_menu(msg: Message, tg_user, text: str | None = None, *, survey: bool = False) -> None:
     if is_admin(tg_user):  # у админа меню только управления ботом, заказать с него нельзя
         await msg.answer(ribbons.tg_prefix(ribbons.ADMIN) + texts.ADMIN_MENU_TEXT, reply_markup=kb.admin_menu())
         return
     user = await repo.get_or_create_user(tg_user)
     last = next(iter(await repo.user_orders(user["id"], 1)), None)
-    await msg.answer(ribbons.tg_prefix(ribbons.CLIENT) + (text or texts.menu_text(last)),
-                     reply_markup=kb.main_menu(last is not None, last["name"] if last else None))
+    prefix = "" if survey else ribbons.tg_prefix(ribbons.CLIENT)
+    await msg.answer(prefix + (text or texts.menu_text(last)),
+                     reply_markup=kb.main_menu(last is not None, last["name"] if last else None, survey=survey))
 
 
 @router.message(CommandStart(deep_link=True, magic=F.args.startswith("lg_")))
@@ -244,11 +245,17 @@ async def link_phone_text(m: Message, state: FSMContext) -> None:
 @router.message(CommandStart())
 async def cmd_start(m: Message, state: FSMContext) -> None:
     await state.clear()
-    user = await repo.get_or_create_user(m.from_user)
-    if not user["pdn_consent"] and not is_admin(m.from_user):
-        await show_consent(m)  # без нажатия кнопки дальше не пускаем (см. ConsentMiddleware)
-        return
-    await show_menu(m, m.from_user)
+    if is_admin(m.from_user):
+        await repo.get_or_create_user(m.from_user)
+        await show_menu(m, m.from_user)
+    elif _from_web():
+        user = await repo.get_or_create_user(m.from_user)
+        if not user["pdn_consent"]:
+            await show_consent(m)
+            return
+        await show_menu(m, m.from_user)
+    else:
+        await show_menu(m, m.from_user, texts.START_SURVEY, survey=True)
 
 
 @router.message(Command("menu"))

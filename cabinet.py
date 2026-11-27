@@ -11,7 +11,6 @@ import brand
 import ribbons
 import db
 import orders
-import pricing
 import repo
 import texts
 import webchat
@@ -70,7 +69,7 @@ async def _orders_html(rows: list[dict]) -> str:
         status = texts.STATUS_LABELS.get(o["status"], o["status"])
         hist = _history_html(await orders.order_history(o["id"]))
         items.append(f"<li>№{_e(o['id'])} · {_e(o['name'])}{_e(pet)} · {_e(fmt_local(o['start_at']))}"
-                     f" · {_e(pricing.format_range_short(o['price_total']))}<br><b>{_e(status)}</b>"
+                     f" · {_e(orders.customer_price(o))}<br><b>{_e(status)}</b>"
                      f"<details><summary>История</summary>{hist}</details>"
                      f"{_actions_html(o['id'], o['status'])}</li>")
     return "<ul>" + "".join(items) + "</ul>"

@@ -5,10 +5,11 @@ from datetime import timedelta
 
 import breeds
 import db
+import matching
 import orders
 import pricing
 import texts
-from utils import now_utc, to_local
+from utils import now_utc, rub, to_local
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ def _end(service: dict, start, qty: int):
     return None
 
 
-async def make_order(bot, web_rid: int, start_at, qty: int, actor: str) -> tuple[bool, str, int | None]:
+async def make_order(bot, web_rid: int, start_at, qty: int, actor: str, *, executor_quote: int | None = None) -> tuple[bool, str, int | None]:
     """(успех, сообщение админу, номер заказа). Повторный вызов возвращает уже оформленный заказ."""
     r = await db.fetch_one("SELECT * FROM web_requests WHERE id=?", (web_rid,))
     if not r:
@@ -50,7 +51,8 @@ async def make_order(bot, web_rid: int, start_at, qty: int, actor: str) -> tuple
     svc = await db.fetch_one("SELECT * FROM services WHERE id=?", (r["service_id"],))
     if not svc:
         return False, "У заявки нет услуги.", None
-    if svc["category"] == "taxi":
+    tier = r.get("match_tier")
+    if svc["category"] == "taxi" and not tier:
         return False, "Зоотакси оформляется в боте: там считается маршрут.", None
     user = await db.fetch_one("SELECT * FROM users WHERE tg_id=?", (r["web_uid"],)) if r["web_uid"] else None
     if not user:
@@ -58,6 +60,12 @@ async def make_order(bot, web_rid: int, start_at, qty: int, actor: str) -> tuple
     qty = max(1, min(int(qty or 1), 60))
     if start_at <= now_utc():
         return False, "Это время уже прошло.", None
+    if tier and (executor_quote is None or not 0 < executor_quote <= 10_000_000):
+        return False, "Введите согласованную ставку исполнителя за весь заказ.", None
+    address, _, address_to = r["address"].partition(" → ") if svc["category"] == "taxi" else (r["address"], "", "")
+    if svc["category"] == "taxi" and not address_to:
+        return False, "В заявке на зоотакси нет адреса назначения.", None
+
     name, species, notes = _pet_fields(r["pet"])
     try:
         pet_id = await db.execute(
@@ -68,20 +76,31 @@ async def make_order(bot, web_rid: int, start_at, qty: int, actor: str) -> tuple
                   "is_express": bool(r["express"]),
                   "outside_mkad": False, "pet_traits": None, "pet_notes": notes or "", "pet_species": species,
                   "route": None}
-        total, breakdown = await pricing.calculate_price(svc["id"], params)
+        fee = None
+        if tier:
+            async with db.transaction() as conn:
+                fee = await matching.fee(conn, user["id"], tier)
+            total = executor_quote + fee
+            breakdown = matching.breakdown(tier, executor_quote, fee)
+        else:
+            total, breakdown = await pricing.calculate_price(svc["id"], params)
     except Exception:
         log.exception("web_orders: цена заявки %s", web_rid)
         return False, "Не удалось посчитать цену: оформите заказ через бота.", None
     oid = await orders.create_order(
         {"user_id": user["id"], "pet_id": pet_id, "service_id": svc["id"], "start_at": start_at,
-         "end_at": _end(svc, start_at, qty), "quantity": qty, "address": r["address"], "address_to": None,
+         "end_at": _end(svc, start_at, qty), "quantity": qty, "address": address, "address_to": address_to or None,
          "is_urgent": params["is_urgent"], "outside_mkad": False, "address_unverified": True,
-         "comment": r["comment"]},
+         "comment": r["comment"], "match_tier": tier, "match_fee": fee},
         total, breakdown, actor=actor)
     await db.execute(f"UPDATE web_requests SET order_id=?, status='work', {db.touch()} WHERE id=? AND order_id IS NULL",
                      (oid, web_rid))
     try:
-        await orders.notify(bot, r["web_uid"], texts.ORDER_ACCEPTED.format(id=oid))
+        message = texts.ORDER_ACCEPTED.format(id=oid)
+        if tier:
+            message += (f"\nРабота исполнителя: {rub(executor_quote)}. Подбор: {rub(fee)}. Итого: {rub(total)}. "
+                        "Согласуем эту сумму с вами до подтверждения заказа.")
+        await orders.notify(bot, r["web_uid"], message)
     except Exception:
         log.exception("web_orders: сообщение клиенту по заявке %s", web_rid)
     return True, f"Заказ №{oid} оформлен: {total} ₽.", oid

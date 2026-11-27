@@ -7,6 +7,7 @@ from aiogram.types import (
     WebAppInfo,
 )
 
+import pricing
 import texts
 from config import config
 from utils import rub
@@ -27,8 +28,9 @@ def consent(policy_url: str) -> InlineKeyboardMarkup:
     ])
 
 
-def main_menu(has_orders: bool, last_name: str | None = None) -> InlineKeyboardMarkup:
-    rows = [[Btn(text="🐾 Заказать услугу", callback_data="menu:order")]]
+def main_menu(has_orders: bool, last_name: str | None = None, *, survey: bool = False) -> InlineKeyboardMarkup:
+    rows = [[Btn(text="Заполнить анкету", url="https://forms.yandex.ru/u/6afa34231f1eb57dec4266f0/")]] if survey else []
+    rows.append([Btn(text="🐾 Заказать услугу", callback_data="menu:order")])
     if has_orders:
         label = f"🔁 Повторить: {last_name}" if last_name else "🔁 Повторить последний заказ"
         rows.append([Btn(text=label[:60], callback_data="menu:repeat")])
@@ -149,7 +151,7 @@ def pet_del_confirm(pet_id: int) -> InlineKeyboardMarkup:
 # ---------- Заказ ----------
 def services(items: list[dict]) -> InlineKeyboardMarkup:
     rows = [
-        [Btn(text=f"{s['name']} — от {rub(s.get('from_price', s['base_price']))}", callback_data=f"svc:{s['id']}")]
+        [Btn(text=f"{s['name']} — {pricing.catalog_price(s)}", callback_data=f"svc:{s['id']}")]
         for s in items
     ]
     rows.append([Btn(text="⬅️ В меню", callback_data="menu:home")])
@@ -171,7 +173,7 @@ def service_categories(items: list[dict]) -> InlineKeyboardMarkup:
 
 
 def category_variants(items: list[dict], category: str) -> InlineKeyboardMarkup:
-    rows = [[Btn(text=f"{texts.variant_label(category, s['name'])} — от {rub(s.get('from_price', s['base_price']))}",
+    rows = [[Btn(text=f"{texts.variant_label(category, s['name'])} — {pricing.catalog_price(s)}",
                  callback_data=f"svc:{s['id']}")] for s in items if s["category"] == category]
     rows.append([Btn(text="⬅️ Назад", callback_data="menu:order")])
     return _kb(rows)

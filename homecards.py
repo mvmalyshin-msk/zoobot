@@ -37,14 +37,27 @@ def _price(n: int) -> str:
     return "от " + rub(n).replace(" ", " ")
 
 
+def _unit(service: dict) -> str:
+    if service["code"] == "walk30":
+        return "за 30 мин"
+    if service["code"] == "sitter_visit":
+        return "за визит 60 мин"
+    if service.get("dog_from_price") is not None:
+        return "сутки для кошки"
+    if service["category"] == "taxi":
+        return "по Москве, в одну сторону"
+    return UNIT.get(service["unit"], "")
+
+
 async def cards_html() -> str:
     low = await cheapest_by_category()
     cards = []
     for c in ORDER:
         s = low.get(c)
+        unit = _unit(s) if s else ""
         price = (f'<span class="price">{_price(s["from_price"])}</span>'
-                 f'<span class="unit">{html.escape(UNIT.get(s["unit"], ""))}</span>') if s else '<span class="unit">по запросу</span>'
-        label = f'{TITLES[c]}: {_price(s["from_price"]).replace(chr(160), " ")} {UNIT.get(s["unit"], "")}' if s else TITLES[c]
+                 f'<span class="unit">{html.escape(unit)}</span>') if s else '<span class="unit">по запросу</span>'
+        label = f'{TITLES[c]}: {_price(s["from_price"]).replace(chr(160), " ")} {unit}' if s else TITLES[c]
         cards.append(
             f'<a class="service-card {c}" href="/request?service={c}" aria-label="{html.escape(label)}. Оставить заявку">'
             f'<span class="top"><span class="service-icon">{ICONS[c]}</span><span class="chev" aria-hidden="true">{CHEV}</span></span>'
