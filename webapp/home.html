@@ -24,18 +24,16 @@ a:focus-visible,.btn:focus-visible{outline:3px solid var(--boarding);outline-off
 .hero-top{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:14px 28px;align-items:center;margin-bottom:26px}
 .hero h1{margin:0 0 10px;font-size:clamp(2rem,4.4vw,3.3rem);line-height:1.08;letter-spacing:-.02em}
 .hero .lead{max-width:560px;margin:0;color:#514b43;font-size:1.08rem;line-height:1.5}
-.first-pick{display:flex;align-items:center;gap:16px;max-width:39rem;margin-top:14px;padding:12px 16px;border:1px solid #e6c1b4;border-radius:18px;background:#fff5ef;color:#51382d;text-decoration:none;transition:background .15s ease,transform .15s ease}
-.first-pick:hover{background:#ffede4;transform:translateY(-1px)}
-.first-pick:active{transform:scale(.99)}
+.first-pick-group{max-width:39rem;margin-top:14px}
+.first-pick{display:block;text-decoration:none;padding:10px 14px;border:1px solid #e6c1b4;border-radius:14px;background:#fff5ef;color:#51382d}
 .first-pick strong{display:block;color:#733c2d;font-size:1.2rem}
-.first-pick p{margin:3px 0 0;font-size:.95rem;line-height:1.4}
-.first-pick .hero-art{flex:0 0 96px;width:96px;max-width:96px;grid-column:auto;grid-row:auto;justify-self:auto}
-.first-pick .hero-art img{border-radius:50%}
-.first-pick .survey-action{display:block;margin-top:7px;color:#733c2d;font-weight:700;text-decoration:underline;text-underline-offset:3px}
-.first-pick-terms-link{display:inline-block;margin:7px 0 0;color:#733c2d;text-underline-offset:3px}
+.first-pick p{margin:2px 0 0;font-size:.95rem;line-height:1.4}
+.first-pick:hover,.hero-art:hover img{background:#ffede4}
+.survey-note{display:block;margin:6px 0 0;color:#733c2d;font-size:.9rem}
+.first-pick-terms-link{display:inline-block;margin-top:4px;color:#733c2d;font-size:.9rem;text-underline-offset:3px}
 .pick-terms p{max-width:65ch;margin:8px 0}
 .pick-terms{margin-bottom:26px}
-.hero-art{grid-column:2;grid-row:1;width:100%;max-width:180px;justify-self:end}
+.hero-art{grid-column:2;grid-row:1 / span 2;width:100%;max-width:180px;justify-self:end}
 .hero-art img{display:block;width:100%;height:auto;border-radius:50%}
 .services{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .service-card{--a:#c4563f;--t:#fbe9e2;display:flex;flex-direction:column;gap:1px;padding:12px 14px;border-radius:16px;background:var(--t);color:var(--ink);text-decoration:none;transition:transform .15s ease,box-shadow .15s ease;-webkit-tap-highlight-color:transparent}
@@ -79,9 +77,8 @@ a:focus-visible,.btn:focus-visible{outline:3px solid var(--boarding);outline-off
   .hero-top{grid-template-columns:minmax(0,1fr) 92px;gap:12px;margin-bottom:16px}
   .hero h1{font-size:clamp(1.65rem,7.4vw,2.2rem);letter-spacing:-.01em;margin-bottom:6px}
   .hero .lead{font-size:.98rem;line-height:1.4}
-  .hero-art{grid-row:auto}
-  .first-pick{grid-column:1/-1;margin-top:0}
-  .first-pick .hero-art{flex-basis:76px;width:76px;max-width:76px}
+  .hero-art{grid-row:1}
+  .first-pick-group{grid-column:1/-1;margin-top:0}
   .services{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
   .service-card .price{font-size:19px}
   .hero-actions{flex-direction:column;align-items:stretch;gap:6px;margin-top:16px}
@@ -104,15 +101,15 @@ __HEADER__
         <h1>Забота о питомце — без суеты</h1>
         <p class="lead">Москва и область. Подбираем специалистов под вашего питомца — выбирать будете вы.</p>
       </div>
-      <a class="first-pick" href="https://forms.yandex.ru/u/6afa34231f1eb57dec4266f0/" aria-label="Открыть добровольную анкету о питомце">
-        <div class="hero-art"><picture><source type="image/webp" srcset="/images/hero-mascot.webp"><img src="/images/hero-mascot.png" alt="" width="640" height="640" decoding="async" fetchpriority="low"></picture></div>
-        <span><strong>Первый подбор — 0 ₽</strong>
+      <a class="hero-art" href="https://forms.yandex.ru/u/6afa34231f1eb57dec4266f0/" aria-label="Открыть анкету о питомце"><picture><source type="image/webp" srcset="/images/hero-mascot.webp"><img src="/images/hero-mascot.png" alt="Персонаж Зооконсьержа с собакой" width="640" height="640" decoding="async" fetchpriority="low"></picture></a>
+      <div class="first-pick-group">
+        <a class="first-pick" href="https://forms.yandex.ru/u/6afa34231f1eb57dec4266f0/" aria-describedby="survey-note">
+          <strong>Первый подбор — 0 ₽</strong>
           <p>По тарифу «Эконом». Вы оплачиваете работу исполнителя. Полную стоимость покажем до подтверждения заказа.</p>
-          <span class="survey-action">Пройди анкету — это сделает нас лучше</span>
-          <p>Опрос добровольный, не создаёт заказ и не расходует акцию.</p>
-        </span>
-      </a>
-      <a class="first-pick-terms-link" href="#first-pick-terms">Условия акции и тарифы</a>
+        </a>
+        <small class="survey-note" id="survey-note">Пройди анкету — это сделает нас лучше</small>
+        <a class="first-pick-terms-link" href="#first-pick-terms">Условия и тарифы</a>
+      </div>
     </div>
     <div class="hero-actions">
       <a class="btn" href="/request">Подобрать исполнителя</a>
@@ -130,6 +127,7 @@ __HEADER__
   <div class="home-shell section" id="how-it-works">
     <div class="pick-terms" id="first-pick-terms">
       <h2>Условия первого подбора</h2>
+      <p>Опрос на Яндекс Формах добровольный. Он не создаёт заявку и не расходует акцию.</p>
       <p>Заполните короткую анкету о питомце и задаче. Первый подтверждённый заказ по тарифу «Эконом» включает подбор за 0 ₽. Регистрация, открытие формы и незавершённая заявка сохраняют право на акцию.</p>
       <p>После услуги мы попросим честный отзыв. Он может быть любым. Если вы пропустите отзыв, сбор задним числом не начисляется.</p>
       <p><strong>Обычная плата за подбор</strong> — Эконом 99 ₽, Комфорт 199 ₽, Профессиональный 299 ₽.</p>
